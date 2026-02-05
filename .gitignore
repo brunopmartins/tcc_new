@@ -4,6 +4,12 @@ old/
 # Ignore datasets
 datasets/
 **/datasets/
+data/*
+!data/.gitkeep
+
+# Ignore model outputs (checkpoints, results, logs)
+**/output/*
+!**/output/.gitkeep
 
 # Python
 __pycache__/

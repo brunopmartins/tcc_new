@@ -50,7 +50,152 @@ This guide explains how to run the kinship classification models using Docker on
 
 ## Quick Start
 
-### Windows (PowerShell)
+### Build the Docker Image
+
+```bash
+# NVIDIA
+docker build -f Dockerfile.nvidia -t kinship-nvidia .
+
+# AMD
+docker build -f Dockerfile.amd -t kinship-amd .
+```
+
+### Run Full Pipeline (Train + Test + Evaluate)
+
+The docker-compose configuration runs the complete pipeline automatically:
+
+```bash
+# NVIDIA GPU - Run with default settings (50 epochs, batch size 16)
+docker-compose --profile nvidia up
+
+# AMD GPU (Linux only)
+docker-compose --profile amd up
+```
+
+### Custom Training Parameters
+
+Use environment variables to customize training:
+
+```bash
+# Custom epochs and batch size
+EPOCHS=100 BATCH_SIZE=32 docker-compose --profile nvidia up
+
+# All available parameters
+EPOCHS=100 \
+BATCH_SIZE=32 \
+GPU_ID=0 \
+LEARNING_RATE=1e-4 \
+TRAIN_DATASET=fiw \
+docker-compose --profile nvidia up
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EPOCHS` | 50 | Number of training epochs |
+| `BATCH_SIZE` | 16 | Training batch size |
+| `GPU_ID` | 0 | GPU device ID to use |
+| `LEARNING_RATE` | 1e-4 | Learning rate |
+| `TRAIN_DATASET` | fiw | Dataset to train on (fiw, kinface1, kinface2) |
+
+### Interactive Shell
+
+```bash
+# NVIDIA
+docker-compose --profile nvidia-shell run nvidia-shell
+
+# AMD
+docker-compose --profile amd-shell run amd-shell
+```
+
+## Directory Structure
+
+```
+project/
+├── data/                     # Datasets (mount point)
+│   ├── FIW/                  # FIW dataset
+│   │   ├── FIW_PIDs_v2.csv
+│   │   └── FIDs/
+│   ├── KinFaceW-I/           # KinFaceW-I dataset
+│   │   └── images/
+│   └── KinFaceW-II/          # KinFaceW-II dataset (optional)
+│       └── images/
+├── models/                   # Model code
+│   ├── 01_age_synthesis_comparison/
+│   │   ├── Nvidia/
+│   │   ├── AMD/
+│   │   └── output/           # Generated during training
+│   │       ├── checkpoints/  # Model weights
+│   │       ├── results/      # Evaluation results
+│   │       └── logs/         # Training logs
+│   ├── 02_vit_facor_crossattn/
+│   │   └── ...
+│   ├── 03_convnext_vit_hybrid/
+│   │   └── ...
+│   └── 04_unified_kinship_model/
+│       └── ...
+├── Dockerfile.nvidia
+├── Dockerfile.amd
+├── docker-compose.yml
+├── docker-run.bat
+└── docker-run.ps1
+```
+
+## Dataset Setup
+
+Place your datasets in the `data/` folder at the project root:
+
+**FIW Dataset:**
+```
+data/FIW/
+├── FIW_PIDs_v2.csv
+└── FIDs/
+    ├── F0001/
+    │   ├── MID1/
+    │   │   └── *.jpg
+    │   └── MID2/
+    │       └── *.jpg
+    └── ...
+```
+
+**KinFaceW-I/II Dataset:**
+```
+data/KinFaceW-I/
+└── images/
+    ├── father-dau/
+    │   ├── fd_001_1.jpg
+    │   ├── fd_001_2.jpg
+    │   └── ...
+    ├── father-son/
+    ├── mother-dau/
+    └── mother-son/
+```
+
+## Output Structure
+
+After running the pipeline, each model will have an `output/` folder:
+
+```
+models/01_age_synthesis_comparison/output/
+├── checkpoints/
+│   ├── best.pt              # Best model weights
+│   ├── last.pt              # Last epoch weights
+│   └── checkpoint_*.pt      # Periodic checkpoints
+├── results/
+│   ├── metrics.json         # Evaluation metrics
+│   ├── roc_curve.png        # ROC curve plot
+│   ├── confusion_matrix.png # Confusion matrix
+│   └── ...                  # Additional analysis files
+└── logs/
+    ├── train.log            # Training output
+    ├── test.log             # Test output
+    └── evaluate.log         # Evaluation output
+```
+
+## Using Windows Scripts
+
+### PowerShell
 
 ```powershell
 # Build the Docker image
@@ -72,7 +217,7 @@ This guide explains how to run the kinship classification models using Docker on
 .\docker-run.ps1 status
 ```
 
-### Windows (Command Prompt)
+### Command Prompt
 
 ```batch
 REM Build the Docker image
@@ -88,241 +233,26 @@ REM Open interactive shell
 docker-run.bat shell
 ```
 
-### Linux (NVIDIA)
-
-```bash
-# Build
-docker build -f Dockerfile.nvidia -t kinship-nvidia .
-
-# Train
-docker run --gpus all -it --rm \
-    -v $(pwd)/data:/app/data \
-    -v $(pwd)/checkpoints:/app/checkpoints \
-    kinship-nvidia \
-    bash -c "cd /app/models && ./run_all_models_nvidia.sh 50 16 0"
-
-# Interactive shell
-docker run --gpus all -it --rm \
-    -v $(pwd)/data:/app/data \
-    -v $(pwd)/checkpoints:/app/checkpoints \
-    kinship-nvidia bash
-```
-
-### Linux (AMD ROCm)
-
-```bash
-# Build
-docker build -f Dockerfile.amd -t kinship-amd .
-
-# Train
-docker run --device=/dev/kfd --device=/dev/dri --group-add video \
-    -it --rm \
-    -v $(pwd)/data:/app/data \
-    -v $(pwd)/checkpoints:/app/checkpoints \
-    kinship-amd \
-    bash -c "cd /app/models && ./run_all_models_amd.sh 50 16 0"
-```
-
-## Using Docker Compose
-
-### NVIDIA GPU
-
-```bash
-# Build and train
-docker-compose --profile nvidia up nvidia-train
-
-# Evaluate
-docker-compose --profile nvidia up nvidia-eval
-
-# Interactive shell
-docker-compose --profile nvidia run nvidia-shell
-```
-
-### AMD GPU (Linux only)
-
-```bash
-# Build and train
-docker-compose --profile amd up amd-train
-
-# Evaluate
-docker-compose --profile amd up amd-eval
-```
-
-## Directory Structure
-
-```
-project/
-├── models/                   # Model code
-├── Dockerfile.nvidia
-├── Dockerfile.amd
-├── docker-compose.yml
-├── docker-run.bat
-└── docker-run.ps1
-```
-
-Datasets, checkpoints, and results are stored in Docker named volumes for better management.
-
-## Dataset Setup with Named Volumes
-
-The project uses Docker named volumes for datasets, which provides:
-- **Persistence**: Data survives container restarts
-- **Performance**: Better I/O performance than bind mounts on Windows
-- **Portability**: Easy to backup and restore
-
-### Volume Names
-
-| Volume | Container Path | Description |
-|--------|----------------|-------------|
-| `kinship_fiw` | `/app/data/FIW` | FIW dataset |
-| `kinship_kinface1` | `/app/data/KinFaceW-I` | KinFaceW-I dataset |
-| `kinship_kinface2` | `/app/data/KinFaceW-II` | KinFaceW-II dataset |
-| `kinship_checkpoints` | `/app/checkpoints` | Model checkpoints |
-| `kinship_results` | `/app/results` | Evaluation results |
-
-### First-Time Setup: Copy Datasets to Volumes
-
-#### Option 1: Using docker-compose helper services
-
-```bash
-# Copy FIW dataset
-FIW_SOURCE_PATH=/path/to/your/FIW docker-compose --profile setup run copy-fiw
-
-# Copy KinFaceW-I dataset
-KINFACE1_SOURCE_PATH=/path/to/your/KinFaceW-I docker-compose --profile setup run copy-kinface1
-
-# Copy KinFaceW-II dataset (optional)
-KINFACE2_SOURCE_PATH=/path/to/your/KinFaceW-II docker-compose --profile setup run copy-kinface2
-
-# Verify data was copied
-docker-compose --profile setup run list-data
-```
-
-#### Option 2: Using docker run directly
-
-```bash
-# Copy FIW dataset to volume
-docker run --rm \
-    -v kinship_fiw:/dest \
-    -v /path/to/your/FIW:/src:ro \
-    alpine cp -rv /src/. /dest/
-
-# Copy KinFaceW-I dataset to volume
-docker run --rm \
-    -v kinship_kinface1:/dest \
-    -v /path/to/your/KinFaceW-I:/src:ro \
-    alpine cp -rv /src/. /dest/
-
-# Copy KinFaceW-II dataset to volume (optional)
-docker run --rm \
-    -v kinship_kinface2:/dest \
-    -v /path/to/your/KinFaceW-II:/src:ro \
-    alpine cp -rv /src/. /dest/
-```
-
-#### Windows PowerShell
-
-```powershell
-# Copy FIW dataset
-docker run --rm `
-    -v kinship_fiw:/dest `
-    -v "C:\path\to\FIW:/src:ro" `
-    alpine cp -rv /src/. /dest/
-
-# Copy KinFaceW-I dataset
-docker run --rm `
-    -v kinship_kinface1:/dest `
-    -v "C:\path\to\KinFaceW-I:/src:ro" `
-    alpine cp -rv /src/. /dest/
-```
-
-### Managing Volumes
-
-```bash
-# List all kinship volumes
-docker volume ls | grep kinship
-
-# Inspect a volume (shows mount point)
-docker volume inspect kinship_fiw
-
-# Remove a volume (WARNING: deletes data!)
-docker volume rm kinship_fiw
-
-# Remove all kinship volumes
-docker volume rm kinship_fiw kinship_kinface1 kinship_kinface2 kinship_checkpoints kinship_results
-
-# Backup a volume to tar file
-docker run --rm -v kinship_checkpoints:/data -v $(pwd):/backup alpine tar cvf /backup/checkpoints_backup.tar /data
-
-# Restore a volume from tar file
-docker run --rm -v kinship_checkpoints:/data -v $(pwd):/backup alpine tar xvf /backup/checkpoints_backup.tar -C /
-```
-
-### Dataset Structure
-
-Your source datasets should have this structure:
-
-**FIW Dataset:**
-```
-FIW/
-├── FIW_PIDs_v2.csv
-└── FIDs/
-    ├── F0001/
-    │   ├── MID1/
-    │   │   └── *.jpg
-    │   └── MID2/
-    │       └── *.jpg
-    └── ...
-```
-
-**KinFaceW-I/II Dataset:**
-```
-KinFaceW-I/
-└── images/
-    ├── father-dau/
-    │   ├── fd_001_1.jpg
-    │   ├── fd_001_2.jpg
-    │   └── ...
-    ├── father-son/
-    ├── mother-dau/
-    └── mother-son/
-```
-
-## Training Individual Models
+## Running Individual Models
 
 Inside the container, you can train individual models:
 
 ```bash
 # Model 01: Age Synthesis
 cd /app/models/01_age_synthesis_comparison/Nvidia
-python train.py --train_dataset fiw --epochs 100 --batch_size 32
+python train.py --train_dataset fiw --epochs 100 --batch_size 32 --checkpoint_dir ../output/checkpoints
 
 # Model 02: ViT-FaCoR
 cd /app/models/02_vit_facor_crossattn/Nvidia
-python train.py --train_dataset fiw --epochs 100 --batch_size 32
+python train.py --train_dataset fiw --epochs 100 --batch_size 32 --checkpoint_dir ../output/checkpoints
 
 # Model 03: ConvNeXt-ViT Hybrid
 cd /app/models/03_convnext_vit_hybrid/Nvidia
-python train.py --train_dataset fiw --epochs 100 --batch_size 32
+python train.py --train_dataset fiw --epochs 100 --batch_size 32 --checkpoint_dir ../output/checkpoints
 
 # Model 04: Unified Model
 cd /app/models/04_unified_kinship_model/Nvidia
-python train.py --train_dataset fiw --epochs 100 --batch_size 16
-```
-
-## Evaluation
-
-```bash
-# Evaluate a specific model
-cd /app/models/01_age_synthesis_comparison/Nvidia
-python evaluate.py --checkpoint /app/checkpoints/best.pt --full_analysis
-
-# Evaluate all models (from container)
-cd /app/models
-for model in 01_* 02_* 03_* 04_*; do
-    cd $model/Nvidia
-    python evaluate.py --checkpoint ../../checkpoints/$model/best.pt --full_analysis
-    cd ../..
-done
+python train.py --train_dataset fiw --epochs 100 --batch_size 16 --checkpoint_dir ../output/checkpoints
 ```
 
 ## GPU Memory Requirements
@@ -337,7 +267,7 @@ done
 Reduce batch size if you encounter OOM errors:
 
 ```bash
-python train.py --batch_size 8  # or even 4
+BATCH_SIZE=8 docker-compose --profile nvidia up
 ```
 
 ## Troubleshooting
@@ -372,18 +302,18 @@ ROCm containers require:
 
 ```bash
 # Reduce batch size
-python train.py --batch_size 8
+BATCH_SIZE=8 docker-compose --profile nvidia up
 
-# Disable AMP (uses more memory but may help with some GPUs)
-python train.py --disable_amp
+# Or for individual training
+python train.py --batch_size 8
 ```
 
 ### Dataset not found
 
-Make sure to mount the data directory correctly:
+Make sure datasets are in the correct location:
 ```bash
 # Check data is visible inside container
-docker run --gpus all -it --rm -v $(pwd)/data:/app/data kinship-nvidia ls -la /app/data
+docker-compose --profile nvidia-shell run nvidia-shell ls -la /app/data
 ```
 
 ## Building Custom Images

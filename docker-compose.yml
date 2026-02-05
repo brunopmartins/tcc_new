@@ -6,22 +6,16 @@
 # Usage:
 #   NVIDIA GPU:  docker-compose --profile nvidia up
 #   AMD GPU:     docker-compose --profile amd up
-#   Training:    docker-compose run nvidia-train
-#   Evaluation:  docker-compose run nvidia-eval
 #
-# Volume Management:
-#   # Copy datasets to volumes (first time setup)
-#   docker run --rm -v kinship_fiw:/data -v /path/to/FIW:/src:ro alpine cp -r /src/. /data/
-#   docker run --rm -v kinship_kinface1:/data -v /path/to/KinFaceW-I:/src:ro alpine cp -r /src/. /data/
+# Environment Variables (set before running):
+#   EPOCHS=50          - Number of training epochs
+#   BATCH_SIZE=16      - Training batch size
+#   GPU_ID=0           - GPU device ID
+#   LEARNING_RATE=1e-4 - Learning rate
 #
-#   # List volumes
-#   docker volume ls | grep kinship
-#
-#   # Inspect volume
-#   docker volume inspect kinship_fiw
+# Example:
+#   EPOCHS=100 BATCH_SIZE=32 docker-compose --profile nvidia up
 # =============================================================================
-
-version: '3.8'
 
 # =============================================================================
 # Shared configuration
@@ -43,67 +37,98 @@ x-amd-common: &amd-common
   group_add:
     - video
 
-x-dataset-volumes: &dataset-volumes
-  - fiw_data:/app/data/FIW:ro
-  - kinface1_data:/app/data/KinFaceW-I:ro
-  - kinface2_data:/app/data/KinFaceW-II:ro
+x-training-env: &training-env
+  EPOCHS: ${EPOCHS:-50}
+  BATCH_SIZE: ${BATCH_SIZE:-16}
+  GPU_ID: ${GPU_ID:-0}
+  LEARNING_RATE: ${LEARNING_RATE:-1e-4}
+  TRAIN_DATASET: ${TRAIN_DATASET:-fiw}
 
-x-output-volumes: &output-volumes
-  - checkpoints:/app/checkpoints
-  - results:/app/results
+x-dataset-volumes: &dataset-volumes
+  - ./data/FIW:/app/data/FIW:ro
+  - ./data/KinFaceW-I:/app/data/KinFaceW-I:ro
+  - ./data/KinFaceW-II:/app/data/KinFaceW-II:ro
 
 services:
   # ===========================================================================
   # NVIDIA GPU Services
   # ===========================================================================
-  nvidia-train:
+  nvidia-pipeline:
     build:
       context: .
       dockerfile: Dockerfile.nvidia
     profiles: ["nvidia"]
     image: kinship-nvidia:latest
-    container_name: kinship-nvidia-train
+    container_name: kinship-nvidia-pipeline
     <<: *nvidia-common
     volumes:
-      - fiw_data:/app/data/FIW:ro
-      - kinface1_data:/app/data/KinFaceW-I:ro
-      - kinface2_data:/app/data/KinFaceW-II:ro
-      - checkpoints:/app/checkpoints
+      - ./data/FIW:/app/data/FIW:ro
+      - ./data/KinFaceW-I:/app/data/KinFaceW-I:ro
+      - ./data/KinFaceW-II:/app/data/KinFaceW-II:ro
       - ./models:/app/models
+      - ./models/01_age_synthesis_comparison/output:/app/models/01_age_synthesis_comparison/output
+      - ./models/02_vit_facor_crossattn/output:/app/models/02_vit_facor_crossattn/output
+      - ./models/03_convnext_vit_hybrid/output:/app/models/03_convnext_vit_hybrid/output
+      - ./models/04_unified_kinship_model/output:/app/models/04_unified_kinship_model/output
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=0
-    command: >
-      bash -c "cd /app/models && ./run_all_models_nvidia.sh 50 16 0"
-    stdin_open: true
-    tty: true
-
-  nvidia-eval:
-    build:
-      context: .
-      dockerfile: Dockerfile.nvidia
-    profiles: ["nvidia"]
-    image: kinship-nvidia:latest
-    container_name: kinship-nvidia-eval
-    <<: *nvidia-common
-    volumes:
-      - fiw_data:/app/data/FIW:ro
-      - kinface1_data:/app/data/KinFaceW-I:ro
-      - kinface2_data:/app/data/KinFaceW-II:ro
-      - checkpoints:/app/checkpoints:ro
-      - results:/app/results
-      - ./models:/app/models:ro
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
+      <<: *training-env
+      NVIDIA_VISIBLE_DEVICES: all
+      CUDA_VISIBLE_DEVICES: ${GPU_ID:-0}
     command: >
       bash -c "
-        cd /app/models &&
+        set -e
+        echo '============================================'
+        echo 'Kinship Classification Pipeline'
+        echo '============================================'
+        echo 'Epochs: $${EPOCHS}'
+        echo 'Batch Size: $${BATCH_SIZE}'
+        echo 'GPU ID: $${GPU_ID}'
+        echo 'Learning Rate: $${LEARNING_RATE}'
+        echo 'Dataset: $${TRAIN_DATASET}'
+        echo '============================================'
+
+        cd /app/models
+
         for model_dir in 01_* 02_* 03_* 04_*; do
-          echo \"Evaluating $${model_dir}...\" &&
-          cd $${model_dir}/Nvidia &&
-          python evaluate.py --checkpoint /app/checkpoints/$${model_dir}/best.pt --output_dir /app/results/$${model_dir} --full_analysis 2>/dev/null || true &&
+          echo ''
+          echo '============================================'
+          echo \"Processing $${model_dir}\"
+          echo '============================================'
+
+          cd $${model_dir}
+          mkdir -p output/checkpoints output/results output/logs
+
+          echo '[1/3] Training...'
+          cd Nvidia
+          python train.py \
+            --train_dataset $${TRAIN_DATASET} \
+            --epochs $${EPOCHS} \
+            --batch_size $${BATCH_SIZE} \
+            --learning_rate $${LEARNING_RATE} \
+            --checkpoint_dir ../output/checkpoints \
+            2>&1 | tee ../output/logs/train.log
+
+          echo '[2/3] Testing...'
+          python test.py \
+            --checkpoint ../output/checkpoints/best.pt \
+            --output_dir ../output/results \
+            2>&1 | tee ../output/logs/test.log
+
+          echo '[3/3] Evaluating...'
+          python evaluate.py \
+            --checkpoint ../output/checkpoints/best.pt \
+            --output_dir ../output/results \
+            --full_analysis \
+            2>&1 | tee ../output/logs/evaluate.log
+
           cd ../..
+          echo \"Completed $${model_dir}\"
         done
+
+        echo ''
+        echo '============================================'
+        echo 'All models completed!'
+        echo '============================================'
       "
     stdin_open: true
     tty: true
@@ -112,19 +137,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.nvidia
-    profiles: ["nvidia"]
+    profiles: ["nvidia-shell"]
     image: kinship-nvidia:latest
     container_name: kinship-nvidia-shell
     <<: *nvidia-common
     volumes:
-      - fiw_data:/app/data/FIW
-      - kinface1_data:/app/data/KinFaceW-I
-      - kinface2_data:/app/data/KinFaceW-II
-      - checkpoints:/app/checkpoints
-      - results:/app/results
+      - ./data/FIW:/app/data/FIW
+      - ./data/KinFaceW-I:/app/data/KinFaceW-I
+      - ./data/KinFaceW-II:/app/data/KinFaceW-II
       - ./models:/app/models
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
+      NVIDIA_VISIBLE_DEVICES: all
     command: bash
     stdin_open: true
     tty: true
@@ -132,52 +155,82 @@ services:
   # ===========================================================================
   # AMD ROCm Services (Linux only)
   # ===========================================================================
-  amd-train:
+  amd-pipeline:
     build:
       context: .
       dockerfile: Dockerfile.amd
     profiles: ["amd"]
     image: kinship-amd:latest
-    container_name: kinship-amd-train
+    container_name: kinship-amd-pipeline
     <<: *amd-common
     volumes:
-      - fiw_data:/app/data/FIW:ro
-      - kinface1_data:/app/data/KinFaceW-I:ro
-      - kinface2_data:/app/data/KinFaceW-II:ro
-      - checkpoints:/app/checkpoints
+      - ./data/FIW:/app/data/FIW:ro
+      - ./data/KinFaceW-I:/app/data/KinFaceW-I:ro
+      - ./data/KinFaceW-II:/app/data/KinFaceW-II:ro
       - ./models:/app/models
+      - ./models/01_age_synthesis_comparison/output:/app/models/01_age_synthesis_comparison/output
+      - ./models/02_vit_facor_crossattn/output:/app/models/02_vit_facor_crossattn/output
+      - ./models/03_convnext_vit_hybrid/output:/app/models/03_convnext_vit_hybrid/output
+      - ./models/04_unified_kinship_model/output:/app/models/04_unified_kinship_model/output
     environment:
-      - HIP_VISIBLE_DEVICES=0
-      - ROCR_VISIBLE_DEVICES=0
-    command: >
-      bash -c "cd /app/models && ./run_all_models_amd.sh 50 16 0"
-    stdin_open: true
-    tty: true
-
-  amd-eval:
-    build:
-      context: .
-      dockerfile: Dockerfile.amd
-    profiles: ["amd"]
-    image: kinship-amd:latest
-    container_name: kinship-amd-eval
-    <<: *amd-common
-    volumes:
-      - fiw_data:/app/data/FIW:ro
-      - kinface1_data:/app/data/KinFaceW-I:ro
-      - kinface2_data:/app/data/KinFaceW-II:ro
-      - checkpoints:/app/checkpoints:ro
-      - results:/app/results
-      - ./models:/app/models:ro
+      <<: *training-env
+      HIP_VISIBLE_DEVICES: ${GPU_ID:-0}
+      ROCR_VISIBLE_DEVICES: ${GPU_ID:-0}
     command: >
       bash -c "
-        cd /app/models &&
+        set -e
+        echo '============================================'
+        echo 'Kinship Classification Pipeline (AMD ROCm)'
+        echo '============================================'
+        echo 'Epochs: $${EPOCHS}'
+        echo 'Batch Size: $${BATCH_SIZE}'
+        echo 'GPU ID: $${GPU_ID}'
+        echo 'Learning Rate: $${LEARNING_RATE}'
+        echo 'Dataset: $${TRAIN_DATASET}'
+        echo '============================================'
+
+        cd /app/models
+
         for model_dir in 01_* 02_* 03_* 04_*; do
-          echo \"Evaluating $${model_dir}...\" &&
-          cd $${model_dir}/AMD &&
-          python evaluate.py --checkpoint /app/checkpoints/$${model_dir}/best.pt --output_dir /app/results/$${model_dir} --full_analysis 2>/dev/null || true &&
+          echo ''
+          echo '============================================'
+          echo \"Processing $${model_dir}\"
+          echo '============================================'
+
+          cd $${model_dir}
+          mkdir -p output/checkpoints output/results output/logs
+
+          echo '[1/3] Training...'
+          cd AMD
+          python train.py \
+            --train_dataset $${TRAIN_DATASET} \
+            --epochs $${EPOCHS} \
+            --batch_size $${BATCH_SIZE} \
+            --learning_rate $${LEARNING_RATE} \
+            --checkpoint_dir ../output/checkpoints \
+            2>&1 | tee ../output/logs/train.log
+
+          echo '[2/3] Testing...'
+          python test.py \
+            --checkpoint ../output/checkpoints/best.pt \
+            --output_dir ../output/results \
+            2>&1 | tee ../output/logs/test.log
+
+          echo '[3/3] Evaluating...'
+          python evaluate.py \
+            --checkpoint ../output/checkpoints/best.pt \
+            --output_dir ../output/results \
+            --full_analysis \
+            2>&1 | tee ../output/logs/evaluate.log
+
           cd ../..
+          echo \"Completed $${model_dir}\"
         done
+
+        echo ''
+        echo '============================================'
+        echo 'All models completed!'
+        echo '============================================'
       "
     stdin_open: true
     tty: true
@@ -186,132 +239,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.amd
-    profiles: ["amd"]
+    profiles: ["amd-shell"]
     image: kinship-amd:latest
     container_name: kinship-amd-shell
     <<: *amd-common
     volumes:
-      - fiw_data:/app/data/FIW
-      - kinface1_data:/app/data/KinFaceW-I
-      - kinface2_data:/app/data/KinFaceW-II
-      - checkpoints:/app/checkpoints
-      - results:/app/results
+      - ./data/FIW:/app/data/FIW
+      - ./data/KinFaceW-I:/app/data/KinFaceW-I
+      - ./data/KinFaceW-II:/app/data/KinFaceW-II
       - ./models:/app/models
     command: bash
     stdin_open: true
     tty: true
-
-  # ===========================================================================
-  # Data Management Services
-  # ===========================================================================
-
-  # Helper service to copy FIW dataset to volume
-  copy-fiw:
-    image: alpine:latest
-    profiles: ["setup"]
-    volumes:
-      - fiw_data:/dest
-      - ${FIW_SOURCE_PATH:-./_placeholder}:/src:ro
-    command: >
-      sh -c "
-        if [ -d /src/FIDs ] || [ -f /src/FIW_PIDs_v2.csv ]; then
-          echo 'Copying FIW dataset to volume...' &&
-          cp -rv /src/. /dest/ &&
-          echo 'Done! FIW dataset copied.'
-        else
-          echo 'ERROR: FIW source path does not contain valid dataset.'
-          echo 'Set FIW_SOURCE_PATH environment variable to your FIW dataset location.'
-          exit 1
-        fi
-      "
-
-  # Helper service to copy KinFaceW-I dataset to volume
-  copy-kinface1:
-    image: alpine:latest
-    profiles: ["setup"]
-    volumes:
-      - kinface1_data:/dest
-      - ${KINFACE1_SOURCE_PATH:-./_placeholder}:/src:ro
-    command: >
-      sh -c "
-        if [ -d /src/images ]; then
-          echo 'Copying KinFaceW-I dataset to volume...' &&
-          cp -rv /src/. /dest/ &&
-          echo 'Done! KinFaceW-I dataset copied.'
-        else
-          echo 'ERROR: KinFaceW-I source path does not contain valid dataset.'
-          echo 'Set KINFACE1_SOURCE_PATH environment variable to your KinFaceW-I dataset location.'
-          exit 1
-        fi
-      "
-
-  # Helper service to copy KinFaceW-II dataset to volume
-  copy-kinface2:
-    image: alpine:latest
-    profiles: ["setup"]
-    volumes:
-      - kinface2_data:/dest
-      - ${KINFACE2_SOURCE_PATH:-./_placeholder}:/src:ro
-    command: >
-      sh -c "
-        if [ -d /src/images ]; then
-          echo 'Copying KinFaceW-II dataset to volume...' &&
-          cp -rv /src/. /dest/ &&
-          echo 'Done! KinFaceW-II dataset copied.'
-        else
-          echo 'ERROR: KinFaceW-II source path does not contain valid dataset.'
-          echo 'Set KINFACE2_SOURCE_PATH environment variable to your KinFaceW-II dataset location.'
-          exit 1
-        fi
-      "
-
-  # List volume contents
-  list-data:
-    image: alpine:latest
-    profiles: ["setup"]
-    volumes:
-      - fiw_data:/data/FIW:ro
-      - kinface1_data:/data/KinFaceW-I:ro
-      - kinface2_data:/data/KinFaceW-II:ro
-    command: >
-      sh -c "
-        echo '=== FIW Dataset ===' &&
-        ls -la /data/FIW 2>/dev/null || echo '(empty)' &&
-        echo '' &&
-        echo '=== KinFaceW-I Dataset ===' &&
-        ls -la /data/KinFaceW-I 2>/dev/null || echo '(empty)' &&
-        echo '' &&
-        echo '=== KinFaceW-II Dataset ===' &&
-        ls -la /data/KinFaceW-II 2>/dev/null || echo '(empty)'
-      "
-
-# =============================================================================
-# Named Volumes
-# =============================================================================
-volumes:
-  # Dataset volumes (persistent storage for datasets)
-  fiw_data:
-    name: kinship_fiw
-    labels:
-      description: "FIW (Families In the Wild) dataset"
-
-  kinface1_data:
-    name: kinship_kinface1
-    labels:
-      description: "KinFaceW-I dataset"
-
-  kinface2_data:
-    name: kinship_kinface2
-    labels:
-      description: "KinFaceW-II dataset"
-
-  # Output volumes
-  checkpoints:
-    name: kinship_checkpoints
-    labels:
-      description: "Model checkpoints"
-
-  results:
-    name: kinship_results
-    labels:
-      description: "Evaluation results"
