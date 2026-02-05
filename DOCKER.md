@@ -50,26 +50,42 @@ This guide explains how to run the kinship classification models using Docker on
 
 ## Quick Start
 
-### Build the Docker Image
+Each model has its own standalone docker-compose files for NVIDIA and AMD GPUs.
+
+### Build Docker Images First
 
 ```bash
-# NVIDIA
+# From project root - build NVIDIA image
 docker build -f Dockerfile.nvidia -t kinship-nvidia .
 
-# AMD
+# From project root - build AMD image
 docker build -f Dockerfile.amd -t kinship-amd .
 ```
 
-### Run Full Pipeline (Train + Test + Evaluate)
+### Run Individual Models
 
-The docker-compose configuration runs the complete pipeline automatically:
+Navigate to the model directory and run the appropriate docker-compose:
 
 ```bash
-# NVIDIA GPU - Run with default settings (50 epochs, batch size 16)
-docker-compose --profile nvidia up
+# Model 01: Age Synthesis (NVIDIA)
+cd models/01_age_synthesis_comparison
+docker-compose -f docker-compose.nvidia.yml up
 
-# AMD GPU (Linux only)
-docker-compose --profile amd up
+# Model 01: Age Synthesis (AMD)
+cd models/01_age_synthesis_comparison
+docker-compose -f docker-compose.amd.yml up
+
+# Model 02: ViT-FaCoR (NVIDIA)
+cd models/02_vit_facor_crossattn
+docker-compose -f docker-compose.nvidia.yml up
+
+# Model 03: ConvNeXt-ViT Hybrid (NVIDIA)
+cd models/03_convnext_vit_hybrid
+docker-compose -f docker-compose.nvidia.yml up
+
+# Model 04: Unified Model (NVIDIA)
+cd models/04_unified_kinship_model
+docker-compose -f docker-compose.nvidia.yml up
 ```
 
 ### Custom Training Parameters
@@ -78,7 +94,7 @@ Use environment variables to customize training:
 
 ```bash
 # Custom epochs and batch size
-EPOCHS=100 BATCH_SIZE=32 docker-compose --profile nvidia up
+EPOCHS=100 BATCH_SIZE=32 docker-compose -f docker-compose.nvidia.yml up
 
 # All available parameters
 EPOCHS=100 \
@@ -86,7 +102,7 @@ BATCH_SIZE=32 \
 GPU_ID=0 \
 LEARNING_RATE=1e-4 \
 TRAIN_DATASET=fiw \
-docker-compose --profile nvidia up
+docker-compose -f docker-compose.nvidia.yml up
 ```
 
 ### Environment Variables
@@ -102,42 +118,43 @@ docker-compose --profile nvidia up
 ### Interactive Shell
 
 ```bash
-# NVIDIA
-docker-compose --profile nvidia-shell run nvidia-shell
-
-# AMD
-docker-compose --profile amd-shell run amd-shell
+# Open shell for any model
+cd models/01_age_synthesis_comparison
+docker-compose -f docker-compose.nvidia.yml run shell
 ```
 
 ## Directory Structure
 
 ```
 project/
-├── data/                     # Datasets (mount point)
-│   ├── FIW/                  # FIW dataset
-│   │   ├── FIW_PIDs_v2.csv
-│   │   └── FIDs/
-│   ├── KinFaceW-I/           # KinFaceW-I dataset
-│   │   └── images/
-│   └── KinFaceW-II/          # KinFaceW-II dataset (optional)
-│       └── images/
-├── models/                   # Model code
+├── data/                     # Datasets (at project root)
+│   ├── FIW/
+│   ├── KinFaceW-I/
+│   └── KinFaceW-II/
+├── models/
 │   ├── 01_age_synthesis_comparison/
 │   │   ├── Nvidia/
 │   │   ├── AMD/
-│   │   └── output/           # Generated during training
-│   │       ├── checkpoints/  # Model weights
-│   │       ├── results/      # Evaluation results
-│   │       └── logs/         # Training logs
+│   │   ├── docker-compose.nvidia.yml  # Standalone NVIDIA compose
+│   │   ├── docker-compose.amd.yml     # Standalone AMD compose
+│   │   └── output/                    # Generated outputs
+│   │       ├── checkpoints/
+│   │       ├── results/
+│   │       └── logs/
 │   ├── 02_vit_facor_crossattn/
+│   │   ├── docker-compose.nvidia.yml
+│   │   ├── docker-compose.amd.yml
 │   │   └── ...
 │   ├── 03_convnext_vit_hybrid/
+│   │   ├── docker-compose.nvidia.yml
+│   │   ├── docker-compose.amd.yml
 │   │   └── ...
 │   └── 04_unified_kinship_model/
+│       ├── docker-compose.nvidia.yml
+│       ├── docker-compose.amd.yml
 │       └── ...
 ├── Dockerfile.nvidia
 ├── Dockerfile.amd
-├── docker-compose.yml
 ├── docker-run.bat
 └── docker-run.ps1
 ```
@@ -193,66 +210,26 @@ models/01_age_synthesis_comparison/output/
     └── evaluate.log         # Evaluation output
 ```
 
-## Using Windows Scripts
+## Running All Models
 
-### PowerShell
-
-```powershell
-# Build the Docker image
-.\docker-run.ps1 build
-
-# Train all models (default: 50 epochs, batch size 16)
-.\docker-run.ps1 train
-
-# Train with custom settings
-.\docker-run.ps1 train -Epochs 100 -BatchSize 32 -GPU 0
-
-# Evaluate models
-.\docker-run.ps1 eval
-
-# Open interactive shell
-.\docker-run.ps1 shell
-
-# Check status
-.\docker-run.ps1 status
-```
-
-### Command Prompt
-
-```batch
-REM Build the Docker image
-docker-run.bat build
-
-REM Train all models
-docker-run.bat train 50 16 0
-
-REM Evaluate models
-docker-run.bat eval
-
-REM Open interactive shell
-docker-run.bat shell
-```
-
-## Running Individual Models
-
-Inside the container, you can train individual models:
+To run all models sequentially:
 
 ```bash
-# Model 01: Age Synthesis
-cd /app/models/01_age_synthesis_comparison/Nvidia
-python train.py --train_dataset fiw --epochs 100 --batch_size 32 --checkpoint_dir ../output/checkpoints
+# NVIDIA
+for model in 01_age_synthesis_comparison 02_vit_facor_crossattn 03_convnext_vit_hybrid 04_unified_kinship_model; do
+  echo "Running $model..."
+  cd models/$model
+  docker-compose -f docker-compose.nvidia.yml up
+  cd ../..
+done
 
-# Model 02: ViT-FaCoR
-cd /app/models/02_vit_facor_crossattn/Nvidia
-python train.py --train_dataset fiw --epochs 100 --batch_size 32 --checkpoint_dir ../output/checkpoints
-
-# Model 03: ConvNeXt-ViT Hybrid
-cd /app/models/03_convnext_vit_hybrid/Nvidia
-python train.py --train_dataset fiw --epochs 100 --batch_size 32 --checkpoint_dir ../output/checkpoints
-
-# Model 04: Unified Model
-cd /app/models/04_unified_kinship_model/Nvidia
-python train.py --train_dataset fiw --epochs 100 --batch_size 16 --checkpoint_dir ../output/checkpoints
+# AMD
+for model in 01_age_synthesis_comparison 02_vit_facor_crossattn 03_convnext_vit_hybrid 04_unified_kinship_model; do
+  echo "Running $model..."
+  cd models/$model
+  docker-compose -f docker-compose.amd.yml up
+  cd ../..
+done
 ```
 
 ## GPU Memory Requirements
@@ -267,7 +244,7 @@ python train.py --train_dataset fiw --epochs 100 --batch_size 16 --checkpoint_di
 Reduce batch size if you encounter OOM errors:
 
 ```bash
-BATCH_SIZE=8 docker-compose --profile nvidia up
+BATCH_SIZE=8 docker-compose -f docker-compose.nvidia.yml up
 ```
 
 ## Troubleshooting
@@ -302,18 +279,15 @@ ROCm containers require:
 
 ```bash
 # Reduce batch size
-BATCH_SIZE=8 docker-compose --profile nvidia up
-
-# Or for individual training
-python train.py --batch_size 8
+BATCH_SIZE=8 docker-compose -f docker-compose.nvidia.yml up
 ```
 
 ### Dataset not found
 
-Make sure datasets are in the correct location:
+Make sure datasets are in the correct location (project root `data/` folder):
 ```bash
-# Check data is visible inside container
-docker-compose --profile nvidia-shell run nvidia-shell ls -la /app/data
+# Check from model directory
+ls -la ../../data/
 ```
 
 ## Building Custom Images

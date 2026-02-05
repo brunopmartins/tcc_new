@@ -1,0 +1,115 @@
+# =============================================================================
+# Model 01: Age Synthesis Comparison - AMD ROCm Docker Compose
+# =============================================================================
+# Standalone docker-compose for running the Age Synthesis model on AMD GPUs.
+#
+# Usage:
+#   docker-compose -f docker-compose.amd.yml up
+#
+# With custom parameters:
+#   EPOCHS=100 BATCH_SIZE=32 docker-compose -f docker-compose.amd.yml up
+#
+# Interactive shell:
+#   docker-compose -f docker-compose.amd.yml run shell
+#
+# Note: Requires Linux host with ROCm drivers installed.
+# =============================================================================
+
+services:
+  pipeline:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.amd
+    image: kinship-amd:latest
+    container_name: model01-amd-pipeline
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+    volumes:
+      - ../../data/FIW:/app/data/FIW:ro
+      - ../../data/KinFaceW-I:/app/data/KinFaceW-I:ro
+      - ../../data/KinFaceW-II:/app/data/KinFaceW-II:ro
+      - ./AMD:/app/models/01_age_synthesis_comparison/AMD:ro
+      - ../shared:/app/models/shared:ro
+      - ./output:/app/output
+    environment:
+      EPOCHS: ${EPOCHS:-50}
+      BATCH_SIZE: ${BATCH_SIZE:-16}
+      GPU_ID: ${GPU_ID:-0}
+      LEARNING_RATE: ${LEARNING_RATE:-1e-4}
+      TRAIN_DATASET: ${TRAIN_DATASET:-fiw}
+      HIP_VISIBLE_DEVICES: ${GPU_ID:-0}
+      ROCR_VISIBLE_DEVICES: ${GPU_ID:-0}
+    working_dir: /app/models/01_age_synthesis_comparison/AMD
+    command: >
+      bash -c "
+        set -e
+        echo '============================================'
+        echo 'Model 01: Age Synthesis Comparison'
+        echo 'Platform: AMD ROCm'
+        echo '============================================'
+        echo 'Epochs: $${EPOCHS}'
+        echo 'Batch Size: $${BATCH_SIZE}'
+        echo 'GPU ID: $${GPU_ID}'
+        echo 'Learning Rate: $${LEARNING_RATE}'
+        echo 'Dataset: $${TRAIN_DATASET}'
+        echo '============================================'
+
+        mkdir -p /app/output/checkpoints /app/output/results /app/output/logs
+
+        echo '[1/3] Training...'
+        python train.py \
+          --train_dataset $${TRAIN_DATASET} \
+          --epochs $${EPOCHS} \
+          --batch_size $${BATCH_SIZE} \
+          --learning_rate $${LEARNING_RATE} \
+          --checkpoint_dir /app/output/checkpoints \
+          2>&1 | tee /app/output/logs/train.log
+
+        echo '[2/3] Testing...'
+        python test.py \
+          --checkpoint /app/output/checkpoints/best.pt \
+          --output_dir /app/output/results \
+          2>&1 | tee /app/output/logs/test.log
+
+        echo '[3/3] Evaluating...'
+        python evaluate.py \
+          --checkpoint /app/output/checkpoints/best.pt \
+          --output_dir /app/output/results \
+          --full_analysis \
+          2>&1 | tee /app/output/logs/evaluate.log
+
+        echo ''
+        echo '============================================'
+        echo 'Model 01 completed!'
+        echo 'Results saved to ./output/'
+        echo '============================================'
+      "
+    stdin_open: true
+    tty: true
+
+  shell:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.amd
+    image: kinship-amd:latest
+    container_name: model01-amd-shell
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+    volumes:
+      - ../../data/FIW:/app/data/FIW
+      - ../../data/KinFaceW-I:/app/data/KinFaceW-I
+      - ../../data/KinFaceW-II:/app/data/KinFaceW-II
+      - ./AMD:/app/models/01_age_synthesis_comparison/AMD
+      - ../shared:/app/models/shared
+      - ./output:/app/output
+    working_dir: /app/models/01_age_synthesis_comparison/AMD
+    command: bash
+    stdin_open: true
+    tty: true
+    profiles: ["shell"]

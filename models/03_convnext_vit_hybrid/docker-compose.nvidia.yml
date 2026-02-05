@@ -1,0 +1,121 @@
+# =============================================================================
+# Model 03: ConvNeXt-ViT Hybrid - NVIDIA Docker Compose
+# =============================================================================
+# Standalone docker-compose for running the ConvNeXt-ViT Hybrid model on NVIDIA GPUs.
+#
+# Usage:
+#   docker-compose -f docker-compose.nvidia.yml up
+#
+# With custom parameters:
+#   EPOCHS=100 BATCH_SIZE=32 docker-compose -f docker-compose.nvidia.yml up
+#
+# Interactive shell:
+#   docker-compose -f docker-compose.nvidia.yml run shell
+# =============================================================================
+
+services:
+  pipeline:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.nvidia
+    image: kinship-nvidia:latest
+    container_name: model03-nvidia-pipeline
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ../../data/FIW:/app/data/FIW:ro
+      - ../../data/KinFaceW-I:/app/data/KinFaceW-I:ro
+      - ../../data/KinFaceW-II:/app/data/KinFaceW-II:ro
+      - ./Nvidia:/app/models/03_convnext_vit_hybrid/Nvidia:ro
+      - ../shared:/app/models/shared:ro
+      - ./output:/app/output
+    environment:
+      EPOCHS: ${EPOCHS:-50}
+      BATCH_SIZE: ${BATCH_SIZE:-16}
+      GPU_ID: ${GPU_ID:-0}
+      LEARNING_RATE: ${LEARNING_RATE:-1e-4}
+      TRAIN_DATASET: ${TRAIN_DATASET:-fiw}
+      NVIDIA_VISIBLE_DEVICES: all
+      CUDA_VISIBLE_DEVICES: ${GPU_ID:-0}
+    working_dir: /app/models/03_convnext_vit_hybrid/Nvidia
+    command: >
+      bash -c "
+        set -e
+        echo '============================================'
+        echo 'Model 03: ConvNeXt-ViT Hybrid'
+        echo 'Platform: NVIDIA CUDA'
+        echo '============================================'
+        echo 'Epochs: $${EPOCHS}'
+        echo 'Batch Size: $${BATCH_SIZE}'
+        echo 'GPU ID: $${GPU_ID}'
+        echo 'Learning Rate: $${LEARNING_RATE}'
+        echo 'Dataset: $${TRAIN_DATASET}'
+        echo '============================================'
+
+        mkdir -p /app/output/checkpoints /app/output/results /app/output/logs
+
+        echo '[1/3] Training...'
+        python train.py \
+          --train_dataset $${TRAIN_DATASET} \
+          --epochs $${EPOCHS} \
+          --batch_size $${BATCH_SIZE} \
+          --learning_rate $${LEARNING_RATE} \
+          --checkpoint_dir /app/output/checkpoints \
+          2>&1 | tee /app/output/logs/train.log
+
+        echo '[2/3] Testing...'
+        python test.py \
+          --checkpoint /app/output/checkpoints/best.pt \
+          --output_dir /app/output/results \
+          2>&1 | tee /app/output/logs/test.log
+
+        echo '[3/3] Evaluating...'
+        python evaluate.py \
+          --checkpoint /app/output/checkpoints/best.pt \
+          --output_dir /app/output/results \
+          --full_analysis \
+          2>&1 | tee /app/output/logs/evaluate.log
+
+        echo ''
+        echo '============================================'
+        echo 'Model 03 completed!'
+        echo 'Results saved to ./output/'
+        echo '============================================'
+      "
+    stdin_open: true
+    tty: true
+
+  shell:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.nvidia
+    image: kinship-nvidia:latest
+    container_name: model03-nvidia-shell
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ../../data/FIW:/app/data/FIW
+      - ../../data/KinFaceW-I:/app/data/KinFaceW-I
+      - ../../data/KinFaceW-II:/app/data/KinFaceW-II
+      - ./Nvidia:/app/models/03_convnext_vit_hybrid/Nvidia
+      - ../shared:/app/models/shared
+      - ./output:/app/output
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+    working_dir: /app/models/03_convnext_vit_hybrid/Nvidia
+    command: bash
+    stdin_open: true
+    tty: true
+    profiles: ["shell"]
