@@ -150,23 +150,8 @@ docker-compose --profile amd up amd-eval
 
 ## Directory Structure
 
-Before running, create the following directory structure:
-
 ```
 project/
-├── data/
-│   ├── FIW/                  # FIW dataset
-│   │   ├── FIW_PIDs_v2.csv
-│   │   └── FIDs/
-│   ├── KinFaceW-I/           # KinFaceW-I dataset
-│   │   └── images/
-│   │       ├── father-dau/
-│   │       ├── father-son/
-│   │       ├── mother-dau/
-│   │       └── mother-son/
-│   └── KinFaceW-II/          # KinFaceW-II dataset (optional)
-├── checkpoints/              # Model checkpoints (created automatically)
-├── results/                  # Evaluation results (created automatically)
 ├── models/                   # Model code
 ├── Dockerfile.nvidia
 ├── Dockerfile.amd
@@ -175,23 +160,131 @@ project/
 └── docker-run.ps1
 ```
 
-## Dataset Configuration
+Datasets, checkpoints, and results are stored in Docker named volumes for better management.
 
-The container uses the following default paths:
+## Dataset Setup with Named Volumes
 
-| Dataset | Container Path |
-|---------|----------------|
-| FIW | `/app/data/FIW` |
-| KinFaceW-I | `/app/data/KinFaceW-I` |
-| KinFaceW-II | `/app/data/KinFaceW-II` |
+The project uses Docker named volumes for datasets, which provides:
+- **Persistence**: Data survives container restarts
+- **Performance**: Better I/O performance than bind mounts on Windows
+- **Portability**: Easy to backup and restore
 
-Mount your dataset directories accordingly:
+### Volume Names
+
+| Volume | Container Path | Description |
+|--------|----------------|-------------|
+| `kinship_fiw` | `/app/data/FIW` | FIW dataset |
+| `kinship_kinface1` | `/app/data/KinFaceW-I` | KinFaceW-I dataset |
+| `kinship_kinface2` | `/app/data/KinFaceW-II` | KinFaceW-II dataset |
+| `kinship_checkpoints` | `/app/checkpoints` | Model checkpoints |
+| `kinship_results` | `/app/results` | Evaluation results |
+
+### First-Time Setup: Copy Datasets to Volumes
+
+#### Option 1: Using docker-compose helper services
 
 ```bash
-docker run --gpus all -it --rm \
-    -v /path/to/your/FIW:/app/data/FIW:ro \
-    -v /path/to/your/KinFaceW-I:/app/data/KinFaceW-I:ro \
-    kinship-nvidia bash
+# Copy FIW dataset
+FIW_SOURCE_PATH=/path/to/your/FIW docker-compose --profile setup run copy-fiw
+
+# Copy KinFaceW-I dataset
+KINFACE1_SOURCE_PATH=/path/to/your/KinFaceW-I docker-compose --profile setup run copy-kinface1
+
+# Copy KinFaceW-II dataset (optional)
+KINFACE2_SOURCE_PATH=/path/to/your/KinFaceW-II docker-compose --profile setup run copy-kinface2
+
+# Verify data was copied
+docker-compose --profile setup run list-data
+```
+
+#### Option 2: Using docker run directly
+
+```bash
+# Copy FIW dataset to volume
+docker run --rm \
+    -v kinship_fiw:/dest \
+    -v /path/to/your/FIW:/src:ro \
+    alpine cp -rv /src/. /dest/
+
+# Copy KinFaceW-I dataset to volume
+docker run --rm \
+    -v kinship_kinface1:/dest \
+    -v /path/to/your/KinFaceW-I:/src:ro \
+    alpine cp -rv /src/. /dest/
+
+# Copy KinFaceW-II dataset to volume (optional)
+docker run --rm \
+    -v kinship_kinface2:/dest \
+    -v /path/to/your/KinFaceW-II:/src:ro \
+    alpine cp -rv /src/. /dest/
+```
+
+#### Windows PowerShell
+
+```powershell
+# Copy FIW dataset
+docker run --rm `
+    -v kinship_fiw:/dest `
+    -v "C:\path\to\FIW:/src:ro" `
+    alpine cp -rv /src/. /dest/
+
+# Copy KinFaceW-I dataset
+docker run --rm `
+    -v kinship_kinface1:/dest `
+    -v "C:\path\to\KinFaceW-I:/src:ro" `
+    alpine cp -rv /src/. /dest/
+```
+
+### Managing Volumes
+
+```bash
+# List all kinship volumes
+docker volume ls | grep kinship
+
+# Inspect a volume (shows mount point)
+docker volume inspect kinship_fiw
+
+# Remove a volume (WARNING: deletes data!)
+docker volume rm kinship_fiw
+
+# Remove all kinship volumes
+docker volume rm kinship_fiw kinship_kinface1 kinship_kinface2 kinship_checkpoints kinship_results
+
+# Backup a volume to tar file
+docker run --rm -v kinship_checkpoints:/data -v $(pwd):/backup alpine tar cvf /backup/checkpoints_backup.tar /data
+
+# Restore a volume from tar file
+docker run --rm -v kinship_checkpoints:/data -v $(pwd):/backup alpine tar xvf /backup/checkpoints_backup.tar -C /
+```
+
+### Dataset Structure
+
+Your source datasets should have this structure:
+
+**FIW Dataset:**
+```
+FIW/
+├── FIW_PIDs_v2.csv
+└── FIDs/
+    ├── F0001/
+    │   ├── MID1/
+    │   │   └── *.jpg
+    │   └── MID2/
+    │       └── *.jpg
+    └── ...
+```
+
+**KinFaceW-I/II Dataset:**
+```
+KinFaceW-I/
+└── images/
+    ├── father-dau/
+    │   ├── fd_001_1.jpg
+    │   ├── fd_001_2.jpg
+    │   └── ...
+    ├── father-son/
+    ├── mother-dau/
+    └── mother-son/
 ```
 
 ## Training Individual Models
