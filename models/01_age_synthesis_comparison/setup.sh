@@ -45,11 +45,12 @@ GPU_ID="${GPU_ID:-0}"
 USE_AGE_SYNTH="${USE_AGE_SYNTH:-0}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
 
-# ---------- output directories ----------------------------------------------
+# ---------- output directories — wipe and recreate on every run -------------
 OUTPUT_DIR="${MODEL_DIR}/output"
 CHECKPOINT_DIR="${OUTPUT_DIR}/checkpoints"
 RESULTS_DIR="${OUTPUT_DIR}/results"
 LOG_DIR="${OUTPUT_DIR}/logs"
+rm -rf "${OUTPUT_DIR}"
 mkdir -p "${CHECKPOINT_DIR}" "${RESULTS_DIR}" "${LOG_DIR}"
 
 # ---------- detect GPU platform from hardware (before torch is installed) ---

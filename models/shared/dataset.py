@@ -263,9 +263,11 @@ def get_transforms(config: DataConfig, train: bool = True) -> T.Compose:
         return T.Compose([
             T.Resize((config.image_size, config.image_size)),
             T.RandomHorizontalFlip(p=0.5),
-            T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             T.RandomRotation(10),
             T.ToTensor(),
+            # ColorJitter must run on tensors (after ToTensor) to avoid the
+            # NumPy ≥2.0 OverflowError triggered by PIL-based adjust_hue.
+            T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             T.Normalize(mean=config.normalize_mean, std=config.normalize_std),
         ])
     else:
