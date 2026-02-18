@@ -22,7 +22,7 @@ class KinshipPairDataset(Dataset):
     Dataset for kinship verification that returns pairs of images.
     Supports multiple dataset formats: FIW, KinFaceW-I, KinFaceW-II.
     """
-    
+
     def __init__(
         self,
         root_dir: str,
@@ -31,6 +31,7 @@ class KinshipPairDataset(Dataset):
         relation_types: Optional[List[str]] = None,
         transform: Optional[T.Compose] = None,
         negative_ratio: float = 1.0,
+        split_seed: int = 42,
     ):
         """
         Args:
@@ -40,21 +41,23 @@ class KinshipPairDataset(Dataset):
             relation_types: List of relation types to include
             transform: Image transforms
             negative_ratio: Ratio of negative to positive pairs
+            split_seed: Seed for reproducible train/val/test splitting
         """
         self.root_dir = Path(root_dir)
         self.dataset_type = dataset_type
         self.split = split
         self.transform = transform
         self.negative_ratio = negative_ratio
-        
+        self.split_seed = split_seed
+
         # Default relation types
         self.relation_types = relation_types or ["fd", "fs", "md", "ms"]
-        
+
         # Load pairs
         self.pairs = []
         self.labels = []
         self._load_pairs()
-    
+
     def _load_pairs(self):
         """Load image pairs based on dataset type."""
         if self.dataset_type == "kinface":
@@ -63,72 +66,108 @@ class KinshipPairDataset(Dataset):
             self._load_fiw_pairs()
         else:
             raise ValueError(f"Unknown dataset type: {self.dataset_type}")
-    
+
     def _load_kinface_pairs(self):
-        """Load KinFaceW format pairs."""
+        """
+        Load KinFaceW format pairs with proper 70/15/15 train/val/test split.
+
+        The split is performed on pair IDs (per relation) so that no pair
+        appears in more than one split, eliminating data leakage.
+        """
         relation_map = {
             "fd": "father-dau",
             "fs": "father-son",
             "md": "mother-dau",
             "ms": "mother-son",
         }
-        
+
         positive_pairs = []
-        all_images = []
-        
+        all_images_by_pair: Dict[str, List[str]] = {}
+
         for rel in self.relation_types:
             if rel not in relation_map:
                 continue
-                
+
             rel_folder = relation_map[rel]
             images_dir = self.root_dir / "images" / rel_folder
-            
+
             if not images_dir.exists():
                 continue
-            
+
             # Get all image pairs (format: XX_NNN_1.jpg, XX_NNN_2.jpg)
             images = sorted([f for f in images_dir.glob("*.jpg") if not f.name.startswith("Thumb")])
-            
+
             # Group by pair ID
             pair_dict = {}
             for img_path in images:
                 # Parse filename: fs_001_1.jpg -> pair_id=001, person=1
                 parts = img_path.stem.split("_")
                 if len(parts) >= 3:
-                    pair_id = parts[1]
+                    pair_id = f"{rel}_{parts[1]}"
                     person_id = parts[2]
                     if pair_id not in pair_dict:
                         pair_dict[pair_id] = {}
                     pair_dict[pair_id][person_id] = str(img_path)
-                    all_images.append(str(img_path))
-            
+                    all_images_by_pair.setdefault(pair_id, []).append(str(img_path))
+
             # Create positive pairs
             for pair_id, persons in pair_dict.items():
                 if "1" in persons and "2" in persons:
-                    positive_pairs.append((persons["1"], persons["2"], rel))
-        
+                    positive_pairs.append((persons["1"], persons["2"], rel, pair_id))
+
+        # --- deterministic 70/15/15 split on pair IDs -----------------------
+        unique_pair_ids = sorted(set(p[3] for p in positive_pairs))
+        rng = random.Random(self.split_seed)
+        rng.shuffle(unique_pair_ids)
+
+        n = len(unique_pair_ids)
+        n_train = int(n * 0.70)
+        n_val = int(n * 0.15)
+
+        train_ids = set(unique_pair_ids[:n_train])
+        val_ids = set(unique_pair_ids[n_train:n_train + n_val])
+        test_ids = set(unique_pair_ids[n_train + n_val:])
+
+        split_ids = {"train": train_ids, "val": val_ids, "test": test_ids}
+        active_ids = split_ids.get(self.split, train_ids)
+
+        # Filter positive pairs for this split
+        split_positive = [(p[0], p[1], p[2]) for p in positive_pairs if p[3] in active_ids]
+
+        # Collect images belonging to this split for negative sampling
+        split_images = []
+        for pid in active_ids:
+            split_images.extend(all_images_by_pair.get(pid, []))
+
         # Create negative pairs (random pairing from different pairs)
         negative_pairs = []
-        num_negatives = int(len(positive_pairs) * self.negative_ratio)
-        
-        for _ in range(num_negatives):
-            img1, img2 = random.sample(all_images, 2)
-            # Ensure they're not from the same pair
-            if img1.split("_")[1] != img2.split("_")[1]:
+        num_negatives = int(len(split_positive) * self.negative_ratio)
+        neg_rng = random.Random(self.split_seed + hash(self.split))
+
+        attempts = 0
+        while len(negative_pairs) < num_negatives and attempts < num_negatives * 5:
+            attempts += 1
+            if len(split_images) < 2:
+                break
+            img1, img2 = neg_rng.sample(split_images, 2)
+            # Ensure they're not from the same pair (compare pair-id portion)
+            id1 = "_".join(Path(img1).stem.split("_")[:2])
+            id2 = "_".join(Path(img2).stem.split("_")[:2])
+            if id1 != id2:
                 negative_pairs.append((img1, img2, "negative"))
-        
+
         # Combine and create labels
-        for img1, img2, rel in positive_pairs:
+        for img1, img2, rel in split_positive:
             self.pairs.append((img1, img2, rel))
             self.labels.append(1)
-        
+
         for img1, img2, rel in negative_pairs:
             self.pairs.append((img1, img2, rel))
             self.labels.append(0)
-        
-        # Shuffle
+
+        # Shuffle (deterministic per split)
         combined = list(zip(self.pairs, self.labels))
-        random.shuffle(combined)
+        random.Random(self.split_seed + len(self.split)).shuffle(combined)
         self.pairs, self.labels = zip(*combined) if combined else ([], [])
         self.pairs = list(self.pairs)
         self.labels = list(self.labels)

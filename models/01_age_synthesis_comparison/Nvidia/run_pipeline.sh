@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
-# Model 01: Age Synthesis Comparison — AMD ROCm pipeline runner
-# Called by docker-compose.amd.yml to avoid YAML shell escaping issues.
+# Model 01: Age Synthesis Comparison — NVIDIA CUDA pipeline runner
+# Called by docker-compose.nvidia.yml to avoid YAML shell escaping issues.
 # Environment variables (EPOCHS, BATCH_SIZE, etc.) are set by docker-compose.
 # =============================================================================
 set -e
@@ -9,12 +9,12 @@ set -e
 EPOCHS="${EPOCHS:-100}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
 LEARNING_RATE="${LEARNING_RATE:-1e-4}"
-TRAIN_DATASET="${TRAIN_DATASET:-kinface}"
+TRAIN_DATASET="${TRAIN_DATASET:-fiw}"
 USE_AGE_SYNTHESIS="${USE_AGE_SYNTHESIS:-1}"
 
 echo '============================================'
 echo 'Model 01: Age Synthesis Comparison'
-echo 'Platform: AMD ROCm'
+echo 'Platform: NVIDIA CUDA'
 echo '============================================'
 echo "Epochs:        ${EPOCHS}"
 echo "Batch Size:    ${BATCH_SIZE}"

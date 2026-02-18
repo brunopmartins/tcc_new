@@ -148,41 +148,69 @@ def plot_comparison_matrix_analysis(model, dataloader, device, output_path):
     comparisons = np.vstack(all_comparison_matrices)
     labels = np.array(all_labels)
 
+    num_comparisons = comparisons.shape[1]
+    grid_size = int(np.sqrt(num_comparisons))
+
+    # Guard: only plot 2-D heatmap when the matrix is a perfect square (e.g. 3x3=9)
+    if grid_size * grid_size != num_comparisons:
+        print(f"Skipping comparison matrix plot: got {num_comparisons} comparisons "
+              f"(not a perfect square). Enable age synthesis for full 3x3 grid.")
+        # Save a simple bar chart instead
+        pos_mask = labels == 1
+        neg_mask = labels == 0
+        pos_mean = comparisons[pos_mask].mean(axis=0) if pos_mask.sum() > 0 else comparisons.mean(axis=0)
+        neg_mean = comparisons[neg_mask].mean(axis=0) if neg_mask.sum() > 0 else comparisons.mean(axis=0)
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        x = np.arange(num_comparisons)
+        ax.bar(x - 0.15, pos_mean, 0.3, label='Kin', color='forestgreen', alpha=0.8)
+        ax.bar(x + 0.15, neg_mean, 0.3, label='Non-Kin', color='coral', alpha=0.8)
+        ax.set_xlabel('Comparison Index')
+        ax.set_ylabel('Mean Score')
+        ax.set_title('Comparison Scores (AMD ROCm) — Age Synthesis Disabled')
+        ax.legend()
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+        return
+
+    age_labels = ['Young', 'Mid', 'Old'][:grid_size]
+
     pos_mask = labels == 1
     neg_mask = labels == 0
 
-    pos_mean = comparisons[pos_mask].mean(axis=0) if pos_mask.sum() > 0 else np.zeros(9)
-    neg_mean = comparisons[neg_mask].mean(axis=0) if neg_mask.sum() > 0 else np.zeros(9)
+    pos_mean = comparisons[pos_mask].mean(axis=0) if pos_mask.sum() > 0 else np.zeros(num_comparisons)
+    neg_mean = comparisons[neg_mask].mean(axis=0) if neg_mask.sum() > 0 else np.zeros(num_comparisons)
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-    im1 = axes[0].imshow(pos_mean.reshape(3, 3), cmap='RdYlGn', vmin=-2, vmax=2)
+    im1 = axes[0].imshow(pos_mean.reshape(grid_size, grid_size), cmap='RdYlGn', vmin=-2, vmax=2)
     axes[0].set_title('Positive Pairs (Kin)')
     axes[0].set_xlabel('Person 2 Age')
     axes[0].set_ylabel('Person 1 Age')
-    axes[0].set_xticks([0, 1, 2])
-    axes[0].set_yticks([0, 1, 2])
-    axes[0].set_xticklabels(['Young', 'Mid', 'Old'])
-    axes[0].set_yticklabels(['Young', 'Mid', 'Old'])
+    axes[0].set_xticks(range(grid_size))
+    axes[0].set_yticks(range(grid_size))
+    axes[0].set_xticklabels(age_labels)
+    axes[0].set_yticklabels(age_labels)
     plt.colorbar(im1, ax=axes[0])
 
-    im2 = axes[1].imshow(neg_mean.reshape(3, 3), cmap='RdYlGn', vmin=-2, vmax=2)
+    im2 = axes[1].imshow(neg_mean.reshape(grid_size, grid_size), cmap='RdYlGn', vmin=-2, vmax=2)
     axes[1].set_title('Negative Pairs (Non-Kin)')
     axes[1].set_xlabel('Person 2 Age')
-    axes[1].set_xticks([0, 1, 2])
-    axes[1].set_yticks([0, 1, 2])
-    axes[1].set_xticklabels(['Young', 'Mid', 'Old'])
-    axes[1].set_yticklabels(['Young', 'Mid', 'Old'])
+    axes[1].set_xticks(range(grid_size))
+    axes[1].set_yticks(range(grid_size))
+    axes[1].set_xticklabels(age_labels)
+    axes[1].set_yticklabels(age_labels)
     plt.colorbar(im2, ax=axes[1])
 
     diff = pos_mean - neg_mean
-    im3 = axes[2].imshow(diff.reshape(3, 3), cmap='coolwarm', vmin=-1, vmax=1)
+    im3 = axes[2].imshow(diff.reshape(grid_size, grid_size), cmap='coolwarm', vmin=-1, vmax=1)
     axes[2].set_title('Difference (Kin - Non-Kin)')
     axes[2].set_xlabel('Person 2 Age')
-    axes[2].set_xticks([0, 1, 2])
-    axes[2].set_yticks([0, 1, 2])
-    axes[2].set_xticklabels(['Young', 'Mid', 'Old'])
-    axes[2].set_yticklabels(['Young', 'Mid', 'Old'])
+    axes[2].set_xticks(range(grid_size))
+    axes[2].set_yticks(range(grid_size))
+    axes[2].set_xticklabels(age_labels)
+    axes[2].set_yticklabels(age_labels)
     plt.colorbar(im3, ax=axes[2])
 
     plt.suptitle('Age Comparison Matrix Analysis (AMD ROCm)')
@@ -193,6 +221,10 @@ def plot_comparison_matrix_analysis(model, dataloader, device, output_path):
 
 def run_ablation_study(model, dataloader, device, output_dir):
     """Run ablation study on different aggregation methods."""
+    if model.age_aggregator is None:
+        print("Skipping ablation study: age_aggregator is None (age synthesis disabled).")
+        return {}
+
     results = {}
     aggregation_methods = ["attention", "max", "mean"]
 
