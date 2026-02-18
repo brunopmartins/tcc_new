@@ -4,6 +4,7 @@
 # =============================================================================
 # Runs the full pipeline (train → test → evaluate) directly on the host
 # machine without Docker. Autodetects AMD ROCm or NVIDIA CUDA.
+# Creates an isolated virtualenv at .venv/ inside this directory.
 #
 # Usage:
 #   chmod +x setup.sh
@@ -12,6 +13,9 @@
 # With custom parameters:
 #   EPOCHS=50 BATCH_SIZE=16 ./setup.sh
 #
+# Skip the install step after the first run:
+#   SKIP_INSTALL=1 ./setup.sh
+#
 # Environment variables:
 #   EPOCHS          Number of training epochs       (default: 100)
 #   BATCH_SIZE      Training batch size              (default: 32)
@@ -19,7 +23,7 @@
 #   TRAIN_DATASET   Dataset to train on              (default: kinface)
 #   GPU_ID          GPU device index                 (default: 0)
 #   USE_AGE_SYNTH   Enable age synthesis (1/0)       (default: 0)
-#   SKIP_INSTALL    Skip pip install step (1/0)      (default: 0)
+#   SKIP_INSTALL    Skip venv creation/pip install   (default: 0)
 # =============================================================================
 set -e
 
@@ -28,6 +32,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 MODEL_DIR="${SCRIPT_DIR}"
 SHARED_DIR="${PROJECT_ROOT}/models/shared"
+VENV_DIR="${MODEL_DIR}/.venv"
+PYTHON="${VENV_DIR}/bin/python"
+PIP="${VENV_DIR}/bin/pip"
 
 # ---------- configurable parameters -----------------------------------------
 EPOCHS="${EPOCHS:-100}"
@@ -45,18 +52,19 @@ RESULTS_DIR="${OUTPUT_DIR}/results"
 LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${CHECKPOINT_DIR}" "${RESULTS_DIR}" "${LOG_DIR}"
 
-# ---------- detect GPU platform ---------------------------------------------
+# ---------- detect GPU platform from hardware (before torch is installed) ---
 detect_platform() {
-    if python3 -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
-        # Check whether this is ROCm (HIP) or CUDA
-        if python3 -c "import torch; print(torch.version.hip)" 2>/dev/null | grep -q "^[0-9]"; then
-            echo "rocm"
-        else
-            echo "cuda"
-        fi
-    else
-        echo "cpu"
+    # AMD ROCm: /dev/kfd is the compute device node
+    if [ -e /dev/kfd ] && ls /dev/dri/renderD* 2>/dev/null | head -1 >/dev/null; then
+        echo "rocm"
+        return
     fi
+    # NVIDIA: nvidia-smi present and returns a GPU
+    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -q "GPU"; then
+        echo "cuda"
+        return
+    fi
+    echo "cpu"
 }
 
 PLATFORM=$(detect_platform)
@@ -73,16 +81,46 @@ echo "  Dataset:        ${TRAIN_DATASET}"
 echo "  GPU ID:         ${GPU_ID}"
 echo "  Age Synthesis:  $([ "${USE_AGE_SYNTH}" = "1" ] && echo 'enabled' || echo 'disabled')"
 echo "  Project Root:   ${PROJECT_ROOT}"
+echo "  Virtualenv:     ${VENV_DIR}"
 echo '============================================================'
 echo ''
 
-# ---------- install dependencies (optional) ---------------------------------
+# ---------- create / update virtualenv and install dependencies -------------
 if [ "${SKIP_INSTALL}" != "1" ]; then
-    echo '[0/3] Installing Python dependencies...'
-    pip install --quiet --upgrade pip setuptools wheel
-    pip install --quiet \
-        torch torchvision torchaudio \
-        timm'>=0.9.0' \
+    echo '[0/3] Setting up Python virtualenv and installing dependencies...'
+
+    # Create venv if it doesn't exist
+    if [ ! -x "${PYTHON}" ]; then
+        echo "    Creating virtualenv at ${VENV_DIR} ..."
+        python3 -m venv "${VENV_DIR}"
+    fi
+
+    # Upgrade pip inside the venv (no system-package restrictions apply here)
+    "${PIP}" install --quiet --upgrade pip setuptools wheel
+
+    # Install PyTorch — platform-specific wheel index
+    case "${PLATFORM}" in
+        rocm)
+            echo "    Installing PyTorch with ROCm 5.7 support..."
+            "${PIP}" install --quiet \
+                torch torchvision torchaudio \
+                --index-url https://download.pytorch.org/whl/rocm5.7
+            ;;
+        cuda)
+            echo "    Installing PyTorch with CUDA 12.1 support..."
+            "${PIP}" install --quiet \
+                torch torchvision torchaudio \
+                --index-url https://download.pytorch.org/whl/cu121
+            ;;
+        *)
+            echo "    Installing PyTorch (CPU only)..."
+            "${PIP}" install --quiet torch torchvision torchaudio
+            ;;
+    esac
+
+    # Install remaining dependencies
+    "${PIP}" install --quiet \
+        'timm>=0.9.0' \
         'numpy>=1.24.0' \
         'pandas>=2.0.0' \
         'scikit-learn>=1.3.0' \
@@ -90,14 +128,21 @@ if [ "${SKIP_INSTALL}" != "1" ]; then
         'tqdm>=4.65.0' \
         'matplotlib>=3.7.0' \
         'seaborn>=0.12.0'
-    echo '    Dependencies installed.'
+
+    echo "    Done. Run with SKIP_INSTALL=1 to skip this step next time."
     echo ''
+fi
+
+# Verify the venv exists before proceeding
+if [ ! -x "${PYTHON}" ]; then
+    echo "ERROR: virtualenv not found at ${VENV_DIR}. Run without SKIP_INSTALL=1 first."
+    exit 1
 fi
 
 # ---------- set PYTHONPATH --------------------------------------------------
 export PYTHONPATH="${PROJECT_ROOT}/models:${SHARED_DIR}:${PYTHONPATH}"
 
-# ---------- platform-specific env vars --------------------------------------
+# ---------- platform-specific env vars and script directory -----------------
 if [ "${PLATFORM}" = "rocm" ]; then
     export MIOPEN_FIND_MODE=FAST
     export HSA_FORCE_FINE_GRAIN_PCIE=1
@@ -124,7 +169,7 @@ fi
 cd "${PLATFORM_DIR}"
 
 echo '[1/3] Training...'
-python train.py \
+"${PYTHON}" train.py \
     --train_dataset "${TRAIN_DATASET}" \
     --test_dataset kinface \
     --epochs "${EPOCHS}" \
@@ -137,7 +182,7 @@ python train.py \
 
 echo ''
 echo '[2/3] Testing...'
-python test.py \
+"${PYTHON}" test.py \
     --checkpoint "${CHECKPOINT_DIR}/best.pt" \
     --dataset kinface \
     --output_dir "${RESULTS_DIR}" \
@@ -147,7 +192,7 @@ python test.py \
 
 echo ''
 echo '[3/3] Evaluating...'
-python evaluate.py \
+"${PYTHON}" evaluate.py \
     --checkpoint "${CHECKPOINT_DIR}/best.pt" \
     --dataset kinface \
     --output_dir "${RESULTS_DIR}" \
