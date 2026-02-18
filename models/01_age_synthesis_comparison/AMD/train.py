@@ -183,9 +183,14 @@ def main():
     # Apply ROCm optimizations
     model = optimize_for_rocm(model)
 
-    # Loss function
+    # Loss function — use class weighting to combat recall bias (issue #7)
     if args.loss == "bce":
-        loss_fn = nn.BCEWithLogitsLoss()
+        train_labels = torch.tensor(train_loader.dataset.labels, dtype=torch.float32)
+        num_pos = train_labels.sum().item()
+        num_neg = len(train_labels) - num_pos
+        pos_weight = torch.tensor([num_neg / max(num_pos, 1.0)], device=device)
+        print(f"BCE pos_weight: {pos_weight.item():.3f}  (pos={int(num_pos)}, neg={int(num_neg)})")
+        loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     elif args.loss == "contrastive":
         loss_fn = ContrastiveLoss(margin=1.0)
     else:

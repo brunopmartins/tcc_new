@@ -39,11 +39,12 @@ services:
       # Output: logs, checkpoints, results written here on the host
       - ./output:/app/output
     environment:
-      EPOCHS: ${EPOCHS:-50}
-      BATCH_SIZE: ${BATCH_SIZE:-16}
+      EPOCHS: ${EPOCHS:-100}
+      BATCH_SIZE: ${BATCH_SIZE:-32}
       GPU_ID: ${GPU_ID:-0}
       LEARNING_RATE: ${LEARNING_RATE:-1e-4}
       TRAIN_DATASET: ${TRAIN_DATASET:-kinface}
+      USE_AGE_SYNTHESIS: ${USE_AGE_SYNTHESIS:-1}
       HIP_VISIBLE_DEVICES: ${GPU_ID:-0}
       ROCR_VISIBLE_DEVICES: ${GPU_ID:-0}
       # RX 6700 XT (gfx1031) compatibility — maps to gfx1030 for ROCm 5.7

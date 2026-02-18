@@ -36,58 +36,17 @@ services:
       - ../shared:/app/models/shared:ro
       - ./output:/app/output
     environment:
-      EPOCHS: ${EPOCHS:-50}
-      BATCH_SIZE: ${BATCH_SIZE:-16}
+      EPOCHS: ${EPOCHS:-100}
+      BATCH_SIZE: ${BATCH_SIZE:-32}
       GPU_ID: ${GPU_ID:-0}
       LEARNING_RATE: ${LEARNING_RATE:-1e-4}
       TRAIN_DATASET: ${TRAIN_DATASET:-fiw}
+      USE_AGE_SYNTHESIS: ${USE_AGE_SYNTHESIS:-1}
       NVIDIA_VISIBLE_DEVICES: all
       CUDA_VISIBLE_DEVICES: ${GPU_ID:-0}
+    shm_size: '2gb'
     working_dir: /app/models/01_age_synthesis_comparison/Nvidia
-    command: >
-      bash -c "
-        set -e
-        echo '============================================'
-        echo 'Model 01: Age Synthesis Comparison'
-        echo 'Platform: NVIDIA CUDA'
-        echo '============================================'
-        echo 'Epochs: $${EPOCHS}'
-        echo 'Batch Size: $${BATCH_SIZE}'
-        echo 'GPU ID: $${GPU_ID}'
-        echo 'Learning Rate: $${LEARNING_RATE}'
-        echo 'Dataset: $${TRAIN_DATASET}'
-        echo '============================================'
-
-        mkdir -p /app/output/checkpoints /app/output/results /app/output/logs
-
-        echo '[1/3] Training...'
-        python train.py \
-          --train_dataset $${TRAIN_DATASET} \
-          --epochs $${EPOCHS} \
-          --batch_size $${BATCH_SIZE} \
-          --learning_rate $${LEARNING_RATE} \
-          --checkpoint_dir /app/output/checkpoints \
-          2>&1 | tee /app/output/logs/train.log
-
-        echo '[2/3] Testing...'
-        python test.py \
-          --checkpoint /app/output/checkpoints/best.pt \
-          --output_dir /app/output/results \
-          2>&1 | tee /app/output/logs/test.log
-
-        echo '[3/3] Evaluating...'
-        python evaluate.py \
-          --checkpoint /app/output/checkpoints/best.pt \
-          --output_dir /app/output/results \
-          --full_analysis \
-          2>&1 | tee /app/output/logs/evaluate.log
-
-        echo ''
-        echo '============================================'
-        echo 'Model 01 completed!'
-        echo 'Results saved to ./output/'
-        echo '============================================'
-      "
+    command: bash run_pipeline.sh
     stdin_open: true
     tty: true
 
