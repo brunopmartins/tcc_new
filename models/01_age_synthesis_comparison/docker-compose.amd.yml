@@ -4,15 +4,15 @@
 # Standalone docker-compose for running the Age Synthesis model on AMD GPUs.
 #
 # Usage:
-#   docker-compose -f docker-compose.amd.yml up
+#   sudo docker compose -f docker-compose.amd.yml up
 #
 # With custom parameters:
-#   EPOCHS=100 BATCH_SIZE=32 docker-compose -f docker-compose.amd.yml up
+#   EPOCHS=100 BATCH_SIZE=32 sudo docker compose -f docker-compose.amd.yml up
 #
 # Interactive shell:
-#   docker-compose -f docker-compose.amd.yml run shell
+#   sudo docker compose -f docker-compose.amd.yml run shell
 #
-# Note: Requires Linux host with ROCm drivers installed.
+# Note: Requires Linux host with amdgpu kernel driver loaded.
 # =============================================================================
 
 services:
@@ -27,66 +27,30 @@ services:
       - /dev/dri:/dev/dri
     group_add:
       - video
+      - "992"   # render group GID — required for /dev/kfd and /dev/dri/renderD128
     volumes:
-      - ../../data/FIW:/app/data/FIW:ro
-      - ../../data/KinFaceW-I:/app/data/KinFaceW-I:ro
-      - ../../data/KinFaceW-II:/app/data/KinFaceW-II:ro
+      # Mount datasets at exactly the paths config.py expects
+      - ../../datasets/FIW:/home/bruno/Desktop/tcc_new/datasets/FIW:ro
+      - ../../datasets/KinFaceW-I:/home/bruno/Desktop/tcc_new/datasets/KinFaceW-I:ro
+      - ../../datasets/KinFaceW-II:/home/bruno/Desktop/tcc_new/datasets/KinFaceW-II:ro
+      # Live-mount scripts so changes reflect without rebuild
       - ./AMD:/app/models/01_age_synthesis_comparison/AMD:ro
       - ../shared:/app/models/shared:ro
+      # Output: logs, checkpoints, results written here on the host
       - ./output:/app/output
     environment:
       EPOCHS: ${EPOCHS:-50}
       BATCH_SIZE: ${BATCH_SIZE:-16}
       GPU_ID: ${GPU_ID:-0}
       LEARNING_RATE: ${LEARNING_RATE:-1e-4}
-      TRAIN_DATASET: ${TRAIN_DATASET:-fiw}
+      TRAIN_DATASET: ${TRAIN_DATASET:-kinface}
       HIP_VISIBLE_DEVICES: ${GPU_ID:-0}
       ROCR_VISIBLE_DEVICES: ${GPU_ID:-0}
+      # RX 6700 XT (gfx1031) compatibility — maps to gfx1030 for ROCm 5.7
+      HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+    shm_size: '2gb'   # PyTorch DataLoader workers use /dev/shm; default 64 MB is too small
     working_dir: /app/models/01_age_synthesis_comparison/AMD
-    command: >
-      bash -c "
-        set -e
-        echo '============================================'
-        echo 'Model 01: Age Synthesis Comparison'
-        echo 'Platform: AMD ROCm'
-        echo '============================================'
-        echo 'Epochs: $${EPOCHS}'
-        echo 'Batch Size: $${BATCH_SIZE}'
-        echo 'GPU ID: $${GPU_ID}'
-        echo 'Learning Rate: $${LEARNING_RATE}'
-        echo 'Dataset: $${TRAIN_DATASET}'
-        echo '============================================'
-
-        mkdir -p /app/output/checkpoints /app/output/results /app/output/logs
-
-        echo '[1/3] Training...'
-        python train.py \
-          --train_dataset $${TRAIN_DATASET} \
-          --epochs $${EPOCHS} \
-          --batch_size $${BATCH_SIZE} \
-          --learning_rate $${LEARNING_RATE} \
-          --checkpoint_dir /app/output/checkpoints \
-          2>&1 | tee /app/output/logs/train.log
-
-        echo '[2/3] Testing...'
-        python test.py \
-          --checkpoint /app/output/checkpoints/best.pt \
-          --output_dir /app/output/results \
-          2>&1 | tee /app/output/logs/test.log
-
-        echo '[3/3] Evaluating...'
-        python evaluate.py \
-          --checkpoint /app/output/checkpoints/best.pt \
-          --output_dir /app/output/results \
-          --full_analysis \
-          2>&1 | tee /app/output/logs/evaluate.log
-
-        echo ''
-        echo '============================================'
-        echo 'Model 01 completed!'
-        echo 'Results saved to ./output/'
-        echo '============================================'
-      "
+    command: bash run_pipeline.sh
     stdin_open: true
     tty: true
 
@@ -101,13 +65,16 @@ services:
       - /dev/dri:/dev/dri
     group_add:
       - video
+      - "992"   # render group GID
     volumes:
-      - ../../data/FIW:/app/data/FIW
-      - ../../data/KinFaceW-I:/app/data/KinFaceW-I
-      - ../../data/KinFaceW-II:/app/data/KinFaceW-II
+      - ../../datasets/FIW:/home/bruno/Desktop/tcc_new/datasets/FIW
+      - ../../datasets/KinFaceW-I:/home/bruno/Desktop/tcc_new/datasets/KinFaceW-I
+      - ../../datasets/KinFaceW-II:/home/bruno/Desktop/tcc_new/datasets/KinFaceW-II
       - ./AMD:/app/models/01_age_synthesis_comparison/AMD
       - ../shared:/app/models/shared
       - ./output:/app/output
+    environment:
+      HSA_OVERRIDE_GFX_VERSION: "10.3.0"
     working_dir: /app/models/01_age_synthesis_comparison/AMD
     command: bash
     stdin_open: true

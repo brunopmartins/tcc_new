@@ -10,10 +10,10 @@ from pathlib import Path
 class DataConfig:
     """Dataset configuration."""
     # Dataset paths (absolute paths)
-    fiw_root: str = "/media/bruno/data/M2M/tcc/paper/datasets/FIW"
-    kinface_i_root: str = "/media/bruno/data/M2M/tcc/paper/datasets/KinFaceW-I"
-    kinface_ii_root: str = "/media/bruno/data/M2M/tcc/paper/datasets/KinFaceW-II"
-    fids_root: str = "/media/bruno/data/M2M/tcc/paper/datasets/FIDs"
+    fiw_root: str = "/home/bruno/Desktop/tcc_new/datasets/FIW"
+    kinface_i_root: str = "/home/bruno/Desktop/tcc_new/datasets/KinFaceW-I"
+    kinface_ii_root: str = "/home/bruno/Desktop/tcc_new/datasets/KinFaceW-II"
+    fids_root: str = "/home/bruno/Desktop/tcc_new/datasets/FIW/FIDs"
     
     # Image settings
     image_size: int = 224

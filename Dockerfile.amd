@@ -57,6 +57,8 @@ RUN mkdir -p /app/data/FIW /app/data/KinFaceW-I /app/data/KinFaceW-II /app/check
 # Set ROCm environment variables for optimal performance
 ENV MIOPEN_FIND_MODE=FAST
 ENV HSA_FORCE_FINE_GRAIN_PCIE=1
+# RX 6700 XT (gfx1031) compatibility — treat as gfx1030 for ROCm 5.7
+ENV HSA_OVERRIDE_GFX_VERSION=10.3.0
 ENV MIOPEN_DEBUG_CONV_IMPLICIT_GEMM=0
 ENV PYTORCH_HIP_ALLOC_CONF=max_split_size_mb:512
 
