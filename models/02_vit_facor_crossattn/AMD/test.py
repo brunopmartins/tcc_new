@@ -14,12 +14,12 @@ import sys
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 # Setup ROCm environment
+os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "10.3.0")  # RX 6700/6750 XT (gfx1031)
 os.environ["MIOPEN_FIND_MODE"] = "FAST"
 
 # Add shared utilities to path
@@ -33,12 +33,13 @@ from rocm_utils import (
 )
 from config import DataConfig
 from dataset import KinshipPairDataset, get_transforms
-from evaluation import KinshipMetrics, print_metrics, find_optimal_threshold
+from evaluation import KinshipMetrics, print_metrics
+from protocol import apply_data_root_override, get_checkpoint_threshold, resolve_dataset_root
 from torch.utils.data import DataLoader
 
 # Add parent directory for model
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from model import ViTFaCoRModel
+from model import build_vit_facor_model, parse_model_outputs
 
 
 def parse_args():
@@ -137,22 +138,33 @@ def main():
     print(f"Loading model from {args.checkpoint}")
     checkpoint = torch.load(args.checkpoint, map_location=device)
 
-    model = ViTFaCoRModel()
+    model_config = checkpoint.get("model_config", checkpoint.get("protocol", {}).get("model_config", {}))
+    model = build_vit_facor_model(
+        vit_model=model_config.get("vit_model", "vit_base_patch16_224"),
+        pretrained=True,
+        embedding_dim=model_config.get("embedding_dim", 512),
+        num_cross_attn_layers=model_config.get("cross_attn_layers", 2),
+        cross_attn_heads=model_config.get("cross_attn_heads", 8),
+        dropout=model_config.get("dropout", 0.1),
+        freeze_vit=model_config.get("freeze_vit", False),
+        use_classifier_head=model_config.get("use_classifier_head", False),
+    )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
 
     # Dataset
     data_config = DataConfig()
-    root_dir = data_config.kinface_i_root if args.dataset == "kinface" else data_config.fiw_root
-    if args.data_root:
-        root_dir = args.data_root
+    apply_data_root_override(data_config, args.dataset, args.data_root)
+    root_dir = resolve_dataset_root(data_config, args.dataset)
 
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
         dataset_type=args.dataset,
         split="test",
         transform=get_transforms(data_config, train=False),
+        split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
+        negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
     )
 
     test_loader = DataLoader(
@@ -177,9 +189,9 @@ def main():
             labels = batch["label"]
             relations = batch.get("relation", ["unknown"] * len(labels))
 
-            emb1, emb2, attn_map = model(img1, img2)
-            similarities = F.cosine_similarity(emb1, emb2, dim=1)
-            predictions = (similarities + 1) / 2
+            parsed = parse_model_outputs(model(img1, img2))
+            predictions = parsed["scores"]
+            attn_map = parsed["attn_map"]
 
             all_preds.extend(predictions.cpu().numpy())
             all_labels.extend(labels.numpy())
@@ -190,7 +202,7 @@ def main():
                     attention_samples.append({
                         "img1": img1[i],
                         "img2": img2[i],
-                        "attn": attn_map[i],
+                        "attn": attn_map[i] if attn_map is not None else torch.zeros(1, 1, 1, device=device),
                         "label": labels[i].item(),
                         "pred": predictions[i].item(),
                     })
@@ -198,10 +210,9 @@ def main():
     predictions = np.array(all_preds)
     labels = np.array(all_labels)
 
-    # Find optimal threshold
     if args.threshold is None:
-        threshold, best_f1 = find_optimal_threshold(predictions, labels, "f1")
-        print(f"Optimal threshold: {threshold:.3f} (F1: {best_f1:.4f})")
+        threshold = get_checkpoint_threshold(checkpoint, default=0.5)
+        print(f"Using stored validation threshold: {threshold:.3f}")
     else:
         threshold = args.threshold
 

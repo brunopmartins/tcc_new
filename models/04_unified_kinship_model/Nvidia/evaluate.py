@@ -37,7 +37,8 @@ from cuda_utils import (
 )
 from config import DataConfig
 from dataset import KinshipPairDataset, get_transforms
-from evaluation import KinshipMetrics, print_metrics, find_optimal_threshold
+from evaluation import KinshipMetrics, print_metrics
+from protocol import apply_data_root_override, get_checkpoint_threshold, resolve_dataset_root
 from torch.utils.data import DataLoader
 
 # Add parent directory for model
@@ -66,7 +67,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def evaluate_with_config(model, dataloader, device, use_age=True, use_cross_attn=True):
+def evaluate_with_config(model, dataloader, device, threshold: float, use_age=True, use_cross_attn=True):
     """Evaluate model with specific component configuration."""
     model.eval()
 
@@ -98,7 +99,7 @@ def evaluate_with_config(model, dataloader, device, use_age=True, use_cross_attn
 
     preds = np.array(all_preds)
     labels = np.array(all_labels)
-    binary = (preds > 0.5).astype(int)
+    binary = (preds > threshold).astype(int)
 
     return {
         "accuracy": accuracy_score(labels, binary),
@@ -111,7 +112,7 @@ def evaluate_with_config(model, dataloader, device, use_age=True, use_cross_attn
     }
 
 
-def run_component_ablation(model, dataloader, device, output_dir):
+def run_component_ablation(model, dataloader, device, output_dir, threshold: float):
     """Run ablation study on model components."""
     print("\nRunning component ablation study...")
 
@@ -128,7 +129,7 @@ def run_component_ablation(model, dataloader, device, output_dir):
         print(f"\n  Testing: {name}")
         clear_cuda_cache()
 
-        metrics = evaluate_with_config(model, dataloader, device, use_age, use_cross)
+        metrics = evaluate_with_config(model, dataloader, device, threshold, use_age, use_cross)
         results[name] = {
             "accuracy": metrics["accuracy"],
             "f1": metrics["f1"],
@@ -284,7 +285,7 @@ def analyze_age_comparisons(model, dataloader, device, output_dir):
     }
 
 
-def cross_dataset_evaluation(model, device, data_config, batch_size, output_dir):
+def cross_dataset_evaluation(model, device, data_config, batch_size, output_dir, threshold: float):
     """Evaluate on both KinFaceW and FIW datasets."""
     results = {}
 
@@ -302,6 +303,8 @@ def cross_dataset_evaluation(model, device, data_config, batch_size, output_dir)
                 dataset_type=dataset_name,
                 split="test",
                 transform=get_transforms(data_config, train=False),
+                split_seed=data_config.split_seed,
+                negative_ratio=data_config.negative_ratio,
             )
 
             test_loader = DataLoader(
@@ -311,7 +314,7 @@ def cross_dataset_evaluation(model, device, data_config, batch_size, output_dir)
                 num_workers=4,
             )
 
-            metrics = evaluate_with_config(model, test_loader, device)
+            metrics = evaluate_with_config(model, test_loader, device, threshold)
             results[dataset_name] = {
                 "accuracy": metrics["accuracy"],
                 "f1": metrics["f1"],
@@ -377,7 +380,18 @@ def main():
     print(f"\nLoading model from {args.checkpoint}")
     checkpoint = torch.load(args.checkpoint, map_location=device)
 
-    model = UnifiedKinshipModel(use_age_synthesis=False)
+    model_config = checkpoint.get("model_config", checkpoint.get("protocol", {}).get("model_config", {}))
+    model = UnifiedKinshipModel(
+        use_age_synthesis=model_config.get("use_age_synthesis", False),
+        use_cross_attention=model_config.get("use_cross_attention", True),
+        convnext_model=model_config.get("convnext_model", "convnext_base"),
+        vit_model=model_config.get("vit_model", "vit_base_patch16_224"),
+        fusion_type=model_config.get("fusion_type", "concat"),
+        embedding_dim=model_config.get("embedding_dim", 512),
+        num_cross_attn_layers=model_config.get("cross_attn_layers", 2),
+        cross_attn_heads=model_config.get("cross_attn_heads", 8),
+        aggregation=model_config.get("age_aggregation", "attention"),
+    )
     model.load_state_dict(checkpoint["model_state_dict"], strict=False)
     model.to(device)
     model.eval()
@@ -388,15 +402,16 @@ def main():
 
     # Dataset
     data_config = DataConfig()
-    root_dir = data_config.kinface_i_root if args.dataset == "kinface" else data_config.fiw_root
-    if args.data_root:
-        root_dir = args.data_root
+    apply_data_root_override(data_config, args.dataset, args.data_root)
+    root_dir = resolve_dataset_root(data_config, args.dataset)
 
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
         dataset_type=args.dataset,
         split="test",
         transform=get_transforms(data_config, train=False),
+        split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
+        negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
     )
 
     test_loader = DataLoader(
@@ -413,14 +428,12 @@ def main():
 
     # Basic evaluation
     print("\nRunning evaluation...")
-    metrics = evaluate_with_config(model, test_loader, device)
+    threshold = get_checkpoint_threshold(checkpoint, default=0.5)
+    print(f"Using stored validation threshold: {threshold:.3f}")
+    metrics = evaluate_with_config(model, test_loader, device, threshold)
 
     predictions = metrics["predictions"]
     labels = metrics["labels"]
-
-    # Optimal threshold
-    threshold, best_f1 = find_optimal_threshold(predictions, labels)
-    print(f"Optimal threshold: {threshold:.3f} (F1: {best_f1:.4f})")
 
     # Recompute with optimal threshold
     binary_preds = (predictions > threshold).astype(int)
@@ -439,7 +452,7 @@ def main():
         json.dump(final_results, f, indent=2)
 
     if args.component_ablation:
-        ablation_results = run_component_ablation(model, test_loader, device, output_dir)
+        ablation_results = run_component_ablation(model, test_loader, device, output_dir, threshold)
         with open(output_dir / "ablation_results.json", "w") as f:
             json.dump(ablation_results, f, indent=2)
 
@@ -483,7 +496,7 @@ def main():
 
     if args.cross_dataset:
         print("\nRunning cross-dataset evaluation...")
-        cross_results = cross_dataset_evaluation(model, device, data_config, args.batch_size, output_dir)
+        cross_results = cross_dataset_evaluation(model, device, data_config, args.batch_size, output_dir, threshold)
         with open(output_dir / "cross_dataset_results.json", "w") as f:
             json.dump(cross_results, f, indent=2)
 

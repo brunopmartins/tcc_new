@@ -13,14 +13,15 @@ import sys
 from pathlib import Path
 import json
 
+# Setup ROCm environment — must happen before torch loads the HIP runtime
+os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "10.3.0")  # RX 6700/6750 XT (gfx1031)
+os.environ["MIOPEN_FIND_MODE"] = "FAST"
+
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, confusion_matrix, ConfusionMatrixDisplay
 from tqdm import tqdm
-
-# Setup ROCm environment
-os.environ["MIOPEN_FIND_MODE"] = "FAST"
 
 # Add shared utilities to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
@@ -34,6 +35,7 @@ from rocm_utils import (
 from config import DataConfig
 from dataset import KinshipPairDataset, get_transforms
 from evaluation import KinshipMetrics, evaluate_model
+from protocol import apply_data_root_override, get_checkpoint_threshold, resolve_dataset_root
 from torch.utils.data import DataLoader
 
 # Add parent directory for model
@@ -219,7 +221,7 @@ def plot_comparison_matrix_analysis(model, dataloader, device, output_path):
     plt.close()
 
 
-def run_ablation_study(model, dataloader, device, output_dir):
+def run_ablation_study(model, dataloader, device, output_dir, threshold: float):
     """Run ablation study on different aggregation methods."""
     if model.age_aggregator is None:
         print("Skipping ablation study: age_aggregator is None (age synthesis disabled).")
@@ -237,7 +239,7 @@ def run_ablation_study(model, dataloader, device, output_dir):
         # Clear cache between runs
         clear_rocm_cache()
 
-        metrics = evaluate_model(model, dataloader, device)
+        metrics = evaluate_model(model, dataloader, device, threshold=threshold)
         results[method] = {
             "accuracy": metrics["accuracy"],
             "f1": metrics["f1"],
@@ -299,24 +301,33 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load model
-    checkpoint = torch.load(args.checkpoint, map_location=device)
-    model = AgeSynthesisComparisonModel(use_age_synthesis=False)
+    # Load model — reconstruct with the exact architecture used at training time
+    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    model_config = checkpoint.get("model_config", checkpoint.get("protocol", {}).get("model_config", {}))
+    model = AgeSynthesisComparisonModel(
+        backbone=model_config.get("backbone", "resnet50"),
+        embedding_dim=model_config.get("embedding_dim", 512),
+        use_age_synthesis=model_config.get("use_age_synthesis", False),
+        aggregation=model_config.get("aggregation", "attention"),
+    )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
+    print(f"Model config: backbone={model_config.get('backbone','resnet50')}, "
+          f"age_synthesis={model_config.get('use_age_synthesis', False)}")
 
     # Load dataset
     data_config = DataConfig()
-    root_dir = data_config.kinface_i_root if args.dataset == "kinface" else data_config.fiw_root
-    if args.data_root:
-        root_dir = args.data_root
+    apply_data_root_override(data_config, args.dataset, args.data_root)
+    root_dir = resolve_dataset_root(data_config, args.dataset)
 
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
         dataset_type=args.dataset,
         split="test",
         transform=get_transforms(data_config, train=False),
+        split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
+        negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
     )
 
     test_loader = DataLoader(
@@ -333,12 +344,15 @@ def main():
     clear_rocm_cache()
 
     # Basic evaluation
-    metrics = evaluate_model(model, test_loader, device)
+    threshold = get_checkpoint_threshold(checkpoint, default=0.5)
+    print(f"Using stored validation threshold: {threshold:.3f}")
+    metrics = evaluate_model(model, test_loader, device, threshold=threshold)
 
     # Save basic metrics
     with open(output_dir / "metrics_rocm.json", "w") as f:
         serializable = {k: v for k, v in metrics.items() if isinstance(v, (int, float, str))}
         serializable["platform"] = "AMD ROCm"
+        serializable["threshold"] = threshold
         json.dump(serializable, f, indent=2)
 
     if args.full_analysis:
@@ -360,7 +374,7 @@ def main():
         plot_roc_curve(predictions, labels, output_dir / "roc_curve_rocm.png")
 
         print("Generating confusion matrix...")
-        plot_confusion_matrix(predictions, labels, 0.5, output_dir / "confusion_matrix_rocm.png")
+        plot_confusion_matrix(predictions, labels, threshold, output_dir / "confusion_matrix_rocm.png")
 
         if "per_relation" in metrics:
             print("Generating per-relation analysis...")
@@ -371,7 +385,7 @@ def main():
 
     if args.ablation:
         print("\nRunning ablation study...")
-        run_ablation_study(model, test_loader, device, output_dir)
+        run_ablation_study(model, test_loader, device, output_dir, threshold)
 
     print(f"\nResults saved to {output_dir}")
 

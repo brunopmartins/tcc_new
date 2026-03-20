@@ -34,7 +34,8 @@ from rocm_utils import (
 )
 from config import DataConfig
 from dataset import KinshipPairDataset, get_transforms
-from evaluation import KinshipMetrics, print_metrics, find_optimal_threshold
+from evaluation import KinshipMetrics, print_metrics
+from protocol import apply_data_root_override, get_checkpoint_threshold, resolve_dataset_root
 from torch.utils.data import DataLoader
 
 # Add parent directory for model
@@ -184,7 +185,7 @@ def analyze_backbone_contributions(model, dataloader, device, output_dir):
     return results
 
 
-def run_fusion_ablation(model, dataloader, device, output_dir):
+def run_fusion_ablation(model, dataloader, device, output_dir, threshold: float):
     """Compare different fusion strategies."""
     results = {}
     fusion_types = ["concat", "attention", "gated"]
@@ -219,7 +220,7 @@ def run_fusion_ablation(model, dataloader, device, output_dir):
 
             preds = np.array(all_preds)
             labels = np.array(all_labels)
-            binary = (preds > 0.5).astype(int)
+            binary = (preds > threshold).astype(int)
 
             from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
             results[fusion_type] = {
@@ -282,7 +283,14 @@ def main():
     print(f"\nLoading model from {args.checkpoint}")
     checkpoint = torch.load(args.checkpoint, map_location=device)
 
-    model = ConvNeXtViTHybrid()
+    model_config = checkpoint.get("model_config", checkpoint.get("protocol", {}).get("model_config", {}))
+    model = ConvNeXtViTHybrid(
+        convnext_model=model_config.get("convnext_model", "convnext_base"),
+        vit_model=model_config.get("vit_model", "vit_base_patch16_224"),
+        embedding_dim=model_config.get("embedding_dim", 512),
+        fusion_type=model_config.get("fusion_type", "concat"),
+        freeze_backbones=model_config.get("freeze_backbones", False),
+    )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
@@ -291,15 +299,16 @@ def main():
 
     # Dataset
     data_config = DataConfig()
-    root_dir = data_config.kinface_i_root if args.dataset == "kinface" else data_config.fiw_root
-    if args.data_root:
-        root_dir = args.data_root
+    apply_data_root_override(data_config, args.dataset, args.data_root)
+    root_dir = resolve_dataset_root(data_config, args.dataset)
 
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
         dataset_type=args.dataset,
         split="test",
         transform=get_transforms(data_config, train=False),
+        split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
+        negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
     )
 
     test_loader = DataLoader(
@@ -334,9 +343,8 @@ def main():
     predictions = np.array(all_preds)
     labels = np.array(all_labels)
 
-    # Optimal threshold
-    threshold, best_f1 = find_optimal_threshold(predictions, labels)
-    print(f"Optimal threshold: {threshold:.3f} (F1: {best_f1:.4f})")
+    threshold = get_checkpoint_threshold(checkpoint, default=0.5)
+    print(f"Using stored validation threshold: {threshold:.3f}")
 
     # Metrics
     metrics = KinshipMetrics(threshold=threshold)
@@ -398,7 +406,7 @@ def main():
 
     if args.ablation:
         print("\nRunning fusion ablation study...")
-        ablation_results = run_fusion_ablation(model, test_loader, device, output_dir)
+        ablation_results = run_fusion_ablation(model, test_loader, device, output_dir, threshold)
         with open(output_dir / "fusion_ablation.json", "w") as f:
             json.dump(ablation_results, f, indent=2)
 

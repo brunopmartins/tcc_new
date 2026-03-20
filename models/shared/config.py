@@ -19,6 +19,11 @@ class DataConfig:
     image_size: int = 224
     normalize_mean: List[float] = field(default_factory=lambda: [0.485, 0.456, 0.406])
     normalize_std: List[float] = field(default_factory=lambda: [0.229, 0.224, 0.225])
+
+    # Shared evaluation protocol
+    split_seed: int = 42
+    negative_ratio: float = 1.0
+    num_workers: int = 4
     
     # Relation types
     relation_types: List[str] = field(default_factory=lambda: [
@@ -74,6 +79,10 @@ class TrainConfig:
     log_every: int = 10
     use_wandb: bool = False
     wandb_project: str = "kinship-classification"
+
+    # Shared evaluation protocol
+    monitor_metric: str = "roc_auc"
+    threshold_metric: str = "f1"
 
 
 @dataclass

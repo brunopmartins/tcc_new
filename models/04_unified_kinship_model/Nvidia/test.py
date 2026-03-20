@@ -17,11 +17,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 
 from config import DataConfig
 from dataset import KinshipPairDataset, get_transforms
-from evaluation import KinshipMetrics, print_metrics, find_optimal_threshold
+from evaluation import KinshipMetrics, print_metrics
+from protocol import apply_data_root_override, get_checkpoint_threshold, resolve_dataset_root
 from torch.utils.data import DataLoader
 
 from model import UnifiedKinshipModel
@@ -43,7 +44,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def component_ablation(model, dataloader, device, output_dir):
+def component_ablation(model, dataloader, device, output_dir, threshold: float):
     """Analyze contribution of each component."""
     model.eval()
     
@@ -80,7 +81,7 @@ def component_ablation(model, dataloader, device, output_dir):
         
         preds = np.array(all_preds)
         labels = np.array(all_labels)
-        binary = (preds > 0.5).astype(int)
+        binary = (preds > threshold).astype(int)
         
         from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
         
@@ -209,8 +210,18 @@ def main():
     print(f"Loading model from {args.checkpoint}")
     checkpoint = torch.load(args.checkpoint, map_location=device)
     
-    # Default model (will be overwritten by checkpoint config if available)
-    model = UnifiedKinshipModel(use_age_synthesis=False)
+    model_config = checkpoint.get("model_config", checkpoint.get("protocol", {}).get("model_config", {}))
+    model = UnifiedKinshipModel(
+        use_age_synthesis=model_config.get("use_age_synthesis", False),
+        use_cross_attention=model_config.get("use_cross_attention", True),
+        convnext_model=model_config.get("convnext_model", "convnext_base"),
+        vit_model=model_config.get("vit_model", "vit_base_patch16_224"),
+        fusion_type=model_config.get("fusion_type", "concat"),
+        embedding_dim=model_config.get("embedding_dim", 512),
+        num_cross_attn_layers=model_config.get("cross_attn_layers", 2),
+        cross_attn_heads=model_config.get("cross_attn_heads", 8),
+        aggregation=model_config.get("age_aggregation", "attention"),
+    )
     model.load_state_dict(checkpoint["model_state_dict"], strict=False)
     model.to(device)
     model.eval()
@@ -219,15 +230,16 @@ def main():
     
     # Dataset
     data_config = DataConfig()
-    root_dir = data_config.kinface_i_root if args.dataset == "kinface" else data_config.fiw_root
-    if args.data_root:
-        root_dir = args.data_root
+    apply_data_root_override(data_config, args.dataset, args.data_root)
+    root_dir = resolve_dataset_root(data_config, args.dataset)
     
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
         dataset_type=args.dataset,
         split="test",
         transform=get_transforms(data_config, train=False),
+        split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
+        negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
     )
     
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
@@ -253,10 +265,9 @@ def main():
     predictions = np.array(all_preds)
     labels = np.array(all_labels)
     
-    # Find threshold
     if args.threshold is None:
-        threshold, _ = find_optimal_threshold(predictions, labels)
-        print(f"Optimal threshold: {threshold:.3f}")
+        threshold = get_checkpoint_threshold(checkpoint, default=0.5)
+        print(f"Using stored validation threshold: {threshold:.3f}")
     else:
         threshold = args.threshold
     
@@ -276,7 +287,7 @@ def main():
         print("="*50)
         
         print("\n1. Component Ablation Study...")
-        ablation_results = component_ablation(model, test_loader, device, output_dir)
+        ablation_results = component_ablation(model, test_loader, device, output_dir, threshold)
         
         print("\n2. Age Comparison Analysis...")
         analyze_age_comparisons(model, test_loader, device, output_dir)
@@ -284,6 +295,7 @@ def main():
     # Save results
     with open(output_dir / "test_metrics.json", "w") as f:
         serializable = {k: v for k, v in results.items() if isinstance(v, (int, float, str))}
+        serializable["threshold"] = threshold
         json.dump(serializable, f, indent=2)
     
     print(f"\nResults saved to {output_dir}")

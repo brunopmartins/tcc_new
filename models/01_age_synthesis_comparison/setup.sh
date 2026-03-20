@@ -22,10 +22,19 @@
 #   LEARNING_RATE   Learning rate                    (default: 1e-4)
 #   TRAIN_DATASET   Dataset to train on              (default: kinface)
 #   GPU_ID          GPU device index                 (default: 0)
-#   USE_AGE_SYNTH   Enable age synthesis (1/0)       (default: 0)
+#   USE_AGE_SYNTH   Enable age synthesis (1/0)       (default: 1)
 #   SKIP_INSTALL    Skip venv creation/pip install   (default: 0)
 # =============================================================================
 set -e
+
+# ---------- configurable parameters (read first so re-exec can export them) --
+EPOCHS="${EPOCHS:-100}"
+BATCH_SIZE="${BATCH_SIZE:-32}"
+LEARNING_RATE="${LEARNING_RATE:-1e-4}"
+TRAIN_DATASET="${TRAIN_DATASET:-kinface}"
+GPU_ID="${GPU_ID:-0}"
+USE_AGE_SYNTH="${USE_AGE_SYNTH:-1}"
+SKIP_INSTALL="${SKIP_INSTALL:-0}"
 
 # ---------- resolve project paths -------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,31 +45,12 @@ VENV_DIR="${MODEL_DIR}/.venv"
 PYTHON="${VENV_DIR}/bin/python"
 PIP="${VENV_DIR}/bin/pip"
 
-# ---------- configurable parameters -----------------------------------------
-EPOCHS="${EPOCHS:-100}"
-BATCH_SIZE="${BATCH_SIZE:-32}"
-LEARNING_RATE="${LEARNING_RATE:-1e-4}"
-TRAIN_DATASET="${TRAIN_DATASET:-kinface}"
-GPU_ID="${GPU_ID:-0}"
-USE_AGE_SYNTH="${USE_AGE_SYNTH:-0}"
-SKIP_INSTALL="${SKIP_INSTALL:-0}"
-
-# ---------- output directories — wipe and recreate on every run -------------
-OUTPUT_DIR="${MODEL_DIR}/output"
-CHECKPOINT_DIR="${OUTPUT_DIR}/checkpoints"
-RESULTS_DIR="${OUTPUT_DIR}/results"
-LOG_DIR="${OUTPUT_DIR}/logs"
-rm -rf "${OUTPUT_DIR}"
-mkdir -p "${CHECKPOINT_DIR}" "${RESULTS_DIR}" "${LOG_DIR}"
-
 # ---------- detect GPU platform from hardware (before torch is installed) ---
 detect_platform() {
-    # AMD ROCm: /dev/kfd is the compute device node
     if [ -e /dev/kfd ] && ls /dev/dri/renderD* 2>/dev/null | head -1 >/dev/null; then
         echo "rocm"
         return
     fi
-    # NVIDIA: nvidia-smi present and returns a GPU
     if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -q "GPU"; then
         echo "cuda"
         return
@@ -69,6 +59,23 @@ detect_platform() {
 }
 
 PLATFORM=$(detect_platform)
+
+# ---------- ROCm: ensure render group access to /dev/kfd --------------------
+# The AMD GPU compute device (/dev/kfd) requires the user to be in the render
+# group. We add the user if needed, then re-exec via 'sg render' so the new
+# group is active in this session without requiring a logout.
+if [ "${PLATFORM}" = "rocm" ] && [ -z "${_ROCM_SETUP_COMPLETE}" ]; then
+    if ! id -Gn | tr ' ' '\n' | grep -qx render 2>/dev/null; then
+        echo "  [ROCm] Adding $(whoami) to render+video groups for /dev/kfd access..."
+        sudo usermod -aG render,video "$(whoami)"
+    fi
+    # Export all params so they survive the re-exec
+    export EPOCHS BATCH_SIZE LEARNING_RATE TRAIN_DATASET GPU_ID USE_AGE_SYNTH SKIP_INSTALL
+    export _ROCM_SETUP_COMPLETE=1
+    SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+    echo "  [ROCm] Restarting script with render group active..."
+    exec sg render -c "bash '${SELF}'"
+fi
 
 echo ''
 echo '============================================================'
@@ -90,16 +97,13 @@ echo ''
 if [ "${SKIP_INSTALL}" != "1" ]; then
     echo '[0/3] Setting up Python virtualenv and installing dependencies...'
 
-    # Create venv if it doesn't exist
     if [ ! -x "${PYTHON}" ]; then
         echo "    Creating virtualenv at ${VENV_DIR} ..."
         python3 -m venv "${VENV_DIR}"
     fi
 
-    # Upgrade pip inside the venv (no system-package restrictions apply here)
     "${PIP}" install --quiet --upgrade pip setuptools wheel
 
-    # Install PyTorch — platform-specific wheel index
     case "${PLATFORM}" in
         rocm)
             echo "    Installing PyTorch with ROCm 5.7 support..."
@@ -119,7 +123,6 @@ if [ "${SKIP_INSTALL}" != "1" ]; then
             ;;
     esac
 
-    # Install remaining dependencies
     "${PIP}" install --quiet \
         'timm>=0.9.0' \
         'numpy>=1.24.0' \
@@ -134,11 +137,28 @@ if [ "${SKIP_INSTALL}" != "1" ]; then
     echo ''
 fi
 
-# Verify the venv exists before proceeding
 if [ ! -x "${PYTHON}" ]; then
     echo "ERROR: virtualenv not found at ${VENV_DIR}. Run without SKIP_INSTALL=1 first."
     exit 1
 fi
+
+# ---------- numbered output folder (preserves results from previous runs) ---
+OUTPUT_BASE="${MODEL_DIR}/output"
+mkdir -p "${OUTPUT_BASE}"
+RUN_ID=1
+while [ -d "${OUTPUT_BASE}/$(printf '%03d' ${RUN_ID})" ]; do
+    RUN_ID=$((RUN_ID + 1))
+done
+RUN_LABEL="$(printf '%03d' ${RUN_ID})"
+RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
+CHECKPOINT_DIR="${RUN_DIR}/checkpoints"
+RESULTS_DIR="${RUN_DIR}/results"
+LOG_DIR="${RUN_DIR}/logs"
+mkdir -p "${CHECKPOINT_DIR}" "${RESULTS_DIR}" "${LOG_DIR}"
+
+echo "  Run ID:        ${RUN_LABEL}"
+echo "  Output:        ${RUN_DIR}"
+echo ''
 
 # ---------- set PYTHONPATH --------------------------------------------------
 export PYTHONPATH="${PROJECT_ROOT}/models:${SHARED_DIR}:${PYTHONPATH}"
@@ -156,7 +176,7 @@ elif [ "${PLATFORM}" = "cuda" ]; then
     EXTRA_ARGS=""
 else
     echo "WARNING: No GPU detected — running on CPU (this will be slow)"
-    PLATFORM_DIR="${MODEL_DIR}/Nvidia"
+    PLATFORM_DIR="${MODEL_DIR}/AMD"
     EXTRA_ARGS=""
 fi
 
@@ -204,7 +224,7 @@ echo '[3/3] Evaluating...'
 
 echo ''
 echo '============================================================'
-echo '  Model 01 completed!'
+echo "  Model 01 — Run ${RUN_LABEL} completed!"
 echo "  Results:     ${RESULTS_DIR}"
 echo "  Checkpoints: ${CHECKPOINT_DIR}"
 echo "  Logs:        ${LOG_DIR}"

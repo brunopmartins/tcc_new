@@ -2,6 +2,8 @@
 
 This directory contains four novel model architectures for kinship verification from facial images, along with shared utilities for training, evaluation, and data loading.
 
+Shared evaluation rules are documented in [SHARED_EVALUATION_PROTOCOL.md](./SHARED_EVALUATION_PROTOCOL.md). All patched train/test/evaluate entrypoints now follow that protocol.
+
 ## Model Overview
 
 | Model | Key Innovation | Expected Improvement |
@@ -132,6 +134,7 @@ train_loader, val_loader, test_loader = create_dataloaders(
     config=data_config,
     batch_size=32,
     dataset_type="kinface",  # or "fiw"
+    split_seed=42,
 )
 ```
 
@@ -158,14 +161,27 @@ metrics = evaluate_model(model, test_loader, device)
 print_metrics(metrics)
 ```
 
+### Protocol (`shared/protocol.py`)
+
+```python
+from shared.protocol import evaluate_with_validation_threshold, set_global_seed
+
+set_global_seed(42)
+results = evaluate_with_validation_threshold(model, val_loader, test_loader, device)
+print(results["threshold"])
+print(results["test_metrics"]["roc_auc"])
+```
+
 ## Training Tips
 
 1. **Start simple**: Begin with Model 01 or 02 before trying the unified model
 2. **Use pretrained backbones**: Always use `pretrained=True`
 3. **Learning rate**: Start with 1e-4, reduce to 5e-5 for large models
 4. **Batch size**: 32 for single-backbone, 16 for dual-backbone models
-5. **Early stopping**: Use patience=15 to avoid overfitting
-6. **Data augmentation**: Enabled by default, helps generalization
+5. **Model selection**: Use validation `roc_auc` for checkpoint selection
+6. **Thresholding**: Tune threshold on validation only, never on test
+7. **Reporting**: Prefer 5-fold CV or repeated seeds and report `mean ± std`
+8. **Data augmentation**: Enabled by default, helps generalization
 
 ## GPU Requirements
 

@@ -10,6 +10,10 @@ data/*
 # Ignore model outputs (checkpoints, results, logs)
 **/output/*
 !**/output/.gitkeep
+*old*
+
+# SAM (Style-based Age Manipulation) — third-party source code + pretrained weights
+models/01_age_synthesis_comparison/SAM/
 
 # Python
 __pycache__/

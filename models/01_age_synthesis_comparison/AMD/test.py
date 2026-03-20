@@ -13,13 +13,14 @@ import os
 import sys
 from pathlib import Path
 
+# Setup ROCm environment — must happen before torch loads the HIP runtime
+os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "10.3.0")  # RX 6700/6750 XT (gfx1031)
+os.environ["MIOPEN_FIND_MODE"] = "FAST"
+
 import torch
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-
-# Setup ROCm environment before other imports
-os.environ["MIOPEN_FIND_MODE"] = "FAST"
 
 # Add shared utilities to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
@@ -34,7 +35,8 @@ from rocm_utils import (
 )
 from config import DataConfig
 from dataset import KinshipPairDataset, get_transforms
-from evaluation import KinshipMetrics, print_metrics, find_optimal_threshold
+from evaluation import KinshipMetrics, print_metrics
+from protocol import apply_data_root_override, get_checkpoint_threshold, resolve_dataset_root
 from torch.utils.data import DataLoader
 
 # Add parent directory for model
@@ -71,27 +73,28 @@ def parse_args():
 
 
 def load_model(checkpoint_path: str, device: torch.device):
-    """Load model from checkpoint."""
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    """Load model from checkpoint, reconstructing the exact architecture used at training time."""
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
-    # Get model config from checkpoint if available
-    config = checkpoint.get("config", None)
-
-    # Create model with default settings
+    # Reconstruct model with the same architecture config saved during training
+    model_config = checkpoint.get("model_config", {})
     model = AgeSynthesisComparisonModel(
-        use_age_synthesis=False,  # Disable for testing unless specifically needed
+        backbone=model_config.get("backbone", "resnet50"),
+        embedding_dim=model_config.get("embedding_dim", 512),
+        use_age_synthesis=model_config.get("use_age_synthesis", False),
+        aggregation=model_config.get("aggregation", "attention"),
     )
 
-    # Load state dict
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
 
-    # Check if model was trained on ROCm
     platform = checkpoint.get("platform", "Unknown")
     print(f"Model trained on platform: {platform}")
+    print(f"Model config: backbone={model_config.get('backbone','resnet50')}, "
+          f"age_synthesis={model_config.get('use_age_synthesis', False)}")
 
-    return model, checkpoint.get("metrics", {})
+    return model, checkpoint
 
 
 def test_model(
@@ -165,7 +168,8 @@ def main():
 
     # Load model
     print(f"\nLoading model from {args.checkpoint}")
-    model, train_metrics = load_model(args.checkpoint, device)
+    model, checkpoint = load_model(args.checkpoint, device)
+    train_metrics = checkpoint.get("metrics", {})
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     if train_metrics:
@@ -173,20 +177,18 @@ def main():
 
     # Dataset config
     data_config = DataConfig()
-    if args.data_root:
-        if args.dataset == "kinface":
-            data_config.kinface_i_root = args.data_root
-        else:
-            data_config.fiw_root = args.data_root
+    apply_data_root_override(data_config, args.dataset, args.data_root)
 
     # Create test dataset
-    root_dir = data_config.kinface_i_root if args.dataset == "kinface" else data_config.fiw_root
+    root_dir = resolve_dataset_root(data_config, args.dataset)
 
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
         dataset_type=args.dataset,
         split="test",
         transform=get_transforms(data_config, train=False),
+        split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
+        negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
     )
 
     test_loader = DataLoader(
@@ -202,18 +204,9 @@ def main():
     # Clear cache before testing
     clear_rocm_cache()
 
-    # Find optimal threshold if not specified
     if args.threshold is None:
-        print("Finding optimal threshold...")
-        _, pred_data = test_model(model, test_loader, device, threshold=0.5)
-
-        optimal_threshold, best_f1 = find_optimal_threshold(
-            pred_data["predictions"],
-            pred_data["labels"],
-            metric="f1",
-        )
-        print(f"Optimal threshold: {optimal_threshold:.3f} (F1: {best_f1:.4f})")
-        threshold = optimal_threshold
+        threshold = get_checkpoint_threshold(checkpoint, default=0.5)
+        print(f"Using stored validation threshold: {threshold:.3f}")
     else:
         threshold = args.threshold
 
@@ -236,6 +229,7 @@ def main():
         f.write(f"Model: {args.checkpoint}\n")
         f.write(f"Dataset: {args.dataset}\n")
         f.write(f"Threshold: {threshold}\n")
+        f.write(f"Threshold source: {'manual' if args.threshold is not None else 'checkpoint protocol'}\n")
         f.write(f"Samples: {len(test_dataset)}\n")
         f.write(f"Platform: AMD ROCm\n")
         f.write(f"Device: {device}\n")

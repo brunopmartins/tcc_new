@@ -342,12 +342,81 @@ class ViTFaCoRClassifier(nn.Module):
         return logits, emb1, emb2, attn_map
 
 
+def build_vit_facor_model(
+    *,
+    vit_model: str = "vit_base_patch16_224",
+    pretrained: bool = True,
+    embedding_dim: int = 512,
+    num_cross_attn_layers: int = 2,
+    cross_attn_heads: int = 8,
+    channel_reduction: int = 16,
+    dropout: float = 0.1,
+    freeze_vit: bool = False,
+    use_classifier_head: bool = False,
+):
+    """Create either the embedding model or the BCE classifier wrapper."""
+    base_model = ViTFaCoRModel(
+        vit_model=vit_model,
+        pretrained=pretrained,
+        embedding_dim=embedding_dim,
+        num_cross_attn_layers=num_cross_attn_layers,
+        cross_attn_heads=cross_attn_heads,
+        channel_reduction=channel_reduction,
+        dropout=dropout,
+        freeze_vit=freeze_vit,
+    )
+    if use_classifier_head:
+        return ViTFaCoRClassifier(base_model)
+    return base_model
+
+
+def parse_model_outputs(outputs):
+    """Normalize model outputs into embeddings, attention, and scalar scores."""
+    if not isinstance(outputs, tuple):
+        raise ValueError("ViT-FaCoR outputs are expected to be a tuple.")
+
+    if len(outputs) >= 4:
+        logits, emb1, emb2, attn_map = outputs[:4]
+        if logits.ndim > 1 and logits.shape[-1] == 1:
+            logits = logits.squeeze(-1)
+        scores = torch.sigmoid(logits)
+        return {
+            "logits": logits,
+            "emb1": emb1,
+            "emb2": emb2,
+            "attn_map": attn_map,
+            "scores": scores,
+        }
+
+    if len(outputs) >= 3:
+        emb1, emb2, attn_map = outputs[:3]
+        scores = (F.cosine_similarity(emb1, emb2, dim=1) + 1) / 2
+        return {
+            "emb1": emb1,
+            "emb2": emb2,
+            "attn_map": attn_map,
+            "scores": scores,
+        }
+
+    if len(outputs) >= 2:
+        emb1, emb2 = outputs[:2]
+        scores = (F.cosine_similarity(emb1, emb2, dim=1) + 1) / 2
+        return {
+            "emb1": emb1,
+            "emb2": emb2,
+            "attn_map": None,
+            "scores": scores,
+        }
+
+    raise ValueError("Unsupported ViT-FaCoR output format.")
+
+
 def create_model(config=None) -> ViTFaCoRModel:
     """Factory function to create model from config."""
     if config is None:
         return ViTFaCoRModel()
     
-    return ViTFaCoRModel(
+    return build_vit_facor_model(
         vit_model=getattr(config, "vit_model", "vit_base_patch16_224"),
         pretrained=getattr(config, "pretrained", True),
         embedding_dim=getattr(config, "embedding_dim", 512),
@@ -355,6 +424,8 @@ def create_model(config=None) -> ViTFaCoRModel:
         cross_attn_heads=getattr(config, "cross_attn_heads", 8),
         channel_reduction=getattr(config, "channel_reduction", 16),
         dropout=getattr(config, "dropout", 0.1),
+        freeze_vit=getattr(config, "freeze_vit", False),
+        use_classifier_head=getattr(config, "use_classifier_head", False),
     )
 
 

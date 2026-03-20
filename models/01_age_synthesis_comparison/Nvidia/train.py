@@ -15,13 +15,24 @@ import torch
 import torch.nn as nn
 
 # Add shared utilities to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 
 from config import DataConfig, TrainConfig, AgeSynthesisConfig, get_config
 from dataset import create_dataloaders, KinshipPairDataset, get_transforms
 from losses import ContrastiveLoss, CosineContrastiveLoss, get_loss
 from trainer import Trainer, train_model
 from evaluation import print_metrics
+from protocol import (
+    apply_data_root_override,
+    build_protocol_metadata,
+    evaluate_with_validation_threshold,
+    load_best_checkpoint,
+    resolve_dataset_root,
+    save_json,
+    set_global_seed,
+    update_checkpoint_metadata,
+    update_checkpoint_payload,
+)
 
 from model import AgeSynthesisComparisonModel, create_model
 
@@ -79,32 +90,38 @@ def parse_args():
 
 def main():
     args = parse_args()
-    
-    # Set seed
-    torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(args.seed)
+
+    set_global_seed(args.seed)
     
     # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
     # Config
-    data_config = DataConfig()
+    train_data_config = DataConfig(split_seed=args.seed)
+    test_data_config = DataConfig(split_seed=args.seed)
+    apply_data_root_override(train_data_config, args.train_dataset, args.data_root)
+    if args.train_dataset == args.test_dataset:
+        apply_data_root_override(test_data_config, args.test_dataset, args.data_root)
+    elif args.data_root:
+        print("Using --data_root for the training dataset only because train/test datasets differ.")
+
     train_config = TrainConfig(
         batch_size=args.batch_size,
         num_epochs=args.epochs,
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
         checkpoint_dir=args.checkpoint_dir,
+        monitor_metric="roc_auc",
     )
     
     # Create training dataloaders (FIW by default)
     print(f"Loading {args.train_dataset} dataset for training...")
     train_loader, val_loader, _ = create_dataloaders(
-        config=data_config,
+        config=train_data_config,
         batch_size=args.batch_size,
         dataset_type=args.train_dataset,
+        split_seed=args.seed,
     )
     print(f"Train samples: {len(train_loader.dataset)}")
     print(f"Val samples: {len(val_loader.dataset)}")
@@ -113,10 +130,12 @@ def main():
     print(f"Loading {args.test_dataset} dataset for testing...")
     from torch.utils.data import DataLoader
     test_dataset = KinshipPairDataset(
-        root_dir=data_config.kinface_i_root if args.test_dataset == "kinface" else data_config.fiw_root,
+        root_dir=resolve_dataset_root(test_data_config, args.test_dataset),
         dataset_type=args.test_dataset,
         split="test",
-        transform=get_transforms(data_config, train=False),
+        transform=get_transforms(test_data_config, train=False),
+        split_seed=args.seed,
+        negative_ratio=test_data_config.negative_ratio,
     )
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
     print(f"Test samples: {len(test_dataset)}")
@@ -168,6 +187,7 @@ def main():
         loss_fn=wrapped_loss,
         config=train_config,
         device=device,
+        monitor_metric=train_config.monitor_metric,
     )
     
     # Resume if specified
@@ -177,20 +197,64 @@ def main():
     
     # Train
     print("\nStarting training...")
-    history = trainer.train()
-    
-    # Final evaluation on test set
+    trainer.train()
+
+    print("\nLoading best checkpoint for protocol evaluation...")
+    load_best_checkpoint(model, args.checkpoint_dir, device)
+    protocol_results = evaluate_with_validation_threshold(
+        model,
+        val_loader,
+        test_loader,
+        device,
+        threshold_metric=train_config.threshold_metric,
+    )
+    threshold = protocol_results["threshold"]
+    val_metrics = protocol_results["validation_metrics"]
+    test_metrics = protocol_results["test_metrics"]
+
+    print(f"Validation-selected threshold ({train_config.threshold_metric}): {threshold:.3f}")
+    print_metrics(val_metrics, prefix="Validation ")
     print("\nFinal evaluation on test set...")
-    from evaluation import evaluate_model
-    test_metrics = evaluate_model(model, test_loader, device)
     print_metrics(test_metrics, prefix="Test ")
-    
-    # Save test results
+
+    model_config = {
+        "backbone": args.backbone,
+        "embedding_dim": args.embedding_dim,
+        "use_age_synthesis": args.use_age_synthesis,
+        "aggregation": args.aggregation,
+    }
+    protocol_metadata = build_protocol_metadata(
+        train_dataset=args.train_dataset,
+        test_dataset=args.test_dataset,
+        threshold=threshold,
+        threshold_metric=train_config.threshold_metric,
+        split_seed=args.seed,
+        negative_ratio=train_data_config.negative_ratio,
+        monitor_metric=train_config.monitor_metric,
+        args=args,
+        extra={"model_config": model_config},
+    )
+
+    for checkpoint_name in ["best.pt", "final.pt"]:
+        checkpoint_path = Path(args.checkpoint_dir) / checkpoint_name
+        update_checkpoint_payload(checkpoint_path, {"model_config": model_config})
+        update_checkpoint_metadata(checkpoint_path, protocol_metadata)
+
     results_path = Path(args.checkpoint_dir) / "test_results.txt"
     with open(results_path, "w") as f:
+        f.write(f"threshold: {threshold:.4f}\n")
         for key, value in test_metrics.items():
             if isinstance(value, float):
                 f.write(f"{key}: {value:.4f}\n")
+
+    save_json(
+        Path(args.checkpoint_dir) / "protocol_summary.json",
+        {
+            **protocol_metadata,
+            "validation_metrics": val_metrics,
+            "test_metrics": test_metrics,
+        },
+    )
     
     print(f"\nTraining complete!")
     print(f"Trained on: {args.train_dataset}")

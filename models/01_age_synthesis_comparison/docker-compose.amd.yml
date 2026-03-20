@@ -35,8 +35,12 @@ services:
       - ../../datasets/KinFaceW-II:/home/bruno/Desktop/tcc_new/datasets/KinFaceW-II:ro
       # Live-mount scripts so changes reflect without rebuild
       - ./AMD:/app/models/01_age_synthesis_comparison/AMD:ro
+      - ./model.py:/app/models/01_age_synthesis_comparison/model.py:ro
       - ../shared:/app/models/shared:ro
-      # Output: logs, checkpoints, results written here on the host
+      # Mount SAM directory so pretrained weights (sam_ffhq_aging.pt) are
+      # accessible when downloaded to ./SAM/pretrained_models/ on the host.
+      - ./SAM:/app/models/01_age_synthesis_comparison/SAM:ro
+      # Output: each run saved to a numbered subfolder (e.g. output/001/)
       - ./output:/app/output
     environment:
       EPOCHS: ${EPOCHS:-100}
@@ -72,7 +76,9 @@ services:
       - ../../datasets/KinFaceW-I:/home/bruno/Desktop/tcc_new/datasets/KinFaceW-I
       - ../../datasets/KinFaceW-II:/home/bruno/Desktop/tcc_new/datasets/KinFaceW-II
       - ./AMD:/app/models/01_age_synthesis_comparison/AMD
+      - ./model.py:/app/models/01_age_synthesis_comparison/model.py
       - ../shared:/app/models/shared
+      - ./SAM:/app/models/01_age_synthesis_comparison/SAM
       - ./output:/app/output
     environment:
       HSA_OVERRIDE_GFX_VERSION: "10.3.0"

@@ -79,12 +79,20 @@ class AgeEncoder(nn.Module):
             # Create SAM model
             self.sam_model = pSp(opts)
             self.sam_model.eval()
+
+            # Register latent_avg as a buffer so model.to(device) moves it
+            # (pSp stores it as a plain tensor that .to() would skip)
+            if hasattr(self.sam_model, 'latent_avg') and isinstance(self.sam_model.latent_avg, torch.Tensor):
+                lat = self.sam_model.latent_avg.data
+                delattr(self.sam_model, 'latent_avg')
+                self.sam_model.register_buffer('latent_avg', lat)
+
             self.sam_model.to(self.device)
-            
+
             # Freeze all parameters
             for param in self.sam_model.parameters():
                 param.requires_grad = False
-            
+
             self._initialized = True
             print(f"SAM model loaded from {checkpoint_path}")
             
@@ -165,20 +173,21 @@ class AgeEncoder(nn.Module):
         if not self._initialized or self.sam_model is None:
             # Fallback: return input unchanged
             return x
-        
+
         original_size = (x.size(-2), x.size(-1))
-        
-        # Preprocess
-        x_sam = self._preprocess_for_sam(x, target_age)
-        
-        # Run SAM
-        with torch.no_grad():
-            result = self.sam_model(x_sam, randomize_noise=False, resize=True)
-        
-        # Postprocess
-        result = self._postprocess_from_sam(result, original_size)
-        
-        return result
+
+        # Process one image at a time to avoid OOM — StyleGAN2 at 1024×1024
+        # allocates ~4.5 GB intermediate buffers per batch, which OOMs on
+        # 12 GB GPUs when combined with training optimizer states.
+        results = []
+        for i in range(x.size(0)):
+            x_i = self._preprocess_for_sam(x[i:i+1], target_age)
+            with torch.no_grad():
+                out_i = self.sam_model(x_i, randomize_noise=False, resize=True)
+            out_i = self._postprocess_from_sam(out_i, original_size)
+            results.append(out_i)
+
+        return torch.cat(results, dim=0)
 
 
 class FeatureExtractor(nn.Module):
