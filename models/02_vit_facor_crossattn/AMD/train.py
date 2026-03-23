@@ -37,7 +37,7 @@ from config import DataConfig, TrainConfig
 from dataset import create_dataloaders, KinshipPairDataset, get_transforms
 from losses import ContrastiveLoss, CosineContrastiveLoss, RelationGuidedContrastiveLoss, get_loss
 from trainer import ROCmTrainer
-from evaluation import print_metrics, evaluate_model, KinshipMetrics
+from evaluation import print_metrics, KinshipMetrics
 from protocol import (
     apply_data_root_override,
     build_protocol_metadata,
@@ -193,10 +193,6 @@ class ViTFaCoRROCmTrainer(ROCmTrainer):
             emb1, emb2, attn_map = outputs[0], outputs[1], outputs[2]
             return self.loss_fn(emb1, emb2, labels, attn_map)
         return super()._compute_loss(outputs, labels)
-
-    def validate(self):
-        """Validate using the shared scalar-score extraction protocol."""
-        return evaluate_model(self.model, self.val_loader, self.device)
 
     def on_epoch_start(self, epoch: int) -> None:
         if (

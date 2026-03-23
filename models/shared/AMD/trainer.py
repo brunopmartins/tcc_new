@@ -24,7 +24,7 @@ from rocm_utils import (
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import TrainConfig
-from evaluation import evaluate_model
+from evaluation import collect_predictions, compute_metrics_from_predictions, evaluate_model, find_optimal_threshold
 
 
 class ROCmTrainer:
@@ -167,12 +167,60 @@ class ROCmTrainer:
         return self.loss_fn(outputs.squeeze(), labels)
 
     def validate(self) -> Dict[str, float]:
-        """Validate the model."""
-        return evaluate_model(self.model, self.val_loader, self.device)
+        """Validate the model using an optimal threshold found on the val set."""
+        bundle = collect_predictions(self.model, self.val_loader, self.device)
+        threshold, _ = find_optimal_threshold(
+            bundle["predictions"], bundle["labels"], metric="f1",
+        )
+        metrics = compute_metrics_from_predictions(
+            predictions=bundle["predictions"],
+            labels=bundle["labels"],
+            threshold=threshold,
+            relations=bundle["relations"] or None,
+            demographics=bundle["demographics"] or None,
+        )
+        metrics["threshold"] = threshold
+        return metrics
 
     def on_epoch_start(self, epoch: int) -> None:
         """Hook for subclasses that need to change state before an epoch."""
         return None
+
+    def _check_safeguards(self, epoch: int) -> bool:
+        """Check for degenerate training and return True if training should stop."""
+        auc_history = self.history["val_auc"]
+        acc_history = self.history["val_accuracy"]
+
+        # Safeguard 1: sustained metric decline from peak
+        # If the monitored metric has declined for 10+ consecutive epochs, stop.
+        decline_window = 10
+        if len(auc_history) >= decline_window + 1:
+            peak_before_window = max(auc_history[: -decline_window])
+            recent = auc_history[-decline_window:]
+            if all(v < peak_before_window - 0.005 for v in recent):
+                print(
+                    f"  [SAFEGUARD] Stopping: val AUC has been below peak "
+                    f"({peak_before_window:.4f}) for {decline_window} consecutive epochs"
+                )
+                return True
+
+        # Safeguard 2: degenerate accuracy (exactly 50% on balanced data)
+        # If accuracy has been exactly 0.5 for 8+ epochs, the threshold is broken.
+        degenerate_window = 8
+        if len(acc_history) >= degenerate_window:
+            recent_acc = acc_history[-degenerate_window:]
+            if all(abs(a - 0.5) < 1e-4 for a in recent_acc):
+                print(
+                    f"  [SAFEGUARD] Warning: val accuracy stuck at 50.0% for "
+                    f"{degenerate_window} epochs — threshold may be degenerate"
+                )
+                # Don't stop on this alone (AUC may still be useful),
+                # but if AUC is also not improving, stop.
+                if self.patience_counter >= min(self.config.patience, 15):
+                    print("  [SAFEGUARD] Stopping: degenerate accuracy + no AUC improvement")
+                    return True
+
+        return False
 
     def train(self) -> Dict:
         """Full training loop with ROCm optimizations."""
@@ -212,11 +260,14 @@ class ROCmTrainer:
             elapsed = time.time() - start_time
             current_lr = self.optimizer.param_groups[0]["lr"]
             current_metric = val_metrics.get(self.monitor_metric, float("-inf"))
+            threshold_str = ""
+            if "threshold" in val_metrics:
+                threshold_str = f" | Thr: {val_metrics['threshold']:.3f}"
             print(
                 f"Epoch {epoch + 1}/{self.config.num_epochs} | "
                 f"Train Loss: {train_loss:.4f} | "
                 f"Val Acc: {val_metrics.get('accuracy', 0.0):.4f} | "
-                f"Val AUC: {val_metrics.get('roc_auc', 0.0):.4f} | "
+                f"Val AUC: {val_metrics.get('roc_auc', 0.0):.4f}{threshold_str} | "
                 f"{self.monitor_metric}: {current_metric:.4f} | "
                 f"LR: {current_lr:.2e} | "
                 f"Time: {elapsed:.1f}s"
@@ -236,6 +287,10 @@ class ROCmTrainer:
 
             if self.patience_counter >= self.config.patience:
                 print(f"Early stopping at epoch {epoch + 1}")
+                break
+
+            if self._check_safeguards(epoch + 1):
+                print(f"Safeguard-triggered stop at epoch {epoch + 1}")
                 break
 
             if (epoch + 1) % 10 == 0:

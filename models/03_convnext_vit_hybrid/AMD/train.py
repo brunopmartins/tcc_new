@@ -86,13 +86,39 @@ def parse_args():
     # Training
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--scheduler", type=str, default="cosine",
+                        choices=["cosine", "plateau", "step", "none"],
+                        help="Learning-rate scheduler")
+    parser.add_argument("--warmup_epochs", type=int, default=5,
+                        help="Warmup epochs before scheduler takes over")
+    parser.add_argument("--min_lr", type=float, default=1e-7,
+                        help="Minimum LR for cosine scheduler")
+    parser.add_argument("--dropout", type=float, default=0.1,
+                        help="Dropout rate for projection and fusion layers")
+    parser.add_argument("--negative_ratio", type=float, default=1.0,
+                        help="Negative pairs per positive pair during training")
+    parser.add_argument("--eval_negative_ratio", type=float, default=1.0,
+                        help="Negative pairs per positive pair for val/test")
+    parser.add_argument("--train_negative_strategy", type=str, default="random",
+                        choices=["random", "relation_matched"],
+                        help="How to sample training negatives")
+    parser.add_argument("--eval_negative_strategy", type=str, default="random",
+                        choices=["random", "relation_matched"],
+                        help="How to sample validation/test negatives")
+    parser.add_argument("--num_workers", type=int, default=4,
+                        help="Dataloader workers")
+    parser.add_argument("--patience", type=int, default=50,
+                        help="Early stopping patience (epochs without AUC improvement)")
 
     # Loss
-    parser.add_argument("--loss", type=str, default="cosine_contrastive",
+    parser.add_argument("--loss", type=str, default="contrastive",
                         choices=["bce", "contrastive", "cosine_contrastive"])
-    parser.add_argument("--temperature", type=float, default=0.07)
+    parser.add_argument("--temperature", type=float, default=0.3,
+                        help="Temperature for contrastive loss")
+    parser.add_argument("--margin", type=float, default=0.5,
+                        help="Margin for supervised contrastive distance losses")
 
     # ROCm specific
     parser.add_argument("--rocm_device", type=int, default=0,
@@ -113,13 +139,14 @@ def parse_args():
 class HybridLoss(nn.Module):
     """Loss wrapper for hybrid model."""
 
-    def __init__(self, loss_type: str, temperature: float = 0.07):
+    def __init__(self, loss_type: str, temperature: float = 0.3, margin: float = 0.5):
         super().__init__()
+        self.loss_type = loss_type
         if loss_type == "bce":
             self.loss_fn = nn.BCEWithLogitsLoss()
             self.use_similarity = True
         elif loss_type == "contrastive":
-            self.loss_fn = ContrastiveLoss(margin=1.0)
+            self.loss_fn = ContrastiveLoss(margin=margin, distance="cosine")
             self.use_similarity = False
         else:
             self.loss_fn = CosineContrastiveLoss(temperature=temperature)
@@ -155,8 +182,16 @@ def main():
     print(f"\nUsing device: {device}")
 
     # Config
-    train_data_config = DataConfig(split_seed=args.seed)
-    test_data_config = DataConfig(split_seed=args.seed)
+    train_data_config = DataConfig(
+        split_seed=args.seed,
+        negative_ratio=args.negative_ratio,
+        num_workers=args.num_workers,
+    )
+    test_data_config = DataConfig(
+        split_seed=args.seed,
+        negative_ratio=args.negative_ratio,
+        num_workers=args.num_workers,
+    )
     apply_data_root_override(train_data_config, args.train_dataset, args.data_root)
     if args.train_dataset == args.test_dataset:
         apply_data_root_override(test_data_config, args.test_dataset, args.data_root)
@@ -168,9 +203,12 @@ def main():
         num_epochs=args.epochs,
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
+        scheduler="none" if args.scheduler == "none" else args.scheduler,
+        warmup_epochs=args.warmup_epochs,
+        min_lr=args.min_lr,
         checkpoint_dir=args.checkpoint_dir,
         use_amp=not args.disable_amp,
-        monitor_metric="roc_auc",
+        patience=args.patience,
     )
 
     # Dataloaders for training
@@ -178,7 +216,12 @@ def main():
     train_loader, val_loader, _ = create_dataloaders(
         config=train_data_config,
         batch_size=args.batch_size,
+        num_workers=args.num_workers,
         dataset_type=args.train_dataset,
+        train_negative_ratio=args.negative_ratio,
+        eval_negative_ratio=args.eval_negative_ratio,
+        train_negative_sampling_strategy=args.train_negative_strategy,
+        eval_negative_sampling_strategy=args.eval_negative_strategy,
         split_seed=args.seed,
     )
     print(f"Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
@@ -192,9 +235,15 @@ def main():
         split="test",
         transform=get_transforms(test_data_config, train=False),
         split_seed=args.seed,
-        negative_ratio=test_data_config.negative_ratio,
+        negative_ratio=args.eval_negative_ratio,
+        negative_sampling_strategy=args.eval_negative_strategy,
     )
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+    )
     print(f"Test: {len(test_dataset)}")
 
     # Create model
@@ -214,6 +263,7 @@ def main():
             embedding_dim=args.embedding_dim,
             fusion_type=args.fusion_type,
             freeze_backbones=args.freeze_backbones,
+            dropout=args.dropout,
         )
 
     # Apply ROCm optimizations
@@ -225,7 +275,7 @@ def main():
     print(f"Trainable parameters: {trainable_params:,}")
 
     # Loss
-    loss_fn = HybridLoss(args.loss, args.temperature)
+    loss_fn = HybridLoss(args.loss, args.temperature, args.margin)
 
     # Trainer
     trainer = ROCmTrainer(
@@ -245,6 +295,19 @@ def main():
 
     # Train
     print(f"\nStarting ROCm-optimized training (fusion={args.fusion_type}, loss={args.loss})...")
+    print(f"Loss: {args.loss}, Temperature: {args.temperature}, Margin: {args.margin}")
+    print(
+        f"Scheduler: {train_config.scheduler} "
+        f"(warmup={train_config.warmup_epochs}, min_lr={train_config.min_lr:.1e})"
+    )
+    print(
+        f"Negative ratio: train={args.negative_ratio:.2f}, "
+        f"eval={args.eval_negative_ratio:.2f}"
+    )
+    print(
+        f"Negative strategy: train={args.train_negative_strategy}, "
+        f"eval={args.eval_negative_strategy}"
+    )
     trainer.train()
 
     # Clear cache before evaluation
@@ -275,6 +338,7 @@ def main():
         "fusion_type": args.fusion_type,
         "freeze_backbones": args.freeze_backbones,
         "ablation_mode": args.ablation_mode,
+        "dropout": args.dropout,
     }
     protocol_metadata = build_protocol_metadata(
         train_dataset=args.train_dataset,
@@ -282,10 +346,15 @@ def main():
         threshold=threshold,
         threshold_metric=train_config.threshold_metric,
         split_seed=args.seed,
-        negative_ratio=train_data_config.negative_ratio,
+        negative_ratio=args.eval_negative_ratio,
         monitor_metric=train_config.monitor_metric,
         args=args,
-        extra={"model_config": model_config},
+        extra={
+            "model_config": model_config,
+            "training_negative_ratio": args.negative_ratio,
+            "training_negative_strategy": args.train_negative_strategy,
+            "evaluation_negative_strategy": args.eval_negative_strategy,
+        },
     )
 
     for checkpoint_name in ["best.pt", "final.pt"]:

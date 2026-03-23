@@ -56,6 +56,24 @@ def _split_train_val_ids(ids: List[str], split_seed: int, val_ratio: float = 0.1
     return train_ids, val_ids
 
 
+def _get_mid_images(mid_dir: Path) -> List[str]:
+    """Get face images from a FIW member directory (MID*)."""
+    images = []
+    for img in sorted(mid_dir.glob("*.jpg")):
+        if not img.name.startswith("Thumb"):
+            images.append(str(img))
+    return images
+
+
+def _get_family_images(family_dir: Path) -> List[str]:
+    """Get all face images from a FIW family directory, excluding non-face dirs."""
+    images = []
+    for mid_dir in sorted(family_dir.iterdir()):
+        if mid_dir.is_dir() and mid_dir.name.startswith("MID"):
+            images.extend(_get_mid_images(mid_dir))
+    return images
+
+
 class KinshipPairDataset(Dataset):
     """
     Dataset for kinship verification that returns pairs of images.
@@ -244,10 +262,209 @@ class KinshipPairDataset(Dataset):
 
     def _load_fiw_pairs(self):
         """
-        Load FIW pairs using family-disjoint splits.
+        Load FIW pairs.
 
-        This fixes the previous protocol bug where train/val/test all saw the
-        same families.
+        If the RFIW track-I pair lists are available, use the standard protocol
+        (member-level pairs expanded to face-level).  Otherwise, fall back to
+        exhaustive C(N,2) pairing within each family.
+        """
+        track_dir = self.root_dir / "track-I"
+        if track_dir.exists() and (track_dir / "train-pairs.csv").exists():
+            self._load_fiw_rfiw_pairs(track_dir)
+        else:
+            self._load_fiw_exhaustive_pairs()
+
+    def _load_fiw_rfiw_pairs(self, track_dir: Path):
+        """Load FIW pairs using the standard RFIW track-I protocol."""
+        fids_dir = self.root_dir / "FIDs"
+        max_face_pairs = 10  # cap face pairs per member pair
+
+        if self.split == "test":
+            self._load_fiw_rfiw_test(track_dir, fids_dir)
+        else:
+            self._load_fiw_rfiw_train_val(track_dir, fids_dir, max_face_pairs)
+
+        self._shuffle_pairs()
+
+    def _load_fiw_rfiw_test(self, track_dir: Path, fids_dir: Path):
+        """Load test pairs from RFIW track-I test-pairs.csv."""
+        test_df = pd.read_csv(track_dir / "test-pairs.csv")
+
+        # Extract unique member-level pairs with labels
+        pos_member_pairs: Dict[Tuple[str, str], str] = {}
+        neg_member_pairs: Dict[Tuple[str, str], str] = {}
+        for _, row in test_df.iterrows():
+            p1_parts = row["p1"].split("/")
+            p2_parts = row["p2"].split("/")
+            mid1 = f"{p1_parts[0]}/{p1_parts[1]}"
+            mid2 = f"{p2_parts[0]}/{p2_parts[1]}"
+            key = (mid1, mid2) if mid1 <= mid2 else (mid2, mid1)
+            label = int(row["labels"])
+            ptype = str(row["ptype"])
+            if label == 1:
+                pos_member_pairs.setdefault(key, ptype)
+            else:
+                neg_member_pairs.setdefault(key, ptype)
+
+        # Cap negatives to match the requested ratio
+        rng = random.Random(self.split_seed + 250)
+        max_neg_members = int(len(pos_member_pairs) * self.negative_ratio)
+        neg_keys = list(neg_member_pairs.keys())
+        if len(neg_keys) > max_neg_members:
+            neg_keys = rng.sample(neg_keys, max_neg_members)
+
+        all_members = [(k, 1, pos_member_pairs[k]) for k in pos_member_pairs]
+        all_members += [(k, 0, neg_member_pairs[k]) for k in neg_keys]
+
+        for (mid1_path, mid2_path), label, ptype in all_members:
+            dir1 = fids_dir / mid1_path
+            dir2 = fids_dir / mid2_path
+            if not dir1.exists() or not dir2.exists():
+                continue
+
+            imgs1 = _get_mid_images(dir1)
+            imgs2 = _get_mid_images(dir2)
+            if not imgs1 or not imgs2:
+                continue
+
+            # Sample face pairs (up to 5 per member pair for test)
+            face_pairs = [(a, b) for a in imgs1 for b in imgs2]
+            if len(face_pairs) > 5:
+                face_pairs = rng.sample(face_pairs, 5)
+
+            rel = ptype if label == 1 else "non-kin"
+            for img1, img2 in face_pairs:
+                self.pairs.append((img1, img2, rel))
+                self.labels.append(label)
+
+    def _load_fiw_rfiw_train_val(
+        self, track_dir: Path, fids_dir: Path, max_face_pairs: int
+    ):
+        """Load train/val pairs from RFIW track-I train-pairs.csv."""
+        train_df = pd.read_csv(track_dir / "train-pairs.csv")
+
+        # Get all train families and split into train/val
+        all_train_fids = sorted(
+            set(train_df["fid1"].unique()) | set(train_df["fid2"].unique())
+        )
+
+        if self.explicit_group_ids is not None:
+            active_fids = set(self.explicit_group_ids)
+        else:
+            train_fids, val_fids = _split_train_val_ids(
+                all_train_fids, self.split_seed
+            )
+            active_fids = val_fids if self.split == "val" else train_fids
+
+        # Collect unique member pairs for active families
+        rng = random.Random(self.split_seed + 260 + _split_offset(self.split))
+        positive_pairs = []
+        images_by_family: Dict[str, List[str]] = {}
+
+        seen_member_pairs = set()
+        for _, row in train_df.iterrows():
+            fid = str(row["fid1"])
+            if fid not in active_fids:
+                continue
+
+            p1, p2 = str(row["p1"]), str(row["p2"])
+            pair_key = (p1, p2) if p1 <= p2 else (p2, p1)
+            if pair_key in seen_member_pairs:
+                continue
+            seen_member_pairs.add(pair_key)
+
+            dir1 = fids_dir / p1
+            dir2 = fids_dir / p2
+            if not dir1.exists() or not dir2.exists():
+                continue
+
+            imgs1 = _get_mid_images(dir1)
+            imgs2 = _get_mid_images(dir2)
+            if not imgs1 or not imgs2:
+                continue
+
+            # Collect images for negative sampling
+            if fid not in images_by_family:
+                fam_dir = fids_dir / fid
+                images_by_family[fid] = _get_family_images(fam_dir)
+
+            # Expand member pair to face-level pairs
+            face_pairs = [(a, b) for a in imgs1 for b in imgs2]
+            if len(face_pairs) > max_face_pairs:
+                face_pairs = rng.sample(face_pairs, max_face_pairs)
+
+            ptype = str(row["ptype"])
+            for img1, img2 in face_pairs:
+                positive_pairs.append((img1, img2, ptype, fid))
+
+        # Ensure all active families have images for negative sampling
+        for fid in active_fids:
+            if fid not in images_by_family:
+                fam_dir = fids_dir / fid
+                if fam_dir.exists():
+                    imgs = _get_family_images(fam_dir)
+                    if imgs:
+                        images_by_family[fid] = imgs
+
+        # Generate negatives
+        if self.negative_sampling_strategy == "relation_matched":
+            negative_pairs = self._sample_fiw_rfiw_relation_matched_negatives(
+                positive_pairs, images_by_family
+            )
+        else:
+            negative_pairs = self._sample_fiw_negatives(
+                images_by_family, len(positive_pairs)
+            )
+
+        for img1, img2, rel, _fid in positive_pairs:
+            self.pairs.append((img1, img2, rel))
+            self.labels.append(1)
+
+        for img1, img2, rel in negative_pairs:
+            self.pairs.append((img1, img2, rel))
+            self.labels.append(0)
+
+    def _sample_fiw_rfiw_relation_matched_negatives(
+        self,
+        positive_records: List[Tuple[str, str, str, str]],
+        images_by_family: Dict[str, List[str]],
+    ) -> List[Tuple[str, str, str]]:
+        """Sample relation-matched FIW negatives across families."""
+        negative_pairs = []
+        num_negatives = int(len(positive_records) * self.negative_ratio)
+        rng = random.Random(self.split_seed + 270 + _split_offset(self.split))
+
+        # Group images by family for cross-family sampling
+        families = [fid for fid, imgs in images_by_family.items() if imgs]
+        if len(families) < 2:
+            return negative_pairs
+
+        # Track which relation types exist for weighted sampling
+        rel_counts: Dict[str, int] = {}
+        for _, _, rel, _ in positive_records:
+            rel_counts[rel] = rel_counts.get(rel, 0) + 1
+        rel_choices = [rel for _, _, rel, _ in positive_records]
+
+        attempts = 0
+        seen = set()
+        while len(negative_pairs) < num_negatives and attempts < max(num_negatives * 10, 100):
+            attempts += 1
+            fid1, fid2 = rng.sample(families, 2)
+            img1 = rng.choice(images_by_family[fid1])
+            img2 = rng.choice(images_by_family[fid2])
+            key = tuple(sorted((img1, img2)))
+            if key not in seen:
+                seen.add(key)
+                rel = rng.choice(rel_choices)
+                negative_pairs.append((img1, img2, "non-kin"))
+
+        return negative_pairs
+
+    def _load_fiw_exhaustive_pairs(self):
+        """
+        Fallback: load FIW pairs using exhaustive C(N,2) within each family.
+
+        Only used when RFIW track-I pair lists are not available.
         """
         family_ids = get_fiw_family_ids(str(self.root_dir), split_seed=self.split_seed)
         if self.explicit_group_ids is not None:
