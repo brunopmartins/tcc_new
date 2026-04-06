@@ -86,22 +86,22 @@ def parse_args():
     # Training
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=1e-5)
-    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--lr", type=float, default=1e-6)
+    parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--scheduler", type=str, default="cosine",
                         choices=["cosine", "plateau", "step", "none"],
                         help="Learning-rate scheduler")
-    parser.add_argument("--warmup_epochs", type=int, default=5,
+    parser.add_argument("--warmup_epochs", type=int, default=3,
                         help="Warmup epochs before scheduler takes over")
     parser.add_argument("--min_lr", type=float, default=1e-7,
                         help="Minimum LR for cosine scheduler")
-    parser.add_argument("--dropout", type=float, default=0.1,
+    parser.add_argument("--dropout", type=float, default=0.4,
                         help="Dropout rate for projection and fusion layers")
-    parser.add_argument("--negative_ratio", type=float, default=1.0,
+    parser.add_argument("--negative_ratio", type=float, default=3.0,
                         help="Negative pairs per positive pair during training")
     parser.add_argument("--eval_negative_ratio", type=float, default=1.0,
                         help="Negative pairs per positive pair for val/test")
-    parser.add_argument("--train_negative_strategy", type=str, default="random",
+    parser.add_argument("--train_negative_strategy", type=str, default="relation_matched",
                         choices=["random", "relation_matched"],
                         help="How to sample training negatives")
     parser.add_argument("--eval_negative_strategy", type=str, default="random",

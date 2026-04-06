@@ -31,17 +31,18 @@ class FeatureFusion(nn.Module):
         vit_dim: int = 768,
         output_dim: int = 512,
         fusion_type: str = "concat",  # "concat", "attention", "gated", "bilinear"
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.fusion_type = fusion_type
         self.output_dim = output_dim
-        
+
         if fusion_type == "concat":
             self.fusion = nn.Sequential(
                 nn.Linear(convnext_dim + vit_dim, output_dim * 2),
                 nn.LayerNorm(output_dim * 2),
                 nn.GELU(),
-                nn.Dropout(0.1),
+                nn.Dropout(dropout),
                 nn.Linear(output_dim * 2, output_dim),
             )
         
@@ -170,6 +171,7 @@ class ConvNeXtViTHybrid(nn.Module):
             vit_dim=vit_dim,
             output_dim=embedding_dim,
             fusion_type=fusion_type,
+            dropout=dropout,
         )
         
         # Final projection
