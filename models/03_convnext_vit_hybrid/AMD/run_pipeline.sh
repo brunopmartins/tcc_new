@@ -35,6 +35,7 @@
 #   NUM_WORKERS       Dataloader workers           (default: 4)
 #   DROPOUT           Model dropout                (default: 0.1)
 #   FREEZE_BACKBONES  1 = freeze both backbones    (default: 0)
+#   UNFREEZE_AFTER    Unfreeze backbones after N ep (default: 0 = never)
 #   PATIENCE          Early stopping patience      (default: 50)
 #   GPU_ID            GPU device index             (default: 0)
 #   SEED              Random seed                  (default: 42)
@@ -72,6 +73,7 @@ EVAL_NEGATIVE_STRATEGY="${EVAL_NEGATIVE_STRATEGY:-random}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
 DROPOUT="${DROPOUT:-0.4}"
 FREEZE_BACKBONES="${FREEZE_BACKBONES:-0}"
+UNFREEZE_AFTER="${UNFREEZE_AFTER:-0}"
 PATIENCE="${PATIENCE:-50}"
 GPU_ID="${GPU_ID:-0}"
 SEED="${SEED:-42}"
@@ -86,7 +88,7 @@ if [ -e /dev/kfd ] && [ -z "${_ROCM_SETUP_COMPLETE}" ]; then
     export EPOCHS BATCH_SIZE LEARNING_RATE WEIGHT_DECAY SCHEDULER WARMUP_EPOCHS MIN_LR
     export TRAIN_DATASET CONVNEXT_MODEL VIT_MODEL FUSION_TYPE LOSS TEMPERATURE MARGIN
     export NEGATIVE_RATIO EVAL_NEGATIVE_RATIO TRAIN_NEGATIVE_STRATEGY EVAL_NEGATIVE_STRATEGY NUM_WORKERS DROPOUT
-    export FREEZE_BACKBONES PATIENCE GPU_ID SEED SKIP_INSTALL
+    export FREEZE_BACKBONES UNFREEZE_AFTER PATIENCE GPU_ID SEED SKIP_INSTALL
     export _ROCM_SETUP_COMPLETE=1
     SELF="$(readlink -f "${BASH_SOURCE[0]}")"
     echo "  [ROCm] Restarting script with render group active..."
@@ -191,6 +193,7 @@ echo "Eval neg strat:    ${EVAL_NEGATIVE_STRATEGY}"
 echo "Workers:           ${NUM_WORKERS}"
 echo "Dropout:           ${DROPOUT}"
 echo "Freeze backbones:  $([ "${FREEZE_BACKBONES}" = "1" ] && echo yes || echo no)"
+echo "Unfreeze after:    ${UNFREEZE_AFTER} epochs"
 echo "Patience:          ${PATIENCE}"
 echo "Dataset:           ${TRAIN_DATASET}"
 echo "Seed:              ${SEED}"
@@ -230,6 +233,7 @@ TRAIN_ARGS=(
     --checkpoint_dir    "${CKPT_DIR}"
 )
 [ "${FREEZE_BACKBONES}" = "1" ] && TRAIN_ARGS+=(--freeze_backbones)
+[ "${UNFREEZE_AFTER}" != "0" ] && TRAIN_ARGS+=(--unfreeze_after "${UNFREEZE_AFTER}")
 
 TEST_ARGS=(
     --checkpoint  "${CKPT_DIR}/best.pt"

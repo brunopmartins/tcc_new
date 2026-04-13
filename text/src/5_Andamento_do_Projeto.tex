@@ -1,0 +1,28 @@
+\chapter[Andamento do Projeto]{Andamento do Projeto}
+\label{cap:Andamento do Projeto}
+
+O andamento deste trabalho está apresentado abaixo no Quadro 1. Esse andamento se refere ao período total de execução do projeto. São apresentadas todas as
+etapas descritas na seção Metodologia, além do próprio desenvolvimento do Trabalho de
+Conclusão de Curso I (TCC I) e Trabalho de Conclusão de Curso II (TCC II ). Cada etapa possui um status associado que representa o andamento de tal tarefa até o atual momento.
+
+
+
+\begin{table}[]
+\begin{tabular}{llllllllll} & \multicolumn{9}{c}{Meses(2018)}   \\
+\multirow{-2}{*}{Atividades} & Mar & Abr & Mai & Jun  &  Jul  & Ago  & Set  & Out  & Nov  \\
+Revisão da Literatura & \cellcolor[HTML]{00FF00} & \cellcolor[HTML]{00FF00} &  &  &  &  &  &  & \\
+Seleção das bases de dados &  & \cellcolor[HTML]{00FF00} & \cellcolor[HTML]{00FF00} & &  &  &  &  & \\
+Proposta de Modelo &  & \cellcolor[HTML]{0000FF} & \cellcolor[HTML]{0000FF} & \cellcolor[HTML]{0000FF} & \cellcolor[HTML]{0000FF} &  &  &  &  \\
+Execução dos Experimentos & & & &  &\cellcolor[HTML]{0000FF}& \cellcolor[HTML]{0000FF} & & \\
+Avaliação do Modelo &  &  &  &  &  & \cellcolor[HTML]{ff0000}  & \cellcolor[HTML]{ff0000} &  &  \\
+Texto do TCC I & \cellcolor[HTML]{00FF00} & \cellcolor[HTML]{00FF00} & \cellcolor[HTML]{00FF00} & \cellcolor[HTML]{00FF00} & & & & & \\
+Texto do TCC II &  &  &  &  & \cellcolor[HTML]{ff0000}  & \cellcolor[HTML]{ff0000} &  \cellcolor[HTML]{ff0000} & \cellcolor[HTML]{ff0000}  & \cellcolor[HTML]{ff0000}
+\end{tabular}
+\end{table}
+
+
+Na etapa de revisão da literatura foram levantados estudos que abordam modelos computacionais de classificação, reconhecimento facial e a verificação de parentesco a partir das características faciais de um par ou grupo de pessoas.
+
+ Na segunda etapa, foi selecionada a base de dados Families in the Wild, com aproximadamente 1,000 famílias, 10,676 pessoas diferentes, 30,725 faces nas fotos\cite{robinson2018visual}.
+ 
+ O modelo proposto para o trabalho foi uma implementação em python de uma rede neural convolucional siamesa do VGGFace com o  RESNET. Levando em consideração a proximidade das tarefas de verificação facial e verificação de parentesco, o modelo é prétreinado usando a base de dados Labeled Faces in the Wild\cite{huang:inria-00321923}, após isso são removidas as camadas do topo e são removidas.Para a utilização do conjunto de dados anteriormente selecionada para esse trabalho, Families in the Wild, foi realizado um pré-processamento das imagens utilizando a técnica de afunilamento\cite{huang2007unsupervised}. Realizado o pré-processamento da base, as imagens resultantes são utilizadas para treinar o modelo, e o modelo é testado utilizando cross-validation, demonstrando resultados de aproximadamente 79\% de acurácia.   

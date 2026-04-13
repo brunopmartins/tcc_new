@@ -1,8 +1,9 @@
 # Complete Bibliography: Kinship Classification from Facial Images
 
 **Format:** IEEE Style  
-**Total References:** 60+  
-**Organized by:** Category
+**Total References:** 72  
+**Organized by:** Category  
+**Includes:** Main evaluation metric used by each experimental study
 
 ---
 
@@ -78,7 +79,7 @@
 
 [27] (Author unknown), "ViTMa: A Novel Hybrid Vision Transformer and Mamba for Kinship Recognition in Indonesian Facial Micro-Expressions," *IEEE Access*, 2024. doi: 10.1109/ACCESS.2024.3480234.
 
-[28] (Author unknown), "An efficient deep learning system for kinship verification based on ConvNext-EfficientNet-VIT feature fusion," *Egyptian Informatics J.*, 2025. [Online]. Available: https://www.sciencedirect.com/science/article/pii/S1110866525002026
+
 
 [29] (Author unknown), "Kaggle Kinship Recognition Challenge: Introduction of Convolution-Free Model to boost conventional," *arXiv preprint*, Jun. 2022. arXiv:2206.05488.
 
@@ -202,6 +203,62 @@
 
 ---
 
+## Additional Recent Studies in the Area
+
+[69] H. Yan and C. Song, "Multi-scale deep relational reasoning for facial kinship verification," *Pattern Recognition*, vol. 110, p. 107541, 2021. doi: 10.1016/j.patcog.2020.107541.
+
+[70] J.-X. Jiang, et al., "Multi-attribute balanced dataset generation framework AutoSyn and KinFace Channel-Spatial Feature Extractor for kinship recognition," *Neurocomputing*, vol. 613, p. 128750, 2025. doi: 10.1016/j.neucom.2024.128750.
+
+[71] J. Yu, et al., "Unveiling facial kinship: The BioKinVis dataset for facial kinship verification and genetic association studies," *Electrophoresis*, vol. 45, no. 9-10, pp. 794-804, 2024. doi: 10.1002/elps.202300169.
+
+[72] X. Wu, X. Feng, C. A. Casado, L. Liu, and M. B. Lopez, "Exploring Facial Kinship Verification through Contactless Heart Activity Analysis," in *Proc. IEEE ICASSP*, 2025, pp. 1-5. doi: 10.1109/ICASSP49660.2025.10888280.
+
+---
+
+## Main Evaluation Metric Used in Each Study
+
+**Reading note:** when a paper reports multiple metrics, the table below lists the metric that is most central to the paper's experimental claim or benchmark protocol. For some entries, this is inferred from the task definition and dataset protocol when the accessible abstract/index page does not expose the full result table.
+
+| Ref. | Main metric used in the study | Notes |
+|------|-------------------------------|-------|
+| [1]-[6] | N/A | Survey and review papers; no single benchmark metric is central. |
+| [7], [8] | Verification accuracy / mean accuracy by relation | Foundational FIW benchmark papers. |
+| [9], [10] | Track-dependent: verification accuracy, tri-subject accuracy, and retrieval `mAP`/`Rank-1` | RFIW challenge papers. |
+| [11]-[13] | Verification accuracy / mean accuracy | Dataset and early benchmark papers. |
+| [14]-[19] | Verification accuracy / mean verification accuracy | Core Siamese and metric-learning kinship papers. |
+| [20] | Mean verification accuracy plus standard deviation across race groups | Fairness-aware kinship verification. |
+| [21] | Verification accuracy | FIW-focused supervised contrastive baseline. |
+| [22] | Accuracy, precision, recall, F1-score, and ROC-oriented verification metrics | Multi-task classifier paper. |
+| [23] | Verification accuracy | Contrastive kinship recognition benchmark. |
+| [24] | N/A for kinship | Generic contrastive-learning paper; original task emphasizes top-1 classification accuracy. |
+| [25] | Verification accuracy | FaCoR-style relation-aware kinship verification. |
+| [26] | Accuracy and F1-score | Childhood-image kinship classification with ViT. |
+| [27] | Classification accuracy | Kinship recognition framed as a multi-class recognition problem. |
+| [29] | Competition score / accuracy | Challenge-style benchmark entry. |
+| [30] | Verification accuracy under attack and attack success rate | Robustness/adversarial evaluation. |
+| [31] | N/A for kinship | Generic ViT backbone paper; original task emphasizes image-classification accuracy. |
+| [32]-[34] | Verification accuracy / mean accuracy | Graph-based kinship reasoning papers. |
+| [35], [36] | Verification accuracy, sometimes alongside ROC/AUC | Age-invariant kinship verification. |
+| [37] | Age-progression quality plus downstream verification accuracy | Synthesis-assisted kinship work. |
+| [38] | Verification accuracy plus fairness gap | Bias-aware face aging for kinship verification. |
+| [39] | Verification accuracy | Cross-generation kinship verification. |
+| [40]-[43] | N/A for vision benchmarking | Ethics, regulation, and public-attitude studies. |
+| [44] | Accuracy disparity across demographic subgroups | Fairness benchmark paper. |
+| [45] | Cross-dataset verification accuracy | Domain-generalization / unified-evaluation framing. |
+| [46] | Inflation in verification accuracy caused by same-photo bias | Bias-analysis paper rather than a new model paper. |
+| [47]-[49] | Verification accuracy / mean accuracy | Preprocessing and handcrafted/deep feature enhancement papers. |
+| [50] | Verification accuracy, sometimes with EER | Audio-visual kinship verification. |
+| [51]-[55] | N/A for kinship | Face-recognition backbone papers; primary metrics are face-recognition accuracy / verification rate in their own domain. |
+| [56] | Identification accuracy / rank-based identification rate | Kinship identification, not only binary verification. |
+| [57] | Calibration error / reliability plus preserved verification accuracy or AUC | Calibration-oriented verification study. |
+| [58]-[68] | N/A | Tooling resources and dataset URLs. |
+| [69] | Verification accuracy / mean accuracy | Multi-scale relational reasoning for kinship verification. |
+| [70] | Verification accuracy | AutoSyn + KinFace-CSFE study. |
+| [71] | Verification accuracy | Biomedical kinship dataset plus verification benchmark. |
+| [72] | Verification accuracy | Physiological-signal-assisted kinship verification. |
+
+---
+
 ## BibTeX Entries
 
 ```bibtex
@@ -293,6 +350,7 @@
 - [25]-[31] — Transformers and attention
 - [32]-[34] — Graph neural networks
 - [35]-[39] — Age-invariant methods
+- [69]-[72] — Additional recent directions (relational reasoning, synthetic balancing, biomedical and physiological cues)
 
 ### For Related Work (Fairness)
 - [20], [40]-[44] — Fairness and ethics
@@ -307,8 +365,8 @@
 
 ---
 
-**Total References:** 68  
-**Last Updated:** January 2026
+**Total References:** 72  
+**Last Updated:** April 2026
 
 ---
 

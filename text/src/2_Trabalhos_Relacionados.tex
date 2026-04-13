@@ -1,0 +1,25 @@
+\chapter[Trabalhos Relacionados]{Trabalhos Relacionados}
+\label{cap:Trabalhos Relacionados}
+Nesta sessão serão apresentados os trabalhos de \citeonline{fang2010towards}, pioneiros no desenvolvimento de classificadores para verificação de parentesco. Será apresentado também o trabalho de \cite{robinson2018visual}
+que utilizou redes neurais pré-treinadas para classificar a relação familiar entre indivíduos. 
+
+\section{Modelo de verificação de paternidade usando SVM}
+ O primeiro modelo computacional que abordou a questão da verificação visual de parentesco automatizada a partir de fotos de rostos foi dada por \citeonline{fang2010towards}. O trabalho aborda o problema como uma tarefa de classificação binária, com saídas é ou não é relacionado biológicamente, extraindo características consideradas discriminatórias para a identificação de consanguinidade entre indivíduos, vale notar também que foram consideradas somente as relações de paternidade.
+ 
+ O primeiro obstáculo encontrado ao longo do trabalho foi a inexistência de bases de dados conhecidas relacionadas ao tema abordado para o treinamento de modelos computacionais. Assim, a primeira tarefa foi montar um conjunto de dados classificados para possibilitar o treinamento e teste do classificador. Para a coleta de dados foi feita uma busca controlada de imagens de celebridades e seus respectivos filhos ou pais, no fim foram coletados 150 pares de pais e filhos.
+ 
+ Com a base de dados pronta, era necessário realizar uma extração de atributos relevantes do par de imagens para que o modelo distinguir a classe a qual ele pertence.Para extrair estes atributos foi utilizada um modelo de estrutura pictural\cite{felzenszwalb2005pictorial} e eles abrangiam aspectos como: cores(olhos, pele e cabelo),  partes da face, distãncia entre partes da face e histogramas de gradiente. Esses atributos eram computados e agrupados em um vetor de atributos.   
+   
+ Para classificar as os pares de imagens em verdadeiros ou falsos pares de pais-filhos, foram usados dois métodos de aprendizado de máquina, sendo eles k-Nearest-Neighbours e distância euclidiana e máquina de vetores de suporte(Support Vector Machine , A.K.A SVMs) com função de base radial. Após treino e avaliação utilizando Cross-Validation foi encontrada uma acurácia média de  68.60\%.
+ 
+ \section{Verificação de parentesco utilizando redes neurais convolucionais}
+  
+  Nos últimos anos vem ocorrendo um aumento do volume de dados disponíveis em bases de dados específicas para aprendizado de máquina, da necessidade de extrair informações úteis de grandes quantidades de dados e, sobretudo, o aumento da capacidade de processamento dos computadores, resultante, principalmente, da evolução das arquiteturas de GPU e da programação paralela, incentivaram o desenvolvimento do modelo computacional de aprendizado de máquina conhecido como aprendizado profundo.\cite{goodfellow2016deep}
+ 
+ Desde que o modelo de classificação AlexNetCNN ganhou o concurso ImageNet de 2012, o apredizado profundo, ou como é popularmente conhecido deep learning, se tornou estado-da-arte em uma gama ampla de aplicações de aprendizado de máquina. Um desses campos sendo o de reconhecimento facial, mas apesar da semelhança das aplicações, até 2018, poucos trabalhos foram realizados acerca da verificação de paretesco usando deep  learning. Isso ocorreu devido à escassez de dados nos bancos de dados existentes até a época.
+ 
+  Em 2018 foi lançado o banco de dados Families in the Wild, o maior banco até a atualiadade para treinamento de modelos de classificação do problema de verificação de parentesco entre pares. O banco possuia 1000 familías, mais de 13000 faces, e abrangia imagens de todos os tipos, de baixa e alta resolução, várias faixas etárias, etc \cite{robinson2018visual}.
+  
+  Com o surgimento de uma base de dados abrangente e volumosa, em \cite{robinson2018visual} foi proposta, como solução para o problema de verificação de parentesco, o uso de redes neurais convolucionais. Observando a semelhança do problema de reconhecimento de faces e verificação de parentesco, neste trabalho alguns modelos de redes neurais convolucionais bem sucedidos na tarefa de classificação de faces,como VGG-Face\cite{parkhi2015deep} e Resnet-22\cite{wen2016discriminative} são sugeridos como base para a solução do problema de verificação de parentesco. Os modelos pré-treinados em bases de dados usadas para classificação de faces, então são então removidas as duas camadas do topo e alimentando ao classificador os dados do conjunto de dados Families in the Wild a partir da camada anterior às removidas. 
+
+      

@@ -245,6 +245,60 @@ Os erros mais frequentes seguiram um padrao consistente:
 
 Este experimento reforca que um **VLM generico zero-shot nao substitui** modelos especializados para verificacao/classificacao de parentesco facial. Mesmo com 1500 imagens, o ganho concentrou-se nas relacoes pai/mae-filho(a) e em `sibs`, enquanto as relacoes de segundo grau permaneceram essencialmente irresolvidas. Como baseline metodologico, o resultado e valioso justamente por delimitar o que um modelo multimodal geral consegue inferir apenas com pistas visuais amplas.
 
+### Adaptacao ao Dominio por Prompt no VLM (Codex)
+
+Como extensao do baseline zero-shot, foi testada uma forma de **adaptacao ao dominio baseada em inferencia**, sem fine-tuning do modelo. A ideia foi adaptar o comportamento do VLM ao dominio de parentesco facial por meio de:
+
+- **few-shot in-context learning** com exemplos do `FIW/track-I/val-pairs.csv`
+- **prompt estruturado** obrigando o modelo a estimar gap geracional, genero e face mais velha antes da relacao final
+- **calibracao leve em validacao** usando as saidas auxiliares do proprio VLM
+
+Foram comparadas quatro configuracoes na validacao (110 pares balanceados): `seven_shot_v1`, `seven_shot_v2`, `eleven_shot_v1` e `eleven_shot_v2`. A melhor foi `seven_shot_v1` com **7 exemplos** e prompt estruturado mais conciso. Nenhuma variante de calibracao superou a saida bruta, entao a politica escolhida para o teste final foi `none`.
+
+### Resultados da Adaptacao ao Dominio — Mesmo Teste de 750 Pares
+
+| Metrica | Zero-shot baseline | Adaptado por prompt | Adaptado + calibracao |
+|---------|--------------------|---------------------|-----------------------|
+| **Accuracy** | **33.1%** | 26.7% | 26.7% |
+| **Macro Precision** | **0.245** | 0.203 | 0.203 |
+| **Macro Recall** | **0.320** | 0.260 | 0.260 |
+| **Macro F1** | **0.257** | 0.223 | 0.223 |
+
+O resultado foi **negativo**: a adaptacao inferencial por prompt **piorou** o desempenho no conjunto de teste, com delta de `-6.4` pontos em accuracy e `-0.034` em macro-F1. A calibracao nao trouxe qualquer ganho adicional.
+
+### Efeito por Relacao — Adaptacao vs. Zero-shot
+
+Os maiores **ganhos** ocorreram em:
+
+- `sibs`: `58.6% -> 67.1%`
+- `bb`: `8.3% -> 15.3%`
+- `ss`: `20.0% -> 22.9%`
+- `gmgd`: `0.0% -> 4.3%`
+
+Os maiores **prejuizos** ocorreram em:
+
+- `md`: `76.4% -> 33.3%`
+- `fd`: `72.9% -> 47.1%`
+- `ms`: `48.6% -> 35.7%`
+- `fs`: `67.1% -> 60.0%`
+
+As relacoes `gfgd`, `gfgs` e `gmgs` continuaram em `0%`.
+
+### Interpretacao da Adaptacao
+
+O prompt estruturado tornou o modelo **mais rigido** em torno de heuristicas explicitas de geracao/genero, mas nao mais correto. Os sinais auxiliares mostram isso:
+
+- a estimativa de **gap geracional** acertou apenas `54.4%` dos 750 pares
+- uma relacao derivada diretamente desses sinais ficou disponivel em `99.3%` dos casos
+- essa relacao derivada coincidiu com a predicao final do VLM em `91.6%` dos pares
+
+Ou seja, a adaptacao praticamente **engessou** a decisao do modelo em torno das suas proprias heuristicas intermediarias. Isso ajudou nas relacoes de mesma geracao (`bb`, `ss`, `sibs`), mas prejudicou fortemente relacoes pai/mae-filho(a), especialmente `md` e `fd`, sem resolver o problema central das relacoes de avo/avoa-neto(a).
+
+Assim, neste estudo, a tentativa de adaptacao ao dominio via prompt **nao superou** o baseline zero-shot simples. Esse resultado tambem e util para a dissertacao: ele mostra que nem toda forma de "adaptação ao domínio" em VLMs melhora o desempenho, e que uma estrutura de prompt mais elaborada pode amplificar vieses heurísticos em vez de aproximar o modelo do comportamento desejado.
+
+Artefatos: `data/codex_vlm_fiw_domain_adapt_1500/`  
+Metodologia detalhada: `docs/pt/12_adaptacao_dominio_vlm_codex.md`
+
 ---
 
 ### Experimento Zero-Shot com Claude Sonnet — FIW

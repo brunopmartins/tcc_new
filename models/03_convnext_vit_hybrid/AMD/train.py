@@ -77,6 +77,9 @@ def parse_args():
                         help="Feature fusion strategy")
     parser.add_argument("--freeze_backbones", action="store_true",
                         help="Freeze pretrained backbones")
+    parser.add_argument("--unfreeze_after", type=int, default=0,
+                        help="Unfreeze backbones after N epochs (requires --freeze_backbones). "
+                             "Backbones get a 100x lower LR than the head.")
 
     # Ablation
     parser.add_argument("--ablation_mode", type=str, default=None,
@@ -157,6 +160,56 @@ class HybridLoss(nn.Module):
             similarity = torch.sum(emb1 * emb2, dim=1)
             return self.loss_fn(similarity, labels)
         return self.loss_fn(emb1, emb2, labels)
+
+
+class StagedUnfreezeTrainer(ROCmTrainer):
+    """ROCmTrainer with staged backbone unfreezing."""
+
+    def __init__(self, *args, unfreeze_after: int = 0, backbone_lr_factor: float = 0.01, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.unfreeze_after = unfreeze_after
+        self.backbone_lr_factor = backbone_lr_factor
+        self._unfrozen = False
+
+    def on_epoch_start(self, epoch: int) -> None:
+        if self.unfreeze_after > 0 and epoch == self.unfreeze_after + 1 and not self._unfrozen:
+            self._unfrozen = True
+            print(f"\n  >>> Unfreezing backbones at epoch {epoch} <<<")
+
+            # Unfreeze all backbone parameters
+            model = self.model
+            # Handle DataParallel wrapper
+            if hasattr(model, 'module'):
+                model = model.module
+
+            for param in model.convnext.parameters():
+                param.requires_grad = True
+            for param in model.vit.parameters():
+                param.requires_grad = True
+
+            trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+            print(f"  >>> Trainable parameters: {trainable:,}")
+
+            # Rebuild optimizer with layerwise LR
+            head_lr = self.optimizer.param_groups[0]["lr"]
+            backbone_lr = head_lr * self.backbone_lr_factor
+
+            self.optimizer = torch.optim.AdamW([
+                {"params": model.convnext.parameters(), "lr": backbone_lr},
+                {"params": model.vit.parameters(), "lr": backbone_lr},
+                {"params": model.fusion.parameters(), "lr": head_lr},
+                {"params": model.projection.parameters(), "lr": head_lr},
+            ], weight_decay=self.config.weight_decay)
+
+            # Rebuild scheduler for remaining epochs
+            remaining = self.config.num_epochs - epoch
+            if self.config.scheduler == "cosine" and remaining > 0:
+                from torch.optim.lr_scheduler import CosineAnnealingLR
+                self.scheduler = CosineAnnealingLR(
+                    self.optimizer, T_max=remaining, eta_min=self.config.min_lr
+                )
+            print(f"  >>> Head LR: {head_lr:.2e}, Backbone LR: {backbone_lr:.2e}")
+            print(f"  >>> Scheduler reset for {remaining} remaining epochs\n")
 
 
 def main():
@@ -278,16 +331,29 @@ def main():
     loss_fn = HybridLoss(args.loss, args.temperature, args.margin)
 
     # Trainer
-    trainer = ROCmTrainer(
-        model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        loss_fn=loss_fn,
-        config=train_config,
-        device=device,
-        rocm_device_id=args.rocm_device,
-        monitor_metric=train_config.monitor_metric,
-    )
+    if args.unfreeze_after > 0 and args.freeze_backbones:
+        trainer = StagedUnfreezeTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            loss_fn=loss_fn,
+            config=train_config,
+            device=device,
+            rocm_device_id=args.rocm_device,
+            monitor_metric=train_config.monitor_metric,
+            unfreeze_after=args.unfreeze_after,
+        )
+    else:
+        trainer = ROCmTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            loss_fn=loss_fn,
+            config=train_config,
+            device=device,
+            rocm_device_id=args.rocm_device,
+            monitor_metric=train_config.monitor_metric,
+        )
 
     if args.resume:
         print(f"Resuming from {args.resume}")
