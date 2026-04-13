@@ -326,6 +326,97 @@ Em resumo, a comparacao foi util porque isola o caso mais dificil e mostra com c
 
 ---
 
+## Sweep de Prompts Direcionados no Mesmo Recorte
+
+### Motivacao
+
+Depois do primeiro recorte de `12` pares, ficou uma duvida importante: o fracasso vinha principalmente do espaco de rotulos `11-way`, onde o VLM escorrega para `fd`, `fs`, `md` e `ms`, ou o problema persistiria mesmo com prompts mais agressivos e especializados para avo(a)-neto(a)?
+
+Para responder isso, foi feito um segundo sweep no **mesmo manifesto de 12 pares**, sem trocar amostra, variando apenas o prompt.
+
+### Familias de prompt testadas
+
+Foram comparados dois grupos novos de prompt:
+
+- **11-way com guardrails**, ainda permitindo todas as `11` relacoes, mas forçando mais explicitamente o VLM a separar `same_generation`, `one_generation_apart` e `two_generation_apart`
+- **4-way oracular**, restringindo o espaco de resposta apenas a `gfgd`, `gfgs`, `gmgd` e `gmgs`
+
+Importante:
+
+- os prompts **11-way** continuam comparaveis com a tarefa original
+- os prompts **4-way** sao apenas **diagnosticos**, porque usam a informacao externa de que este recorte contem apenas relacoes de avo(a)-neto(a)
+
+### Configuracoes novas
+
+| Configuracao | Tipo | Demos | Observacao |
+|--------------|------|-------|------------|
+| `directed_11way_guardrail_v1` | 11-way | nao | reforca "duas geracoes" antes da decisao final |
+| `directed_11way_guardrail_v2` | 11-way | nao | usa tabela de eliminacao mais rigida |
+| `oracle_4way_zero_shot_v1` | 4-way | nao | mapeia genero do idoso + genero do mais jovem |
+| `oracle_4way_zero_shot_v2` | 4-way | nao | mesmo espaco 4-way, com regras mais estritas |
+| `fewshot_oracle_4way_v1` | 4-way | sim | um demo por relacao avo(a)-neto(a) |
+
+### Resultado agregado
+
+| Configuracao | Accuracy exata | Macro F1 ativo | Bucket avo(a)-neto(a) | `two_generation_apart` declarado |
+|--------------|----------------|----------------|------------------------|----------------------------------|
+| zero-shot referencia | `0/12` = **0.0%** | `0.000` | `8.3%` | n/a |
+| `seven_shot_v1` referencia | `0/12` = **0.0%** | `0.000` | `16.7%` | `16.7%` |
+| `directed_11way_guardrail_v1` | `0/12` = **0.0%** | `0.000` | `25.0%` | `25.0%` |
+| `directed_11way_guardrail_v2` | `0/12` = **0.0%** | `0.000` | `33.3%` | `33.3%` |
+| `oracle_4way_zero_shot_v1` | `1/12` = **8.3%** | `0.071` | `100%` | `91.7%` |
+| `oracle_4way_zero_shot_v2` | `1/12` = **8.3%** | `0.071` | `100%` | `100%` |
+| `fewshot_oracle_4way_v1` | `0/12` = **0.0%** | `0.000` | `100%` | `100%` |
+
+### Como interpretar esses resultados
+
+O sweep mostra tres coisas diferentes.
+
+Primeiro, os prompts **11-way** realmente empurram o modelo um pouco mais na direcao correta do **bucket geracional**. O melhor deles (`directed_11way_guardrail_v2`) saiu de `16.7%` para `33.3%` de predicoes dentro do bucket avo(a)-neto(a). Ainda assim, isso nao se converteu em nenhum acerto exato. Em outras palavras, mais estrutura ajuda o VLM a "suspeitar" um pouco mais de duas geracoes de distancia, mas nao o suficiente para sair das heuristicas erradas.
+
+Segundo, os prompts **4-way** mostram que parte do problema realmente estava no espaco amplo de rotulos. Quando o modelo fica proibido de responder `fd`, `fs`, `md` ou `ms`, ele finalmente para de colapsar para pai/mae-filho(a). Isso fica visivel porque o bucket avo(a)-neto(a) vai para `100%`. Mas aqui existe uma ressalva metodologica importante: esse `100%` nao significa sucesso real, pois e praticamente garantido pela propria restricao do label space. O numero que importa nesses prompts passa a ser a **accuracy exata**, e ela sobe apenas para `1/12`.
+
+Terceiro, o experimento `fewshot_oracle_4way_v1` mostra que **mais contexto nao necessariamente ajuda**. Mesmo com um demo por relacao de avo(a)-neto(a), o resultado voltou para `0/12`, com confianca media acima de `0.90`. Isso sugere que os exemplos few-shot nao corrigiram a heuristica visual do modelo; ao contrario, podem ter reforcado uma regra errada aplicada com mais conviccao.
+
+### O que os erros dos prompts 4-way revelam
+
+Os prompts 4-way foram os mais informativos porque removem a desculpa do "bucket errado". Neles, o VLM e obrigado a escolher entre apenas quatro classes:
+
+- `gfgd`
+- `gfgs`
+- `gmgd`
+- `gmgs`
+
+Mesmo assim, o padrao de erro continuou fortemente sistematico:
+
+- os `3` casos de `gfgd` foram classificados como `gmgs`
+- os `3` casos de `gfgs` foram classificados como `gmgd`
+- os `3` casos de `gmgd` foram distribuidos entre `gfgd` e `gfgs`
+- os `3` casos de `gmgs` tiveram apenas `1` acerto
+
+Isso indica que o gargalo nao e apenas "perceber que sao duas geracoes de distancia". O modelo ainda falha em algo mais fino:
+
+- identificar corretamente qual face deve ser tratada como a mais velha
+- inferir o genero da geracao mais velha com estabilidade
+- mapear de forma consistente genero da pessoa mais velha + genero da pessoa mais jovem para a relacao final
+
+Ou seja, ao restringir o problema para `4` classes, o erro deixa de ser "pai/mae vs avo/avoa" e passa a ser um erro de **papel genealogico fino**.
+
+### Leitura final do sweep
+
+Esse segundo teste refina a interpretacao anterior.
+
+- Se o prompt continua `11-way`, ele melhora um pouco a chance de cair no bucket correto, mas nao resolve a classificacao final.
+- Se o prompt vira `4-way`, o bucket deixa de ser o problema principal, mas a discriminacao entre `gfgd`, `gfgs`, `gmgd` e `gmgs` continua muito fraca.
+- Se adicionamos demos few-shot dentro do espaco `4-way`, o modelo nao melhora e ainda fica mais confiante nos erros.
+
+Portanto, aumentar a variedade de prompts direcionados foi util porque mostra que existe um teto claro para esse tipo de adaptacao inferencial:
+
+- o prompt consegue mudar o **tipo de erro**
+- mas nao consegue entregar uma separacao fina confiavel entre as relacoes de avo(a)-neto(a)
+
+---
+
 ## Conclusao
 
 Neste repositório, a tentativa de **adaptacao ao dominio baseada em prompt** para o Codex VLM:
@@ -342,6 +433,7 @@ Esse e um resultado util para a pesquisa porque mostra que:
 3. o gargalo continua sendo distinguir **graus genealogicos** mais do que apenas idade/genero
 4. a especializacao supervisionada segue sendo necessaria
 5. mesmo num recorte focado de `12` pares apenas com relacoes de avo(a)-neto(a), o modelo ficou em `0/12`, o que reforca que o gargalo nao esta na mistura de classes do teste geral
+6. ao restringir o problema para apenas `4` relacoes de avo(a)-neto(a), o modelo chegou a no maximo `1/12`, mostrando que o limite nao e so o label space amplo, mas a propria discriminacao visual fina entre subtipos genealogicos
 
 Portanto, a contribuicao deste experimento nao esta em "superar o baseline", mas em demonstrar de forma controlada que uma adaptacao inferencial aparentemente razoavel pode **piorar** o desempenho global ao reforcar heuristicas superficiais.
 
@@ -353,6 +445,7 @@ Todos os artefatos do experimento foram salvos em:
 
 - `data/codex_vlm_fiw_domain_adapt_1500/`
 - `data/codex_vlm_fiw_grandparent_slice_12/`
+- `data/codex_vlm_fiw_grandparent_prompt_sweep_12/`
 
 Arquivos principais:
 
@@ -365,3 +458,5 @@ Arquivos principais:
 - `tools/run_codex_vlm_fiw_domain_adapt.py`
 - `pair_level_comparison.csv`
 - `tools/run_codex_vlm_fiw_grandparent_slice.py`
+- `prompt_sweep_summary.json`
+- `tools/run_codex_vlm_fiw_grandparent_prompt_sweep.py`
