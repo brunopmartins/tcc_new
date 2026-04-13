@@ -417,6 +417,89 @@ Portanto, aumentar a variedade de prompts direcionados foi util porque mostra qu
 
 ---
 
+## Pipeline Hierarquico por Atributos
+
+### Ideia da melhoria
+
+Como os prompts anteriores continuavam misturando varios subproblemas num unico passo, foi implementado um pipeline mais proximo de uma decomposicao semantica da tarefa:
+
+1. **perfil facial por face**
+   - estimar genero da face esquerda
+   - estimar genero da face direita
+   - estimar bucket etario de cada face
+2. **adjudicacao do par**
+   - decidir qual lado parece mais velho
+   - decidir se o gap parece `same_generation`, `one_generation_apart` ou `two_generation_apart`
+3. **regra deterministica**
+   - mapear lado mais velho + genero do mais velho + genero do mais jovem para `gfgd`, `gfgs`, `gmgd` ou `gmgs`
+
+Essa implementacao tenta reduzir o peso de um prompt monolitico e forcar o VLM a errar, se errar, em componentes mais localizaveis.
+
+### Politicas finais avaliadas
+
+Com os mesmos sinais intermediarios, foram testadas duas politicas de leitura final:
+
+- **`pair_primary`**: usa o lado mais velho vindo da adjudicacao do par
+- **`age_primary`**: usa o lado mais velho derivado dos buckets etarios, com fallback da etapa do par
+
+### Resultado no mesmo recorte de 12 pares
+
+| Configuracao | Accuracy exata | Macro F1 ativo | Bucket avo(a)-neto(a) | `two_generation_apart` declarado |
+|--------------|----------------|----------------|------------------------|----------------------------------|
+| melhor prompt 4-way anterior | `1/12` = **8.3%** | `0.071` | `100%` | `91.7%` |
+| pipeline hierarquico `pair_primary` | `0/12` = **0.0%** | `0.000` | `100%` | `16.7%` |
+| pipeline hierarquico `age_primary` | `0/12` = **0.0%** | `0.000` | `100%` | `16.7%` |
+
+### O que esse resultado mostra
+
+O resultado foi negativo, mas bastante revelador.
+
+Primeiro, as duas politicas finais produziram exatamente o mesmo desempenho. Isso significa que o gargalo **nao estava** na regra de leitura final entre "usar o lado mais velho do par" ou "usar o lado mais velho pelos buckets de idade". O erro aparece antes, nas estimativas intermediarias.
+
+Segundo, a etapa de adjudicacao do par continuou subestimando muito a distancia geracional:
+
+- `9/12` pares foram descritos como `one_generation_apart`
+- `1/12` par foi descrito como `same_generation`
+- apenas `2/12` pares foram descritos como `two_generation_apart`
+
+Ou seja, mesmo num pipeline desenhado para separar claramente os componentes da decisao, o VLM quase sempre continuou vendo os pares como algo mais proximo de **pai/mae-filho(a)** do que de **avo(a)-neto(a)**.
+
+Terceiro, a leitura de genero tambem permaneceu instavel em pontos centrais. O padrao de previsao final foi:
+
+- `gfgd` real -> `gmgs` em todos os `3` casos
+- `gfgs` real -> `gmgd` em `2` casos e `gmgs` em `1`
+- `gmgd` real -> `gfgd` em `1` caso e `gfgs` em `2`
+- `gmgs` real -> `gfgd` em `2` casos e `gfgs` em `1`
+
+Esse padrao e importante porque mostra que a pipeline nao colapsou para labels aleatorias; ela produziu um erro **estruturado**. Em geral, o sistema conseguia devolver uma das quatro classes, mas errava justamente a identificacao fina de:
+
+- sexo da pessoa mais velha
+- sexo da pessoa mais jovem
+- nivel geracional correto do par
+
+### Comparacao com o melhor prompt anterior
+
+O melhor resultado anterior no recorte veio do `oracle_4way_zero_shot_v1`, com `1/12` de accuracy. O pipeline hierarquico nao alcançou esse unico acerto.
+
+Isso sugere que, neste caso, a decomposicao em etapas nao aumentou a qualidade do sinal. Pelo contrario: ela parece ter introduzido **duas oportunidades de erro**:
+
+1. errar o perfil facial individual
+2. errar a adjudicacao do par
+
+Como a regra final era deterministica, qualquer erro numa dessas etapas contaminava a relacao final sem espaco para recuperacao.
+
+### Conclusao especifica desta melhoria
+
+Essa melhoria continua sendo util para a pesquisa, mesmo sem ganho de acuracia, porque ela ajuda a localizar o gargalo com mais precisao:
+
+- o problema nao e apenas o prompt final fechado em `11` ou `4` classes
+- o problema tambem nao parece ser apenas a regra final de mapeamento
+- o principal ponto fraco continua sendo a **inferência visual dos atributos intermediarios**, especialmente `generation_gap` e genero relativo nas relacoes avo(a)-neto(a)
+
+Em outras palavras, a hierarquia tornou o erro mais interpretavel, mas nao o tornou menor.
+
+---
+
 ## Conclusao
 
 Neste repositório, a tentativa de **adaptacao ao dominio baseada em prompt** para o Codex VLM:
@@ -434,6 +517,7 @@ Esse e um resultado util para a pesquisa porque mostra que:
 4. a especializacao supervisionada segue sendo necessaria
 5. mesmo num recorte focado de `12` pares apenas com relacoes de avo(a)-neto(a), o modelo ficou em `0/12`, o que reforca que o gargalo nao esta na mistura de classes do teste geral
 6. ao restringir o problema para apenas `4` relacoes de avo(a)-neto(a), o modelo chegou a no maximo `1/12`, mostrando que o limite nao e so o label space amplo, mas a propria discriminacao visual fina entre subtipos genealogicos
+7. uma decomposicao hierarquica por atributos tambem nao melhorou o recorte, o que indica que o gargalo principal esta na qualidade dos sinais intermediarios inferidos pelo VLM
 
 Portanto, a contribuicao deste experimento nao esta em "superar o baseline", mas em demonstrar de forma controlada que uma adaptacao inferencial aparentemente razoavel pode **piorar** o desempenho global ao reforcar heuristicas superficiais.
 
@@ -446,6 +530,7 @@ Todos os artefatos do experimento foram salvos em:
 - `data/codex_vlm_fiw_domain_adapt_1500/`
 - `data/codex_vlm_fiw_grandparent_slice_12/`
 - `data/codex_vlm_fiw_grandparent_prompt_sweep_12/`
+- `data/codex_vlm_fiw_grandparent_attribute_pipeline_12/`
 
 Arquivos principais:
 
@@ -460,3 +545,6 @@ Arquivos principais:
 - `tools/run_codex_vlm_fiw_grandparent_slice.py`
 - `prompt_sweep_summary.json`
 - `tools/run_codex_vlm_fiw_grandparent_prompt_sweep.py`
+- `metrics_pair_primary.json`
+- `metrics_age_primary.json`
+- `tools/run_codex_vlm_fiw_grandparent_attribute_pipeline.py`
