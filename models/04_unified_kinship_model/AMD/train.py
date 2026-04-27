@@ -9,6 +9,7 @@ Usage:
     python train.py --dataset fiw --use_age_synthesis --use_cross_attention
 """
 import argparse
+import gc
 import os
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ import torch
 import torch.nn as nn
 
 # Setup ROCm environment before other imports
+os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "10.3.0")  # RX 6700/6750 XT (gfx1031)
 os.environ["MIOPEN_FIND_MODE"] = "FAST"
 os.environ["HSA_FORCE_FINE_GRAIN_PCIE"] = "1"
 
@@ -87,7 +89,7 @@ def parse_args():
 
     # Training
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=4)  # Low to avoid OOM; effective batch = batch_size * gradient_accumulation
     parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
 
@@ -109,8 +111,8 @@ def parse_args():
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints")
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--gradient_accumulation", type=int, default=2,
-                        help="Gradient accumulation steps")
+    parser.add_argument("--gradient_accumulation", type=int, default=4,
+                        help="Gradient accumulation steps (effective batch = batch_size * this)")
 
     return parser.parse_args()
 
@@ -180,11 +182,13 @@ class UnifiedROCmTrainer(ROCmTrainer):
                     loss = self.loss_fn(output, labels)
                     loss = loss / self.gradient_accumulation
 
+                _loss_val = loss.item()
                 self.scaler.scale(loss).backward()
             else:
                 output = self.model(img1, img2)
                 loss = self.loss_fn(output, labels)
                 loss = loss / self.gradient_accumulation
+                _loss_val = loss.item()
                 loss.backward()
 
             # Gradient accumulation
@@ -208,10 +212,14 @@ class UnifiedROCmTrainer(ROCmTrainer):
 
                 self.optimizer.zero_grad(set_to_none=True)
 
-            total_loss += loss.item() * self.gradient_accumulation
+            del output, loss
+            clear_rocm_cache()
+            gc.collect()
+
+            total_loss += _loss_val * self.gradient_accumulation
             num_batches += 1
 
-            pbar.set_postfix({"loss": f"{loss.item() * self.gradient_accumulation:.4f}"})
+            pbar.set_postfix({"loss": f"{_loss_val * self.gradient_accumulation:.4f}"})
 
         if num_batches % self.gradient_accumulation != 0:
             if self.use_amp:

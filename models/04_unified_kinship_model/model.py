@@ -18,9 +18,12 @@ Architecture:
                       ↓
                  Kinship Score
 """
+import gc
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as grad_checkpoint
 from typing import Optional, List, Tuple, Dict
 import timm
 
@@ -57,16 +60,25 @@ class HybridBackbone(nn.Module):
         pretrained: bool = True,
         output_dim: int = 512,
         fusion_type: str = "concat",
+        use_gradient_checkpointing: bool = True,
     ):
         super().__init__()
-        
+        self.use_gradient_checkpointing = use_gradient_checkpointing
+
         # ConvNeXt for local features
         self.convnext = timm.create_model(convnext_model, pretrained=pretrained, num_classes=0)
         self.convnext_dim = self.convnext.num_features
-        
+
         # ViT for global features
         self.vit = timm.create_model(vit_model, pretrained=pretrained, num_classes=0)
         self.vit_dim = self.vit.embed_dim
+
+        # Enable gradient checkpointing on backbones
+        if use_gradient_checkpointing:
+            if hasattr(self.convnext, 'set_grad_checkpointing'):
+                self.convnext.set_grad_checkpointing(enable=True)
+            if hasattr(self.vit, 'set_grad_checkpointing'):
+                self.vit.set_grad_checkpointing(enable=True)
         
         # Fusion
         self.fusion_type = fusion_type
@@ -86,10 +98,20 @@ class HybridBackbone(nn.Module):
         
         self.output_dim = output_dim
     
+    def _run_convnext(self, x: torch.Tensor) -> torch.Tensor:
+        return self.convnext(x)
+
+    def _run_vit(self, x: torch.Tensor) -> torch.Tensor:
+        return self.vit(x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Extract fused features."""
-        conv_feat = self.convnext(x)
-        vit_feat = self.vit(x)
+        if self.use_gradient_checkpointing and self.training:
+            conv_feat = grad_checkpoint(self._run_convnext, x, use_reentrant=False)
+            vit_feat = grad_checkpoint(self._run_vit, x, use_reentrant=False)
+        else:
+            conv_feat = self.convnext(x)
+            vit_feat = self.vit(x)
         
         if self.fusion_type == "concat":
             combined = torch.cat([conv_feat, vit_feat], dim=1)
@@ -261,21 +283,22 @@ class UnifiedKinshipModel(nn.Module):
         # Age synthesis
         use_age_synthesis: bool = True,
         target_ages: List[int] = [20, 40, 60],
-        
+
         # Hybrid backbone
         convnext_model: str = "convnext_base",
         vit_model: str = "vit_base_patch16_224",
         fusion_type: str = "concat",
-        
+
         # Cross-attention
         use_cross_attention: bool = True,
         num_cross_attn_layers: int = 2,
         cross_attn_heads: int = 8,
-        
+
         # General
         embedding_dim: int = 512,
         dropout: float = 0.1,
         aggregation: str = "attention",
+        use_gradient_checkpointing: bool = True,
     ):
         super().__init__()
         
@@ -296,6 +319,7 @@ class UnifiedKinshipModel(nn.Module):
             vit_model=vit_model,
             output_dim=embedding_dim,
             fusion_type=fusion_type,
+            use_gradient_checkpointing=use_gradient_checkpointing,
         )
         
         # Cross-attention layers
@@ -472,7 +496,7 @@ def create_model(config=None) -> UnifiedKinshipModel:
     """Factory function to create model."""
     if config is None:
         return UnifiedKinshipModel(use_age_synthesis=False)
-    
+
     return UnifiedKinshipModel(
         use_age_synthesis=getattr(config, "use_age_synthesis", False),
         target_ages=getattr(config, "target_ages", [20, 40, 60]),
@@ -484,6 +508,7 @@ def create_model(config=None) -> UnifiedKinshipModel:
         cross_attn_heads=getattr(config, "cross_attn_heads", 8),
         embedding_dim=getattr(config, "embedding_dim", 512),
         aggregation=getattr(config, "age_aggregation", "attention"),
+        use_gradient_checkpointing=getattr(config, "use_gradient_checkpointing", True),
     )
 
 

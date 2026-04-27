@@ -7,6 +7,7 @@ Usage:
     python train.py --dataset fiw --use_age_synthesis --use_cross_attention
 """
 import argparse
+import gc
 import sys
 from pathlib import Path
 
@@ -68,7 +69,7 @@ def parse_args():
     
     # Training
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=16)  # Lower due to large model
+    parser.add_argument("--batch_size", type=int, default=4)  # Low to avoid OOM; effective batch = batch_size * gradient_accumulation
     parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     
@@ -82,8 +83,8 @@ def parse_args():
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints")
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--gradient_accumulation", type=int, default=2,
-                        help="Gradient accumulation steps")
+    parser.add_argument("--gradient_accumulation", type=int, default=4,
+                        help="Gradient accumulation steps (effective batch = batch_size * this)")
     
     return parser.parse_args()
 
@@ -156,12 +157,14 @@ class UnifiedTrainer(Trainer):
                     output = self.model(img1, img2)
                     loss = self.loss_fn(output, labels)
                     loss = loss / self.gradient_accumulation
-                
+
+                _loss_val = loss.item()
                 self.scaler.scale(loss).backward()
             else:
                 output = self.model(img1, img2)
                 loss = self.loss_fn(output, labels)
                 loss = loss / self.gradient_accumulation
+                _loss_val = loss.item()
                 loss.backward()
             
             # Gradient accumulation
@@ -182,13 +185,18 @@ class UnifiedTrainer(Trainer):
                             self.config.max_grad_norm,
                         )
                     self.optimizer.step()
-                
-                self.optimizer.zero_grad()
-            
-            total_loss += loss.item() * self.gradient_accumulation
+
+                self.optimizer.zero_grad(set_to_none=True)
+
+            del output, loss
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+
+            total_loss += _loss_val * self.gradient_accumulation
             num_batches += 1
             
-            pbar.set_postfix({"loss": f"{loss.item() * self.gradient_accumulation:.4f}"})
+            pbar.set_postfix({"loss": f"{_loss_val * self.gradient_accumulation:.4f}"})
 
         if num_batches % self.gradient_accumulation != 0:
             if self.config.use_amp:

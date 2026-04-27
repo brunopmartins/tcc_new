@@ -37,7 +37,7 @@ services:
       - ./output:/app/output
     environment:
       EPOCHS: ${EPOCHS:-50}
-      BATCH_SIZE: ${BATCH_SIZE:-16}
+      BATCH_SIZE: ${BATCH_SIZE:-4}
       GPU_ID: ${GPU_ID:-0}
       LEARNING_RATE: ${LEARNING_RATE:-1e-4}
       TRAIN_DATASET: ${TRAIN_DATASET:-fiw}
