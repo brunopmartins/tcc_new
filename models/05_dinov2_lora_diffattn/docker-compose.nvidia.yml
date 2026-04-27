@@ -1,0 +1,60 @@
+# =============================================================================
+# Model 05: DINOv2 + LoRA + Differential FaCoR — Nvidia CUDA Docker Compose
+# =============================================================================
+services:
+  pipeline:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.nvidia
+    image: kinship-nvidia:latest
+    container_name: model05-nvidia-pipeline
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ../../data/FIW:/app/data/FIW:ro
+      - ../../data/KinFaceW-I:/app/data/KinFaceW-I:ro
+      - ../../data/KinFaceW-II:/app/data/KinFaceW-II:ro
+      - ./Nvidia:/app/models/05_dinov2_lora_diffattn/Nvidia:ro
+      - ./model.py:/app/models/05_dinov2_lora_diffattn/model.py:ro
+      - ../shared:/app/models/shared:ro
+      - ./output:/app/output
+    environment:
+      EPOCHS: ${EPOCHS:-80}
+      BATCH_SIZE: ${BATCH_SIZE:-16}
+      GRAD_ACCUM: ${GRAD_ACCUM:-2}
+      LEARNING_RATE: ${LEARNING_RATE:-3e-4}
+      TRAIN_DATASET: ${TRAIN_DATASET:-fiw}
+      BACKBONE: ${BACKBONE:-vit_base_patch14_dinov2.lvd142m}
+      LORA_RANK: ${LORA_RANK:-8}
+      RELATION_LOSS_WEIGHT: ${RELATION_LOSS_WEIGHT:-0.2}
+    working_dir: /app/models/05_dinov2_lora_diffattn/Nvidia
+    command: >
+      bash -c "
+        set -e
+        mkdir -p /app/output/checkpoints /app/output/results /app/output/logs
+        python train.py \
+          --train_dataset          $${TRAIN_DATASET} \
+          --epochs                 $${EPOCHS} \
+          --batch_size             $${BATCH_SIZE} \
+          --gradient_accumulation  $${GRAD_ACCUM} \
+          --lr                     $${LEARNING_RATE} \
+          --backbone_name          $${BACKBONE} \
+          --lora_rank              $${LORA_RANK} \
+          --relation_loss_weight   $${RELATION_LOSS_WEIGHT} \
+          --checkpoint_dir         /app/output/checkpoints \
+          2>&1 | tee /app/output/logs/train.log
+        python test.py --checkpoint /app/output/checkpoints/best.pt \
+          --dataset $${TRAIN_DATASET} --batch_size $${BATCH_SIZE} \
+          --output_dir /app/output/results 2>&1 | tee /app/output/logs/test.log
+        python evaluate.py --checkpoint /app/output/checkpoints/best.pt \
+          --dataset $${TRAIN_DATASET} --batch_size $${BATCH_SIZE} \
+          --output_dir /app/output/results --full_analysis \
+          2>&1 | tee /app/output/logs/evaluate.log
+      "
+    stdin_open: true
+    tty: true
