@@ -1,0 +1,90 @@
+# =============================================================================
+# Model 06: Retrieval-Augmented Kinship — AMD ROCm Docker Compose
+# =============================================================================
+services:
+  pipeline:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.amd
+    image: kinship-amd:latest
+    container_name: model06-amd-pipeline
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+    volumes:
+      - ../../data/FIW:/app/data/FIW:ro
+      - ../../data/KinFaceW-I:/app/data/KinFaceW-I:ro
+      - ../../data/KinFaceW-II:/app/data/KinFaceW-II:ro
+      - ./AMD:/app/models/06_retrieval_augmented_kinship/AMD:ro
+      - ./model.py:/app/models/06_retrieval_augmented_kinship/model.py:ro
+      - ../shared:/app/models/shared:ro
+      - ./output:/app/output
+    environment:
+      EPOCHS: ${EPOCHS:-60}
+      BATCH_SIZE: ${BATCH_SIZE:-8}
+      GRAD_ACCUM: ${GRAD_ACCUM:-4}
+      LEARNING_RATE: ${LEARNING_RATE:-1e-4}
+      TRAIN_DATASET: ${TRAIN_DATASET:-fiw}
+      BACKBONE: ${BACKBONE:-vit_base_patch16_224}
+      RETRIEVAL_K: ${RETRIEVAL_K:-32}
+      MAX_GALLERY: ${MAX_GALLERY:-200000}
+      STORE_GALLERY_ON_CPU: ${STORE_GALLERY_ON_CPU:-0}
+      RELATION_LOSS_WEIGHT: ${RELATION_LOSS_WEIGHT:-0.15}
+      GPU_ID: ${GPU_ID:-0}
+      HIP_VISIBLE_DEVICES: ${GPU_ID:-0}
+      ROCR_VISIBLE_DEVICES: ${GPU_ID:-0}
+    working_dir: /app/models/06_retrieval_augmented_kinship/AMD
+    command: >
+      bash -c "
+        set -e
+        mkdir -p /app/output/checkpoints /app/output/results /app/output/logs
+        ARGS=\"--train_dataset $${TRAIN_DATASET} --epochs $${EPOCHS} \
+               --batch_size $${BATCH_SIZE} --gradient_accumulation $${GRAD_ACCUM} \
+               --lr $${LEARNING_RATE} --backbone_name $${BACKBONE} \
+               --retrieval_k $${RETRIEVAL_K} --max_gallery $${MAX_GALLERY} \
+               --relation_loss_weight $${RELATION_LOSS_WEIGHT} \
+               --checkpoint_dir /app/output/checkpoints\"
+        if [ \"$${STORE_GALLERY_ON_CPU}\" = \"1\" ]; then
+            ARGS=\"$$ARGS --store_gallery_on_cpu\"
+        fi
+        echo 'Training...'
+        python train.py $$ARGS 2>&1 | tee /app/output/logs/train.log
+        echo 'Testing...'
+        python test.py --checkpoint /app/output/checkpoints/best.pt \
+          --dataset $${TRAIN_DATASET} --batch_size $${BATCH_SIZE} \
+          --output_dir /app/output/results 2>&1 | tee /app/output/logs/test.log
+        echo 'Evaluating...'
+        python evaluate.py --checkpoint /app/output/checkpoints/best.pt \
+          --dataset $${TRAIN_DATASET} --batch_size $${BATCH_SIZE} \
+          --output_dir /app/output/results --full_analysis \
+          2>&1 | tee /app/output/logs/evaluate.log
+      "
+    stdin_open: true
+    tty: true
+
+  shell:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.amd
+    image: kinship-amd:latest
+    container_name: model06-amd-shell
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+    volumes:
+      - ../../data/FIW:/app/data/FIW
+      - ../../data/KinFaceW-I:/app/data/KinFaceW-I
+      - ../../data/KinFaceW-II:/app/data/KinFaceW-II
+      - ./AMD:/app/models/06_retrieval_augmented_kinship/AMD
+      - ./model.py:/app/models/06_retrieval_augmented_kinship/model.py
+      - ../shared:/app/models/shared
+      - ./output:/app/output
+    working_dir: /app/models/06_retrieval_augmented_kinship/AMD
+    command: bash
+    stdin_open: true
+    tty: true
+    profiles: ["shell"]
