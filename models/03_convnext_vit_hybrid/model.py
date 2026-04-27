@@ -15,6 +15,7 @@ Architecture:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as grad_checkpoint
 from typing import Optional, Tuple
 import timm
 
@@ -187,23 +188,39 @@ class ConvNeXtViTHybrid(nn.Module):
         self.convnext_dim = convnext_dim
         self.vit_dim = vit_dim
     
+    def _run_convnext(self, x: torch.Tensor) -> torch.Tensor:
+        return self.convnext(x)
+
+    def _run_vit(self, x: torch.Tensor) -> torch.Tensor:
+        return self.vit(x)
+
+    def enable_gradient_checkpointing(self) -> None:
+        """Enable gradient checkpointing on both backbones to save VRAM."""
+        if hasattr(self.convnext, 'set_grad_checkpointing'):
+            self.convnext.set_grad_checkpointing(enable=True)
+        if hasattr(self.vit, 'set_grad_checkpointing'):
+            self.vit.set_grad_checkpointing(enable=True)
+        self._use_grad_checkpoint = True
+
     def extract_features(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Extract features from both backbones.
-        
+
         Args:
             x: Input image [B, 3, H, W]
-        
+
         Returns:
             conv_feat: ConvNeXt features [B, convnext_dim]
             vit_feat: ViT features [B, vit_dim]
         """
-        # ConvNeXt features (global average pooled)
-        conv_feat = self.convnext(x)
-        
-        # ViT features (CLS token)
-        vit_feat = self.vit(x)
-        
+        use_ckpt = getattr(self, '_use_grad_checkpoint', False) and self.training
+        if use_ckpt:
+            conv_feat = grad_checkpoint(self._run_convnext, x, use_reentrant=False)
+            vit_feat = grad_checkpoint(self._run_vit, x, use_reentrant=False)
+        else:
+            conv_feat = self.convnext(x)
+            vit_feat = self.vit(x)
+
         return conv_feat, vit_feat
     
     def forward(

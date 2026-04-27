@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 
 # Setup ROCm environment before other imports
+os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "10.3.0")  # RX 6700/6750 XT (gfx1031)
 os.environ["MIOPEN_FIND_MODE"] = "FAST"
 os.environ["HSA_FORCE_FINE_GRAIN_PCIE"] = "1"
 
@@ -79,7 +80,12 @@ def parse_args():
                         help="Freeze pretrained backbones")
     parser.add_argument("--unfreeze_after", type=int, default=0,
                         help="Unfreeze backbones after N epochs (requires --freeze_backbones). "
-                             "Backbones get a 100x lower LR than the head.")
+                             "Backbones get a lower LR than the head (see --backbone_lr_factor).")
+    parser.add_argument("--backbone_lr_factor", type=float, default=0.01,
+                        help="Backbone LR = head_lr * factor (default: 0.01 = 100x lower)")
+    parser.add_argument("--partial_unfreeze", action="store_true",
+                        help="Only unfreeze last 2 ConvNeXt stages + last 4 ViT blocks "
+                             "(keeps early universal feature layers frozen)")
 
     # Ablation
     parser.add_argument("--ablation_mode", type=str, default=None,
@@ -163,29 +169,83 @@ class HybridLoss(nn.Module):
 
 
 class StagedUnfreezeTrainer(ROCmTrainer):
-    """ROCmTrainer with staged backbone unfreezing."""
+    """ROCmTrainer with staged backbone unfreezing.
 
-    def __init__(self, *args, unfreeze_after: int = 0, backbone_lr_factor: float = 0.01, **kwargs):
+    Supports full or partial unfreeze:
+    - Full: all backbone parameters become trainable
+    - Partial: only last 2 ConvNeXt stages + last 4 ViT blocks are unfrozen,
+      keeping early universal feature layers (edges, textures) frozen
+    """
+
+    def __init__(self, *args, unfreeze_after: int = 0, backbone_lr_factor: float = 0.01,
+                 partial_unfreeze: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.unfreeze_after = unfreeze_after
         self.backbone_lr_factor = backbone_lr_factor
+        self.partial_unfreeze = partial_unfreeze
         self._unfrozen = False
+
+    def _partial_unfreeze_backbones(self, model):
+        """Unfreeze only the last 2 ConvNeXt stages and last 4 ViT blocks."""
+        # ConvNeXt: stages[0-3], unfreeze stages[2] and stages[3]
+        # (stage 2 = 57.9M params, stage 3 = 27.4M params)
+        unfrozen_convnext_params = []
+        for i, stage in enumerate(model.convnext.stages):
+            if i >= 2:  # last 2 stages
+                for param in stage.parameters():
+                    param.requires_grad = True
+                    unfrozen_convnext_params.append(param)
+        # Also unfreeze convnext norm_pre and head (small layers)
+        for name, param in model.convnext.named_parameters():
+            if name.startswith("norm_pre") or name.startswith("head"):
+                param.requires_grad = True
+                unfrozen_convnext_params.append(param)
+
+        # ViT: blocks[0-11], unfreeze blocks[8-11] (last 4)
+        unfrozen_vit_params = []
+        for i, block in enumerate(model.vit.blocks):
+            if i >= 8:  # last 4 blocks
+                for param in block.parameters():
+                    param.requires_grad = True
+                    unfrozen_vit_params.append(param)
+        # Also unfreeze vit norm and fc_norm
+        for name, param in model.vit.named_parameters():
+            if name.startswith("norm") or name.startswith("fc_norm"):
+                param.requires_grad = True
+                unfrozen_vit_params.append(param)
+
+        return unfrozen_convnext_params, unfrozen_vit_params
+
+    def _full_unfreeze_backbones(self, model):
+        """Unfreeze all backbone parameters."""
+        for param in model.convnext.parameters():
+            param.requires_grad = True
+        for param in model.vit.parameters():
+            param.requires_grad = True
+        convnext_params = list(model.convnext.parameters())
+        vit_params = list(model.vit.parameters())
+        return convnext_params, vit_params
 
     def on_epoch_start(self, epoch: int) -> None:
         if self.unfreeze_after > 0 and epoch == self.unfreeze_after + 1 and not self._unfrozen:
             self._unfrozen = True
-            print(f"\n  >>> Unfreezing backbones at epoch {epoch} <<<")
+            mode = "partial" if self.partial_unfreeze else "full"
+            print(f"\n  >>> Unfreezing backbones at epoch {epoch} ({mode}) <<<")
 
-            # Unfreeze all backbone parameters
             model = self.model
-            # Handle DataParallel wrapper
             if hasattr(model, 'module'):
                 model = model.module
 
-            for param in model.convnext.parameters():
-                param.requires_grad = True
-            for param in model.vit.parameters():
-                param.requires_grad = True
+            if self.partial_unfreeze:
+                convnext_params, vit_params = self._partial_unfreeze_backbones(model)
+                print("  >>> Partial unfreeze: ConvNeXt stages[2,3] + ViT blocks[8-11]")
+            else:
+                convnext_params, vit_params = self._full_unfreeze_backbones(model)
+
+            # Enable gradient checkpointing to save VRAM
+            if hasattr(model, 'enable_gradient_checkpointing'):
+                model.enable_gradient_checkpointing()
+                print("  >>> Gradient checkpointing enabled on backbones")
 
             trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
             print(f"  >>> Trainable parameters: {trainable:,}")
@@ -195,8 +255,8 @@ class StagedUnfreezeTrainer(ROCmTrainer):
             backbone_lr = head_lr * self.backbone_lr_factor
 
             self.optimizer = torch.optim.AdamW([
-                {"params": model.convnext.parameters(), "lr": backbone_lr},
-                {"params": model.vit.parameters(), "lr": backbone_lr},
+                {"params": convnext_params, "lr": backbone_lr},
+                {"params": vit_params, "lr": backbone_lr},
                 {"params": model.fusion.parameters(), "lr": head_lr},
                 {"params": model.projection.parameters(), "lr": head_lr},
             ], weight_decay=self.config.weight_decay)
@@ -342,6 +402,8 @@ def main():
             rocm_device_id=args.rocm_device,
             monitor_metric=train_config.monitor_metric,
             unfreeze_after=args.unfreeze_after,
+            backbone_lr_factor=args.backbone_lr_factor,
+            partial_unfreeze=args.partial_unfreeze,
         )
     else:
         trainer = ROCmTrainer(
