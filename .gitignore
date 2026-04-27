@@ -68,3 +68,6 @@ Thumbs.db
 
 
 pivot/
+
+# Local prompt drafts (personal scratchpad — committed prompts go elsewhere)
+prompts/
