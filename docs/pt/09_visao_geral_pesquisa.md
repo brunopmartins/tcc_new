@@ -332,6 +332,80 @@ Primeira run do modelo retrieval-augmented, com encoder ViT-B/16 congelado e gal
 
 ---
 
+### Modelo 06 — Retrieval-Augmented Kinship — Run 002 (Ablation: DINOv2 + K=64)
+
+Segunda run, com tres mudancas em relacao a Run 001: troca do encoder para **DINOv2 ViT-B/14** (frozen), aumento de **K=32 → K=64** no retrieval, e elevacao do **relation_loss_weight de 0.15 para 0.30**. Hipotese: features self-supervised do DINOv2 + mais contexto de retrieval + sinal multitask mais forte deveriam empurrar AUC para cima.
+
+**Configuracao (apenas o que mudou em relacao a Run 001):**
+
+| Parametro | Run 001 | Run 002 |
+|-----------|---------|---------|
+| Backbone | vit_base_patch16_224 | **vit_base_patch14_dinov2.lvd142m** |
+| Retrieval K | 32 | **64** |
+| relation_loss_weight | 0.15 | **0.30** |
+| Gallery on CPU | False | True (devido ao maior K) |
+| Epocas (max / actual) | 20 / 18 | 60 / 29 |
+| Patience | 10 | 20 |
+
+**Trajetoria de treinamento (resumo):**
+
+| Epoca | Val AUC | Train Loss |
+|-------|---------|------------|
+| 1 | 0.7921 | 1.488 |
+| 2 | 0.8213 | 1.300 |
+| 3 | 0.8076 | 1.204 |
+| 5 | 0.8179 | 1.047 |
+| **9** | **0.8228** | 0.914 (melhor) |
+| 17 | 0.8212 | 0.827 |
+| 20 | 0.8211 | 0.805 |
+| 29 | 0.8051 | 0.739 (early stop) |
+
+**Metricas de teste (FIW, 13.425 pares, threshold=0.55 selecionado na val):**
+
+| Metrica | Run 002 | Run 001 | Delta |
+|---------|--------:|--------:|------:|
+| **Test ROC AUC** | **0.7310** | 0.7763 | **−0.045** |
+| Test Accuracy | 66.18% | 69.78% | −3.6 pp |
+| Balanced Accuracy | 65.82% | 70.27% | −4.5 pp |
+| Test F1 | 0.6190 | 0.7223 | −0.103 |
+| Test Precision | 67.23% | 64.52% | +2.7 pp |
+| Test Recall | 57.35% | 82.04% | −24.7 pp |
+| Avg Precision | 0.6808 | 0.7345 | −0.054 |
+| TAR@FAR=0.1 | 0.2974 | 0.3881 | −0.091 |
+| TAR@FAR=0.01 | 0.0423 | 0.0616 | −0.019 |
+
+**Gap val → teste:** 0.8228 → 0.7310 = **−0.092** (Run 001: 0.836 → 0.776 = −0.060). O gap aumentou em 53%, sinal de overfitting da validacao.
+
+**Accuracy por tipo de relacao — Modelo 06 Run 002:**
+
+| Relacao | Run 002 | Run 001 | Delta |
+|---------|--------:|--------:|------:|
+| bb | 66.86% | 86.51% | −19.7 pp |
+| ss | 64.57% | 86.32% | −21.8 pp |
+| sibs | 62.39% | 87.18% | −24.8 pp |
+| md | 60.69% | 85.93% | −25.2 pp |
+| fs | 55.33% | 78.77% | −23.4 pp |
+| ms | 54.92% | 83.88% | −29.0 pp |
+| gfgs | 51.02% | 82.65% | −31.6 pp |
+| gfgd | 50.72% | 75.36% | −24.6 pp |
+| gmgd | 47.97% | 63.41% | −15.4 pp |
+| fd | 47.93% | 76.91% | −29.0 pp |
+| gmgs | 41.32% | 61.16% | −19.8 pp |
+
+Todas as 11 classes pioraram. Boa parte da queda em recall vem do threshold mais agressivo (0.55 vs 0.40), mas o ROC AUC, threshold-independente, tambem caiu (−0.045) — o ranking generaliza pior.
+
+**Conclusao da ablacao:**
+
+A hipotese de que DINOv2 + K=64 + relation_weight 0.3 melhoraria o desempenho **nao se confirmou**. Tres lições:
+
+1. **Backbone DINOv2 nao ajudou** com encoder frozen + retrieval. Features self-supervised mais ricas tornaram a head mais facil de sobre-ajustar a galeria + validacao.
+2. **K maior amplificou o overfitting**, nao o resolveu. Mais contexto de retrieval = mais correlacao galeria↔val que nao transfere para test.
+3. **O gargalo de M06 nao e qualidade visual nem volume de retrieval** — e a regularizacao do mecanismo de cross-attention contra a galeria fixa. Hard negatives nos supports (recuperados-mas-nao-parentes) sao a proxima hipotese a testar.
+
+Este resultado negativo entra no TCC como ablacao: confirma que melhorias "obvias" (mais features, mais K) nao salvam um modelo cujo problema e regularizacao.
+
+---
+
 ### Comparacao Final — FIW (Modelos Parametricos vs Retrieval-Augmented vs VLMs)
 
 | Modelo | Approach | Test AUC | Test Acc | Trainable Params | Per-Relacao Min |
@@ -339,7 +413,8 @@ Primeira run do modelo retrieval-augmented, com encoder ViT-B/16 congelado e gal
 | **Modelo 02 R031** | ViT + Cross-Attention | **0.850** | 74.4% | ~86M | 88.4% (gmgs) |
 | **Modelo 03 R002** | ConvNeXt + ViT Hybrid | **0.850** | 47.9%* | ~176M | — |
 | **Modelo 03 R006** | Hybrid + Full Unfreeze | 0.848 | 50.5%* | ~176M | — |
-| **Modelo 06 R001** | Retrieval-Augmented (frozen) | 0.776 | 69.8% | 8.16M | **61.2% (gmgs)** |
+| **Modelo 06 R001** | Retrieval-Augmented (frozen ViT-B/16, K=32) | 0.776 | 69.8% | 8.16M | **61.2% (gmgs)** |
+| **Modelo 06 R002** | Retrieval-Augmented (frozen DINOv2, K=64) | 0.731 | 66.2% | ~12M | 41.3% (gmgs) |
 | Codex VLM zero-shot | gpt-5.4-mini | — | 33.1% | 0 (zero-shot) | 0.0% |
 | Claude Sonnet zero-shot | claude-sonnet-4-6 | — | 37.3% | 0 (zero-shot) | 0.0% |
 
@@ -347,8 +422,9 @@ Primeira run do modelo retrieval-augmented, com encoder ViT-B/16 congelado e gal
 
 **Insights:**
 - Modelos parametricos vencem em AUC absoluto (0.850 vs 0.776).
-- **Modelo 06 e 10x-20x menor em parametros treinaveis** e ainda assim atinge 0.776 AUC.
-- VLMs zero-shot nao discriminam classes de avo/avoa-neto(a); Modelo 06 acerta 61-83% nessas mesmas classes.
+- **Modelo 06 e 10x-20x menor em parametros treinaveis** e ainda assim atinge 0.776 AUC (Run 001).
+- VLMs zero-shot nao discriminam classes de avo/avoa-neto(a); Modelo 06 R001 acerta 61-83% nessas mesmas classes.
+- **Run 002 (DINOv2 + K=64) regrediu** em todas as metricas de teste, mostrando que o gargalo de M06 nao e backbone ou volume de retrieval, e sim regularizacao da cross-attention contra a galeria fixa.
 
 ---
 
@@ -598,3 +674,5 @@ Hiperparametros refinados ao longo de 32+ experimentos:
 9. **Adaptacao ao dominio por prompt em VLMs nao ajuda**: o few-shot + prompt estruturado piorou o desempenho do Codex (33.1% → 26.7%), engessando a decisao em heuristicas de idade/genero que amplificam vieses em vez de corrigir.
 
 10. **Retrieval-augmentation (Modelo 06) resolve o problema de classes raras** mas com AUC abaixo dos parametricos: o modelo retrieval-augmented com encoder congelado atinge Test AUC=0.776 (vs 0.850 dos parametricos), mas com **per-relacao muito mais uniforme** (61-87% em todas as 11 classes). Isso confirma que dar acesso explicito a exemplos de treino similares ajuda em classes com poucos exemplos, mas a complexidade extra da galeria + cross-attention nao supera os modelos parametricos quando ha dados suficientes. Apenas 8.16M parametros sao treinaveis (vs 86M-176M).
+
+11. **Backbone melhor e K maior nao salvam o Modelo 06** (Run 002): trocar para DINOv2 e dobrar K para 64, mantendo encoder congelado, **piorou** o teste de 0.776 para 0.731 (-0.045 AUC). O gap val→teste cresceu de 0.06 para 0.09. Indica que o gargalo do retrieval-augmented nao e qualidade visual nem volume de contexto, e sim **regularizacao da cross-attention contra a galeria fixa**: features mais ricas + mais supports facilitam o overfitting na validacao em vez de melhorar generalizacao. Hard negatives nos supports e a hipotese a testar em runs futuras.

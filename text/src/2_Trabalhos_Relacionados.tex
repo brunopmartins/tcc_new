@@ -1,25 +1,61 @@
 \chapter[Trabalhos Relacionados]{Trabalhos Relacionados}
 \label{cap:Trabalhos Relacionados}
-Nesta sessão serão apresentados os trabalhos de \citeonline{fang2010towards}, pioneiros no desenvolvimento de classificadores para verificação de parentesco. Será apresentado também o trabalho de \cite{robinson2018visual}
-que utilizou redes neurais pré-treinadas para classificar a relação familiar entre indivíduos. 
 
-\section{Modelo de verificação de paternidade usando SVM}
- O primeiro modelo computacional que abordou a questão da verificação visual de parentesco automatizada a partir de fotos de rostos foi dada por \citeonline{fang2010towards}. O trabalho aborda o problema como uma tarefa de classificação binária, com saídas é ou não é relacionado biológicamente, extraindo características consideradas discriminatórias para a identificação de consanguinidade entre indivíduos, vale notar também que foram consideradas somente as relações de paternidade.
- 
- O primeiro obstáculo encontrado ao longo do trabalho foi a inexistência de bases de dados conhecidas relacionadas ao tema abordado para o treinamento de modelos computacionais. Assim, a primeira tarefa foi montar um conjunto de dados classificados para possibilitar o treinamento e teste do classificador. Para a coleta de dados foi feita uma busca controlada de imagens de celebridades e seus respectivos filhos ou pais, no fim foram coletados 150 pares de pais e filhos.
- 
- Com a base de dados pronta, era necessário realizar uma extração de atributos relevantes do par de imagens para que o modelo distinguir a classe a qual ele pertence.Para extrair estes atributos foi utilizada um modelo de estrutura pictural\cite{felzenszwalb2005pictorial} e eles abrangiam aspectos como: cores(olhos, pele e cabelo),  partes da face, distãncia entre partes da face e histogramas de gradiente. Esses atributos eram computados e agrupados em um vetor de atributos.   
-   
- Para classificar as os pares de imagens em verdadeiros ou falsos pares de pais-filhos, foram usados dois métodos de aprendizado de máquina, sendo eles k-Nearest-Neighbours e distância euclidiana e máquina de vetores de suporte(Support Vector Machine , A.K.A SVMs) com função de base radial. Após treino e avaliação utilizando Cross-Validation foi encontrada uma acurácia média de  68.60\%.
- 
- \section{Verificação de parentesco utilizando redes neurais convolucionais}
-  
-  Nos últimos anos vem ocorrendo um aumento do volume de dados disponíveis em bases de dados específicas para aprendizado de máquina, da necessidade de extrair informações úteis de grandes quantidades de dados e, sobretudo, o aumento da capacidade de processamento dos computadores, resultante, principalmente, da evolução das arquiteturas de GPU e da programação paralela, incentivaram o desenvolvimento do modelo computacional de aprendizado de máquina conhecido como aprendizado profundo.\cite{goodfellow2016deep}
- 
- Desde que o modelo de classificação AlexNetCNN ganhou o concurso ImageNet de 2012, o apredizado profundo, ou como é popularmente conhecido deep learning, se tornou estado-da-arte em uma gama ampla de aplicações de aprendizado de máquina. Um desses campos sendo o de reconhecimento facial, mas apesar da semelhança das aplicações, até 2018, poucos trabalhos foram realizados acerca da verificação de paretesco usando deep  learning. Isso ocorreu devido à escassez de dados nos bancos de dados existentes até a época.
- 
-  Em 2018 foi lançado o banco de dados Families in the Wild, o maior banco até a atualiadade para treinamento de modelos de classificação do problema de verificação de parentesco entre pares. O banco possuia 1000 familías, mais de 13000 faces, e abrangia imagens de todos os tipos, de baixa e alta resolução, várias faixas etárias, etc \cite{robinson2018visual}.
-  
-  Com o surgimento de uma base de dados abrangente e volumosa, em \cite{robinson2018visual} foi proposta, como solução para o problema de verificação de parentesco, o uso de redes neurais convolucionais. Observando a semelhança do problema de reconhecimento de faces e verificação de parentesco, neste trabalho alguns modelos de redes neurais convolucionais bem sucedidos na tarefa de classificação de faces,como VGG-Face\cite{parkhi2015deep} e Resnet-22\cite{wen2016discriminative} são sugeridos como base para a solução do problema de verificação de parentesco. Os modelos pré-treinados em bases de dados usadas para classificação de faces, então são então removidas as duas camadas do topo e alimentando ao classificador os dados do conjunto de dados Families in the Wild a partir da camada anterior às removidas. 
+A literatura de verificação de parentesco facial cresceu bastante entre 2010 e 2025, e o que começou como um problema marginal de visão computacional virou um campo com benchmark próprio, competições anuais e dezenas de modelos competindo. Este capítulo organiza os trabalhos por família de método, do primeiro classificador baseado em atributos manuais aos modelos com Vision Transformer e atenção cruzada entre faces, e termina com o lugar dos modelos multimodais como baselines.
 
-      
+\section{Métodos clássicos e datasets fundadores}
+
+O primeiro modelo computacional de verificação visual de parentesco foi o de \citeonline{fang2010towards}, que tratou o problema como classificação binária a partir de atributos faciais extraídos com estrutura pictural \cite{felzenszwalb2005pictorial}. Os atributos cobriam cores de olhos, pele e cabelo, partes da face, distâncias entre essas partes e histogramas de gradiente, agrupados em um vetor de atributos manual. Os autores montaram um conjunto próprio de 150 pares de pais e filhos, treinaram k-NN e SVM com função de base radial, e reportaram 68,6\% de acurácia em validação cruzada.
+
+Em paralelo, surgiram bancos públicos que tornaram a tarefa comparável entre laboratórios. \citeonline{lu2014kinface}
+liberaram KinFaceW-I e KinFaceW-II, com cerca de mil pares por dataset e quatro tipos de relação, e ainda hoje servem para prototipagem rápida e validação cruzada de cinco dobras. Pouco depois, \citeonline{robinson2016fiw}
+introduziram a primeira versão do Families in the Wild, que viraria, dois anos depois, o principal benchmark da área.
+
+\section{Aprendizado profundo e redes siamesas}
+
+Apesar de o reconhecimento facial já operar em deep learning desde 2012, a verificação de parentesco usou pouco essas redes até 2018, sobretudo pela escassez de dados etiquetados. \citeonline{robinson2018visual} mudou esse panorama com a versão expandida do Families in the Wild, com mais de 13.000 imagens distribuídas em mais de mil famílias. Como solução, propôs o uso de redes siamesas com pesos compartilhados, alimentadas por backbones pré-treinados em reconhecimento facial. As escolhas iniciais foram VGG-Face \cite{parkhi2015deep} e ResNet \cite{wen2016discriminative}, removendo as últimas camadas e treinando uma cabeça de classificação sobre a representação resultante. A partir desse trabalho consolidou-se o RFIW Challenge,
+competição anual que padronizou splits, métricas e o protocolo Track-I, no qual famílias inteiras são separadas entre treino e teste para evitar vazamento. A maioria dos modelos publicados desde então segue esse protocolo, e foi também o adotado neste trabalho.
+
+\section{Metric learning e perdas contrastivas}
+
+Backbones melhores não bastam, e parte significativa dos ganhos da década seguinte veio de funções de perda mais discriminativas. Em reconhecimento facial, a sequência SphereFace \cite{liu2017sphereface},
+CosFace \cite{wang2018cosface}
+e ArcFace \cite{deng2019arcface}
+reformulou o softmax para impor margens angulares no espaço de embeddings, e essas perdas migraram naturalmente para parentesco. Em paralelo, abordagens com triplet loss \cite{schroff2015facenet}
+e Supervised Contrastive \cite{khosla2020supervised}
+passaram a ser usadas para aproximar pares de parentes próximos no espaço de embeddings e afastar pares sem vínculo biológico.
+
+Trabalhos posteriores afinaram a perda para o domínio. \citeonline{lyu2023kfc}
+propuseram a Fair Contrastive Loss, que adiciona termos para mitigar viés demográfico durante o treino, e relatam cerca de 81\% de acurácia em FIW. Variantes posteriores usam o tipo da relação como sinal extra para estruturar o espaço, em vez de apenas o rótulo binário entre kin e non-kin.
+
+\section{Mecanismos de atenção e Vision Transformers}
+
+A introdução do Vision Transformer \cite{dosovitskiy2020image}
+reabriu a questão de qual é o melhor backbone para parentesco facial. Os resultados mais recentes do FIW vêm de modelos que substituem o backbone convolucional pelo ViT pré-treinado. \citeonline{su2023facornet}
+propuseram o FaCoR, que adiciona um módulo de cross-attention bidirecional entre os tokens de patch de duas faces, permitindo que o modelo aprenda quais regiões comparar em vez de só comparar embeddings globais. O ganho relatado foi de 4,6\% sobre o melhor resultado anterior. O FaCoR é a inspiração direta do Modelo 02 deste trabalho.
+
+\section{Fusões híbridas e síntese de idade}
+
+Outra linha tenta combinar os indutivos convolucionais do ConvNeXt \cite{liu2022convnet}
+com a atenção global do ViT, em modelos de duplo backbone que produzem features locais e globais e as fundem por concatenação, gating ou atenção. Essa estratégia motivou o Modelo 03 deste trabalho, embora os resultados próprios indiquem que o ganho não é proporcional ao aumento de parâmetros.
+
+Uma terceira linha ataca diretamente a assimetria etária entre pais e filhos. Métodos baseados em síntese de idade, em particular o SAM (Style-based Age Manipulation) \cite{alaluf2022sam},
+geram variantes do mesmo rosto em diferentes idades antes da comparação, com a hipótese de que pares com idades parecidas são mais fáceis de classificar. O Modelo 01 deste trabalho explora essa ideia, embora o módulo SAM não tenha sido plenamente ativado nos experimentos por restrições de hardware.
+
+\section{Generalização cross-dataset e fairness}
+
+Apesar dos números altos relatados na literatura, generalização entre datasets continua um problema aberto. Modelos treinados em FIW e testados em KinFaceW costumam perder entre 15\% e 30\% de acurácia \cite{robinson2022survey}, e o problema é ainda mais grave em subgrupos demográficos sub-representados nos conjuntos de treino. Estudos de fairness apontam aumento de 5\% a 10\% na taxa de erro para faces africanas em relação a faces caucasianas em vários modelos publicados \cite{buolamwini2018gender}.
+Esses dois eixos não são atacados frontalmente neste trabalho, mas aparecem como limitação explícita na conclusão.
+
+\section{Modelos multimodais como baselines}
+
+Modelos multimodais generalistas, em particular VLMs treinados em grandes coleções de pares imagem-texto, ganharam tração no fim da década e abriram a pergunta sobre se essa classe consegue resolver verificação de parentesco em zero-shot, sem treino específico no domínio. O CLIP \cite{radford2021learning}
+foi um dos primeiros nesse formato, e modelos posteriores, como GPT-4V e Claude Sonnet, ampliaram o escopo para tarefas mais variadas. Avaliações sistemáticas de VLMs em parentesco facial ainda são raras na literatura, e os resultados parciais sugerem que esses modelos exploram bem pistas de idade e gênero, mas falham em distinções genealógicas mais finas como avós e netos.
+
+Por isso, neste trabalho, os VLMs entram apenas como baselines complementares, não como competidores dos modelos supervisionados, e são avaliados em três regimes (zero-shot, adaptação por prompt e prompts direcionados por treinamento) descritos no Capítulo 4.
+
+\section{Posicionamento deste trabalho}
+
+A combinação de famílias presente neste trabalho cobre quatro eixos da literatura citada. Um modelo CNN com síntese de idade liga-se à linha clássica de \citeonline{robinson2018visual} e ao trabalho com SAM. O segundo modelo é um ViT com cross-attention bidirecional no estilo FaCoR, e o terceiro combina ConvNeXt e ViT na linha de fusão CNN-Transformer. Os dois últimos são exploratórios e combinam técnicas recentes ainda não validadas para parentesco facial na literatura consultada, sendo um DINOv2 ajustado por LoRA com cross-attention diferencial e um modelo retrieval-augmented sobre uma galeria de pares positivos do treino.
+
+A diferença em relação à maioria dos trabalhos citados é metodológica. Em vez de propor um único modelo novo e compará-lo a números soltos da literatura, este trabalho aplica o mesmo protocolo de avaliação aos cinco modelos, com threshold selecionado em validação e aplicado sem reajuste no teste. Sob essa mesma régua mede-se o contraste entre modelos treinados e VLMs usados como baselines.
