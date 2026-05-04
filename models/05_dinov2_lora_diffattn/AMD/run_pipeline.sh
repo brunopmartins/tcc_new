@@ -51,6 +51,7 @@
 #   MAX_GRAD_NORM         1.0
 #   DISABLE_AMP           0
 #   NO_GRAD_CKPT          0
+#   STRATIFIED_SAMPLER    0   (1 = class-balanced WeightedRandomSampler)
 #   GPU_ID                0
 #   SEED                  42
 #   SKIP_INSTALL          0
@@ -96,6 +97,7 @@ PATIENCE="${PATIENCE:-25}"
 MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 DISABLE_AMP="${DISABLE_AMP:-0}"
 NO_GRAD_CKPT="${NO_GRAD_CKPT:-0}"
+STRATIFIED_SAMPLER="${STRATIFIED_SAMPLER:-0}"
 GPU_ID="${GPU_ID:-0}"
 SEED="${SEED:-42}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
@@ -111,7 +113,7 @@ if [ -e /dev/kfd ] && [ -z "${_ROCM_SETUP_COMPLETE}" ]; then
     export CROSS_ATTN_LAYERS CROSS_ATTN_HEADS DROPOUT EMBEDDING_DIM
     export LOSS CONTRASTIVE_WEIGHT TEMPERATURE RELATION_SET RELATION_LOSS_WEIGHT
     export NEGATIVE_RATIO EVAL_NEGATIVE_RATIO TRAIN_NEG_STRATEGY EVAL_NEG_STRATEGY
-    export NUM_WORKERS PATIENCE MAX_GRAD_NORM DISABLE_AMP NO_GRAD_CKPT GPU_ID SEED SKIP_INSTALL
+    export NUM_WORKERS PATIENCE MAX_GRAD_NORM DISABLE_AMP NO_GRAD_CKPT STRATIFIED_SAMPLER GPU_ID SEED SKIP_INSTALL
     export _ROCM_SETUP_COMPLETE=1
     SELF="$(readlink -f "${BASH_SOURCE[0]}")"
     echo "  [ROCm] Restarting script with render group active..."
@@ -212,6 +214,7 @@ echo "Relation weight:   ${RELATION_LOSS_WEIGHT}"
 echo "Patience:          ${PATIENCE}"
 echo "AMP:               $([ "${DISABLE_AMP}" = "1" ] && echo off || echo on)"
 echo "Grad checkpoint:   $([ "${NO_GRAD_CKPT}" = "1" ] && echo off || echo on)"
+echo "Stratified samp.:  $([ "${STRATIFIED_SAMPLER}" = "1" ] && echo on || echo off)"
 echo "Dataset:           ${TRAIN_DATASET}"
 echo "Seed:              ${SEED}"
 echo "ROCm device:       ${GPU_ID}"
@@ -257,6 +260,7 @@ TRAIN_ARGS=(
 [ -n "${EVAL_NEG_STRATEGY}" ]     && TRAIN_ARGS+=(--eval_negative_strategy "${EVAL_NEG_STRATEGY}")
 [ "${DISABLE_AMP}" = "1" ]        && TRAIN_ARGS+=(--disable_amp)
 [ "${NO_GRAD_CKPT}" = "1" ]       && TRAIN_ARGS+=(--no_grad_ckpt)
+[ "${STRATIFIED_SAMPLER}" = "1" ] && TRAIN_ARGS+=(--stratified_sampler)
 
 TEST_ARGS=(
     --checkpoint   "${CKPT_DIR}/best.pt"

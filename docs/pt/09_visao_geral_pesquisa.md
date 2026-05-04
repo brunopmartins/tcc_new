@@ -87,6 +87,41 @@ Par de Faces -> ConvNeXt (features locais)  -+
 
 ---
 
+### Modelo 05 — DINOv2 + LoRA + Differential Cross-Attention
+
+**Arquivo:** `models/05_dinov2_lora_diffattn/`
+
+Arquitetura que integra tres tecnicas que **nao haviam sido validadas para verificacao de parentesco facial** na literatura previa do projeto:
+
+1. **DINOv2 ViT-B/14** (Oquab et al., 2024) como backbone — modelo self-supervised treinado em 142M imagens nao rotuladas. Produz features faciais de granularidade fina sem o vies de classes do ImageNet.
+2. **LoRA adapters** (Hu et al., 2021) injetados nas projecoes qkv + proj do backbone. O backbone permanece **congelado**; apenas matrizes de baixo posto (~3-8M params) e as cabecas sao treinadas. Evita o overfitting que o Modelo 03 sofreu apos full unfreeze e reduz drasticamente o uso de VRAM.
+3. **Differential cross-attention** (Ye et al., 2024 — arXiv:2410.05258). A cross-attention bidirecional do FaCoR e reformulada como uma **diferenca de dois mapas de atencao softmax**, amplificando correspondencias discriminativas entre regioes faciais e suprimindo as espurias.
+4. **Cabeca auxiliar de classificacao de relacao**. Um token `[REL]` aprendivel alimenta um classificador 11-classes (FIW), treinado conjuntamente com a perda binaria de verificacao. O sinal multitarefa empurra o modelo a separar relacoes geneologicas finas (ex: `gmgs` vs `gfgd`) — exatamente onde os Modelos 02/03 e os baselines VLM falham.
+
+**Arquitetura:**
+```
+Par (A, B) -> DINOv2 ViT-B/14 (FROZEN) + LoRA -> patch tokens (B, 256, 768)
+                                                       |
+                              Linear + LN -> (B, 256, 512); prepend [REL]
+                                                       |
+                              Differential bidirectional cross-attention
+                                          (2 camadas, 8 cabecas)
+                                                       |
+                              Mean-pool -> emb1, emb2 (512-d L2-norm)
+                                                       |
+                                  ┌─────────┴─────────┐
+                                  v                   v
+                           Binary head          Relation head
+                           [e1, e2, |e1-e2|,    [relA, relB] -> 11 classes
+                            e1·e2] -> kin score
+```
+
+**Backbone:** vit_base_patch14_dinov2.lvd142m (frozen, ~86M params)
+**Parametros treinaveis:** 8.47M (8.99% do total de 94.2M)
+**Por que LoRA em vez de full/partial unfreeze:** as Runs 004-007 do Modelo 03 mostraram que full unfreeze com batch 32 causa OOM, full unfreeze com batch 16 causa overfitting pos-unfreeze, e partial unfreeze com LR factor baixo nao converge. LoRA contorna ambos os problemas — apenas ~3-8M params tem gradientes (cabe em 12 GB), os pesos pre-treinados do backbone permanecem intactos (sem catastrophic forgetting do espaco de features rico do DINOv2), e a restricao de baixo posto introduz regularizacao implicita.
+
+---
+
 ### Modelo 06 — Retrieval-Augmented Kinship Verification
 
 **Arquivo:** `models/06_retrieval_augmented_kinship/`
@@ -260,6 +295,144 @@ Observacoes:
 
 ---
 
+### Modelo 05 — DINOv2 + LoRA + Differential Attention — Run 001 (FIW)
+
+Primeira run do modelo com DINOv2 (frozen) + LoRA rank=8 + differential cross-attention + cabeca auxiliar de relacao. Defaults do `run_pipeline.sh`.
+
+**Configuracao:**
+
+| Parametro | Valor |
+|-----------|-------|
+| Backbone | vit_base_patch14_dinov2.lvd142m (frozen) |
+| LoRA rank / alpha | 8 / 16 |
+| Cross-attention | 2 camadas, 8 cabecas (differential) |
+| Embedding dim | 512 |
+| Loss | combined (BCE + 0.5 × contrastive + 0.2 × relation-CE) |
+| LR | 3e-4 (cosine, warmup 3 ep, min 1e-6) |
+| Batch size | 4 (grad_accum 8 → eff. 32) |
+| Dropout | 0.1 |
+| Epocas | 22/40 (early stop, paciencia 10 disparou) |
+| Parametros treinaveis | 8.47M / 94.2M (8.99%) |
+| Tempo/epoca | ~84 min |
+
+**Trajetoria de treinamento (selecionada):**
+
+| Epoca | Val AUC | Train Loss | Nota |
+|-------|---------|------------|------|
+| 1 | 0.9040 | 0.430 | Warmup |
+| 3 | 0.9001 | 0.288 | LR pico (3e-4) |
+| 5 | 0.9085 | 0.228 | |
+| 10 | 0.9077 | 0.164 | |
+| **12** | **0.9116** | 0.148 | **Melhor (best.pt salvo)** |
+| 18 | 0.9034 | 0.097 | Plateau / overfitting |
+| 22 | 0.8962 | 0.066 | Stop por paciencia |
+
+**Metricas de teste (FIW, 13.425 pares, threshold=0.10 selecionado na val):**
+
+| Metrica | Valor |
+|---------|-------|
+| **Test ROC AUC** | **0.806** |
+| **Test Accuracy** | 72.6% |
+| **Test F1** | 0.713 |
+| **Test Precision** | 71.7% |
+| **Test Recall** | 70.8% |
+| **Avg Precision** | 0.792 |
+| **TAR@FAR=0.1** | 0.463 |
+| **TAR@FAR=0.01** | **0.152** |
+| **TAR@FAR=0.001** | 0.044 |
+
+**Accuracy por tipo de relacao — Modelo 05 Run 001:**
+
+| Relacao | Accuracy | N pares |
+|---------|----------|---------|
+| sibs (irmaos misto) | 83.3% | 234 |
+| bb (irmaos) | 79.8% | 860 |
+| ss (irmas) | 77.2% | 731 |
+| fs (pai-filho) | 71.6% | 1.135 |
+| fd (pai-filha) | 71.5% | 918 |
+| ms (mae-filho) | 69.4% | 1.036 |
+| md (mae-filha) | 67.3% | 1.038 |
+| gmgs (avo-neto) | 52.1% | 121 |
+| gfgd (avo-neta) | 50.7% | 138 |
+| gmgd (avo-neta) | 40.7% | 123 |
+| gfgs (avo-neto) | 39.8% | 98 |
+
+**Observacoes:**
+- **Maior Val AUC do projeto:** 0.9116 (vs 0.885 do M02 R031 e 0.885 do M03 R002). DINOv2 + LoRA + DiffAttn captura discriminacao mais forte na validacao.
+- **Maior gap val→teste do projeto:** 0.9116 → 0.806 = **−0.105**. M02 tipicamente tem -0.03; M06 R001 teve -0.06. Indica overfitting da validacao.
+- **TAR@FAR=0.01 = 0.152 e o melhor entre todos os modelos** (M02/M03 ~0.13, M06 ~0.06). Em regimes de threshold rigoroso, M05 e o mais forte.
+- **Mesma fraqueza em classes de avo/avoa** (40-52%), apesar do peso de relation-CE de 0.2. **gfgs e o pior (39.8%)** — oposto de M02 R031 onde gfgs era o melhor (95.9%). Modo de falha diferente.
+- **Custo computacional alto:** 84 min/epoca, ~3-4× M03/M06. DINOv2 patch14 + grad checkpoint + diffattn somam.
+- **Hipoteses para o gap val→teste:** (a) features ricas do DINOv2 + LoRA com pouco dropout favorecem overfitting da distribuicao familiar da validacao; (b) cabeca de relacao com lambda=0.2 ajudou val mas nao generalizou. Follow-ups: aumentar relation_loss_weight para 0.4-0.5, adicionar `LORA_DROPOUT=0.1`, reduzir LR pico para 1.5e-4.
+
+---
+
+### Modelo 05 — DINOv2 + LoRA + Differential Attention — Run 002 (FIW, ablation de regularizacao)
+
+Run 002 testa a hipotese da Run 001: **se o gap val→teste de -0.105 era overfitting**, regularizacao mais forte deveria fechar o gap. Mudancas: LR pico 3e-4 → 1.5e-4, dropout das heads 0.1 → 0.2, lora_dropout 0.0 → 0.1, relation_loss_weight 0.2 → 0.4.
+
+**Configuracao (deltas vs Run 001 em negrito):**
+
+| Parametro | Run 001 | Run 002 |
+|-----------|---------|---------|
+| LR pico | 3e-4 | **1.5e-4** |
+| Dropout (heads) | 0.1 | **0.2** |
+| LoRA dropout | 0.0 | **0.1** |
+| Relation loss weight | 0.2 | **0.4** |
+| Patience | 15 | 10 |
+| Outros | — | identicos |
+
+**Trajetoria de treinamento (selecionada):**
+
+| Epoca | Val AUC R001 | Val AUC R002 | Δ |
+|-------|------------:|------------:|------:|
+| 1 | 0.9040 | 0.8447 | -0.060 |
+| 4 | 0.9058 | **0.9048** | -0.001 |
+| 12 | **0.9116** (R001 peak) | 0.8969 | -0.015 |
+| Stop | ep 22 | **ep 14** | — |
+
+R002 atingiu seu pico (0.9048) na epoca 4, R001 atingiu 0.9116 na epoca 12. R002 estabilizou cedo — sem capacidade adicional para chegar ao ceiling de R001.
+
+**Metricas de teste — comparacao R001 vs R002:**
+
+| Metrica | Run 001 | Run 002 | Δ |
+|---------|--------:|--------:|------:|
+| **Test ROC AUC** | 0.806 | 0.799 | **-0.007** |
+| Test Accuracy | 72.6% | 72.4% | -0.2 pp |
+| Test F1 | 0.713 | 0.718 | +0.005 |
+| Avg Precision | 0.792 | 0.772 | -0.020 |
+| **TAR@FAR=0.1** | 0.463 | 0.437 | -0.026 |
+| **TAR@FAR=0.01** | **0.152** | 0.095 | **-0.057** |
+| **TAR@FAR=0.001** | 0.044 | 0.017 | -0.027 |
+| **Val AUC peak** | 0.9116 | 0.9048 | -0.007 |
+| **Val→teste gap** | -0.105 | -0.106 | ~0 |
+| Threshold (val) | 0.10 | 0.30 | — |
+
+**Per-relation comparison:**
+
+| Relacao | R001 | R002 | Δ |
+|---------|-----:|-----:|------:|
+| sibs | 83.3% | **85.9%** | +2.6 |
+| bb | 79.8% | **85.5%** | +5.7 |
+| ss | 77.2% | **81.1%** | +3.9 |
+| md | 67.3% | **70.3%** | +3.0 |
+| fs | 71.6% | **73.8%** | +2.2 |
+| fd | 71.5% | **72.9%** | +1.4 |
+| ms | 69.4% | **69.8%** | +0.4 |
+| gmgs | 52.1% | 52.1% | 0.0 |
+| gmgd | 40.7% | **45.5%** | +4.9 |
+| gfgd | 50.7% | 49.3% | -1.4 |
+| gfgs | 39.8% | 38.8% | -1.0 |
+
+**Observacoes — hipotese rejeitada:**
+- **O val→teste gap nao fechou** (-0.106 vs -0.105). A regularizacao baixou val e teste em paralelo, sem mudar a magnitude da divergencia. Isso **descarta "overfitting da validacao"** como explicacao isolada para o gap.
+- **TAR@FAR=0.01 caiu de 0.152 para 0.095** — R002 perde a unica metrica em que R001 era a melhor do projeto. O tradeoff: R002 distribui confianca mais uniformemente entre classes, ao custo de precisao em thresholds rigorosos.
+- **Per-classe mais uniforme:** ganhos de +3-6 pp em bb/ss/sibs/md, +5 pp em gmgd. Mas as classes de avo/avoa ainda quase em random (38-52%). **Aumentar relation_loss_weight de 0.2 para 0.4 nao consertou as classes raras** — sugere que a limitacao nao e o sinal multitarefa, e sim **insuficiencia de exemplos** no treino dessas classes ou ambiguidade visual intrinseca.
+- **Implicacao estrutural para o gap val→teste:** se nao e overfitting, e provavel que seja **divergencia entre as distribuicoes de familia val e teste** (o split RFIW Track-I tem familias disjuntas, e a val pode conter familias visualmente mais discriminaveis que o teste). Isso e um achado relevante: o gap pode ser propriedade do protocolo, nao do modelo.
+- **Convergencia mais rapida** (pico na ep 4 vs ep 12 da R001) sugere que a capacidade nao e o gargalo — o modelo ja converge ao seu maximo cedo.
+
+---
+
 ### Modelo 06 — Retrieval-Augmented Kinship — Run 001 (FIW)
 
 Primeira run do modelo retrieval-augmented, com encoder ViT-B/16 congelado e galeria de 33.207 pares positivos do conjunto de treino.
@@ -408,23 +581,27 @@ Este resultado negativo entra no TCC como ablacao: confirma que melhorias "obvia
 
 ### Comparacao Final — FIW (Modelos Parametricos vs Retrieval-Augmented vs VLMs)
 
-| Modelo | Approach | Test AUC | Test Acc | Trainable Params | Per-Relacao Min |
-|--------|----------|----------|----------|------------------|-----------------|
-| **Modelo 02 R031** | ViT + Cross-Attention | **0.850** | 74.4% | ~86M | 88.4% (gmgs) |
-| **Modelo 03 R002** | ConvNeXt + ViT Hybrid | **0.850** | 47.9%* | ~176M | — |
-| **Modelo 03 R006** | Hybrid + Full Unfreeze | 0.848 | 50.5%* | ~176M | — |
-| **Modelo 06 R001** | Retrieval-Augmented (frozen ViT-B/16, K=32) | 0.776 | 69.8% | 8.16M | **61.2% (gmgs)** |
-| **Modelo 06 R002** | Retrieval-Augmented (frozen DINOv2, K=64) | 0.731 | 66.2% | ~12M | 41.3% (gmgs) |
-| Codex VLM zero-shot | gpt-5.4-mini | — | 33.1% | 0 (zero-shot) | 0.0% |
-| Claude Sonnet zero-shot | claude-sonnet-4-6 | — | 37.3% | 0 (zero-shot) | 0.0% |
+| Modelo | Approach | Test AUC | Test Acc | TAR@FAR=0.01 | Trainable Params | Per-Relacao Min |
+|--------|----------|---------:|---------:|-------------:|-----------------:|----------------:|
+| **Modelo 02 R031** | ViT + Cross-Attention | **0.850** | 74.4% | ~0.13 | ~86M | 88.4% (gmgs) |
+| **Modelo 03 R002** | ConvNeXt + ViT Hybrid | **0.850** | 47.9%* | 0.130 | ~176M | — |
+| **Modelo 03 R006** | Hybrid + Full Unfreeze | 0.848 | 50.5%* | 0.132 | ~176M | — |
+| **Modelo 05 R001** | DINOv2 + LoRA + DiffAttn + relation head | 0.806 | **72.6%** | **0.152** | **8.47M** | 39.8% (gfgs) |
+| **Modelo 05 R002** | M05 + regularizacao mais forte (LR/2, dropout↑, λ_rel↑) | 0.799 | 72.4% | 0.095 | 8.47M | 38.8% (gfgs) |
+| **Modelo 06 R001** | Retrieval-Augmented (frozen ViT-B/16, K=32) | 0.776 | 69.8% | 0.062 | 8.16M | 61.2% (gmgs) |
+| **Modelo 06 R002** | Retrieval-Augmented (frozen DINOv2, K=64) | 0.731 | 66.2% | 0.042 | ~12M | 41.3% (gmgs) |
+| Codex VLM zero-shot | gpt-5.4-mini | — | 33.1% | — | 0 (zero-shot) | 0.0% |
+| Claude Sonnet zero-shot | claude-sonnet-4-6 | — | 37.3% | — | 0 (zero-shot) | 0.0% |
 
 *Threshold=0.5 default no evaluate.py — accuracy nao comparavel diretamente. Usar AUC.
 
 **Insights:**
-- Modelos parametricos vencem em AUC absoluto (0.850 vs 0.776).
+- Modelos parametricos puros (M02, M03) vencem em AUC absoluto (0.850).
+- **Modelo 05 R001 tem o melhor TAR@FAR=0.01 (0.152)** — em regimes de threshold rigoroso, supera todos os outros, incluindo M02/M03. Util para aplicacoes que exigem baixa taxa de falsos positivos.
+- **Modelo 05 atinge Val AUC 0.9116** (maior do projeto), mas o gap val→teste de -0.105 nao e fechado por regularizacao mais forte (R002 manteve gap em -0.106). Sugere divergencia estrutural entre distribuicoes de familia val/teste, nao overfitting do modelo.
 - **Modelo 06 e 10x-20x menor em parametros treinaveis** e ainda assim atinge 0.776 AUC (Run 001).
-- VLMs zero-shot nao discriminam classes de avo/avoa-neto(a); Modelo 06 R001 acerta 61-83% nessas mesmas classes.
-- **Run 002 (DINOv2 + K=64) regrediu** em todas as metricas de teste, mostrando que o gargalo de M06 nao e backbone ou volume de retrieval, e sim regularizacao da cross-attention contra a galeria fixa.
+- VLMs zero-shot nao discriminam classes de avo/avoa-neto(a); apenas Modelo 06 R001 atinge 61-83% nessas mesmas classes (M02/M03/M05 ainda falham nelas, ainda que menos catastroficamente).
+- **Run 002 do M06 (DINOv2 + K=64) regrediu** em todas as metricas de teste, mostrando que o gargalo de M06 nao e backbone ou volume de retrieval, e sim regularizacao da cross-attention contra a galeria fixa.
 
 ---
 
@@ -676,3 +853,7 @@ Hiperparametros refinados ao longo de 32+ experimentos:
 10. **Retrieval-augmentation (Modelo 06) resolve o problema de classes raras** mas com AUC abaixo dos parametricos: o modelo retrieval-augmented com encoder congelado atinge Test AUC=0.776 (vs 0.850 dos parametricos), mas com **per-relacao muito mais uniforme** (61-87% em todas as 11 classes). Isso confirma que dar acesso explicito a exemplos de treino similares ajuda em classes com poucos exemplos, mas a complexidade extra da galeria + cross-attention nao supera os modelos parametricos quando ha dados suficientes. Apenas 8.16M parametros sao treinaveis (vs 86M-176M).
 
 11. **Backbone melhor e K maior nao salvam o Modelo 06** (Run 002): trocar para DINOv2 e dobrar K para 64, mantendo encoder congelado, **piorou** o teste de 0.776 para 0.731 (-0.045 AUC). O gap val→teste cresceu de 0.06 para 0.09. Indica que o gargalo do retrieval-augmented nao e qualidade visual nem volume de contexto, e sim **regularizacao da cross-attention contra a galeria fixa**: features mais ricas + mais supports facilitam o overfitting na validacao em vez de melhorar generalizacao. Hard negatives nos supports e a hipotese a testar em runs futuras.
+
+12. **Modelo 05 (DINOv2 + LoRA + DiffAttn) eleva o teto de Val AUC mas com gap val→teste alto:** Run 001 atingiu **Val AUC=0.9116** (maior do projeto) e **TAR@FAR=0.01=0.152** (melhor de todos), mas Test AUC ficou em 0.806 — gap de **-0.105**. A combinacao de DINOv2 self-supervised + LoRA rank=8 + differential cross-attention captura discriminacao mais forte que os modelos parametricos plenos. Apenas 8.47M parametros treinaveis (vs 86-176M dos parametricos plenos). Para regimes de threshold rigoroso (TAR@FAR=0.01), M05 R001 e a melhor opcao do projeto. O sinal multitarefa de classificacao de relacao (lambda=0.2) nao foi suficiente para resolver as classes de avo/avoa (40-52%) — e a relacao gfgs e a pior (39.8%), invertendo o padrao do M02 onde gfgs era a melhor.
+
+13. **Regularizacao mais forte no Modelo 05 nao fecha o gap val→teste** (Run 002): aumentar relation_loss_weight para 0.4, adicionar LoRA dropout 0.1 e dropout 0.2, e cortar LR pico pela metade **manteve o gap em -0.106** (vs -0.105 da R001) e **reduziu TAR@FAR=0.01 de 0.152 para 0.095**. Aumentos pequenos (+3-6 pp) em classes intra-geracao (bb/ss/sibs) e mae/pai-filho(a) ao custo de precisao em thresholds rigorosos. **Implicacao central:** se overfitting fosse a causa do gap, R002 deveria fecha-lo; como nao fechou, o gap e provavelmente **estrutural — divergencia entre as distribuicoes de familia val e teste do RFIW Track-I**, nao propriedade do modelo. Isso desloca a investigacao para validacao cruzada k-fold e analise da composicao dos splits, em vez de ablacoes adicionais de hiperparametros. Aumentar lambda da relation-CE para 0.4 nao consertou as classes de avo/avoa, sugerindo que o gargalo nessas classes nao e o sinal multitarefa, mas insuficiencia de exemplos no treino.

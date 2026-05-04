@@ -138,6 +138,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--resume", type=str, default=None)
     p.add_argument("--seed", type=int, default=42)
 
+    # Sampling
+    p.add_argument(
+        "--stratified_sampler", action="store_true",
+        help=(
+            "Replace random sampling with class-balanced WeightedRandomSampler. "
+            "Each batch has 50% positives split equally across the 11 FIW relations "
+            "and 50% negatives. Targets the data starvation in grandparent classes "
+            "(1.6-2.1% of train) without changing any other hyperparameter."
+        ),
+    )
+
     return p.parse_args()
 
 
@@ -358,6 +369,57 @@ def main() -> None:
         num_workers=args.num_workers,
     )
     print(f"  train: {len(train_loader.dataset)}  val: {len(val_loader.dataset)}")
+
+    # Stratified sampling for grandparent data starvation (Othmani et al.).
+    # Replaces random shuffling with WeightedRandomSampler so that each batch
+    # has 50% positives split equally across the 11 FIW relations and 50%
+    # negatives. This 6-9× the gradient updates each grandparent pair
+    # contributes vs the natural ~2% frequency.
+    if args.stratified_sampler:
+        from collections import Counter
+        from torch.utils.data import DataLoader, WeightedRandomSampler
+
+        train_ds = train_loader.dataset
+        pos_counts: Counter = Counter()
+        n_neg = 0
+        for (_, _, rel), lab in zip(train_ds.pairs, train_ds.labels):
+            if int(lab) == 1:
+                pos_counts[rel] += 1
+            else:
+                n_neg += 1
+        n_pos_classes = len(pos_counts)
+
+        weights = []
+        for (_, _, rel), lab in zip(train_ds.pairs, train_ds.labels):
+            if int(lab) == 1:
+                weights.append(0.5 / (n_pos_classes * pos_counts[rel]))
+            else:
+                weights.append(0.5 / max(n_neg, 1))
+
+        gen = torch.Generator()
+        gen.manual_seed(args.seed)
+        sampler = WeightedRandomSampler(
+            weights, num_samples=len(train_ds), replacement=True, generator=gen,
+        )
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=args.batch_size,
+            sampler=sampler,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            drop_last=True,
+        )
+        print(
+            f"  [stratified sampler] enabled — {n_pos_classes} positive classes, "
+            f"{n_neg:,} negatives. Target distribution per batch: "
+            f"50% pos (equal across {n_pos_classes} relations) + 50% neg."
+        )
+        for rel, c in sorted(pos_counts.items()):
+            natural = 100.0 * c / (sum(pos_counts.values()) + n_neg)
+            target = 100.0 * 0.5 / n_pos_classes
+            print(f"    {rel:8s}: natural {natural:5.2f}% → target {target:5.2f}%")
+        natural_neg = 100.0 * n_neg / (sum(pos_counts.values()) + n_neg)
+        print(f"    {'non-kin':8s}: natural {natural_neg:5.2f}% → target  50.00%")
 
     print(f"Loading {test_dataset_name} for testing...")
     from torch.utils.data import DataLoader
