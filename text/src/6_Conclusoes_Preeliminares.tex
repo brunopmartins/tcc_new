@@ -1,8 +1,154 @@
-\chapter[Conclusões Preeliminares]{Conclusões Preeliminares}
+\chapter[Conclusões Preliminares]{Conclusões Preliminares}
 \label{cap:Conclusões Preeliminares}
 
-Este trabalho propõe a construção de um modelo computacional de classificação para a verificação visual de parentesco automatica a partir de fotos da face de duas pessoas.
+Os experimentos descritos no Capítulo 4 produziram os números que este capítulo reúne. As tabelas e figuras a seguir mostram os modelos implementados, os resultados em FIW e em KinFaceW-I, o desempenho dos baselines com VLMs, a comparação por tipo de relação, e o histórico do estudo de freeze do Modelo 03.
 
-Até o momento foram definidos a metodologia para o desenvolvimento do classificador, um cronograma para a realização do projeto e foram realizadas as seguintes etapas propostas: (1) Revisão da Literatura, (2) Estudo do Banco de Dados, (3) Proposta de Modelo. Está ocorrendo atualmente a etapa: (4) Execução dos Experimentos.
+\section{Modelos implementados}
 
-O trabalho realizado até o momento mostra a viabilidade prática da avaliação do novo método. Portanto, a continuação do trabalho é justificada, já que está sendo realizado dentro do cronograma definido.
+Cinco modelos supervisionados estão treinados e avaliados, junto com dois baselines zero-shot com VLMs. Cada modelo tem pipeline reprodutível em ROCm e em CUDA, com numeração automática de saída, e arquivo \texttt{RUN\_LOG.md} próprio que registra o comando exato, a configuração e as métricas finais de cada execução.
+
+\begin{table}[h]
+\centering
+\caption{Visão geral dos modelos implementados.}
+\label{tab:modelos_visao_geral}
+\begin{tabular}{llrl}
+\hline
+\textbf{Modelo} & \textbf{Abordagem} & \textbf{Params treináveis} & \textbf{Status} \\
+\hline
+M01 & CNN com síntese de idade (SAM) & {\raise.17ex\hbox{$\scriptstyle\sim$}}11M  & SAM não plenamente ativado \\
+M02 & ViT com cross-attention bidirecional (FaCoR) & {\raise.17ex\hbox{$\scriptstyle\sim$}}86M & 32 runs em FIW + KinFaceW-I (CV 5-fold) \\
+M03 & Híbrido ConvNeXt + ViT & {\raise.17ex\hbox{$\scriptstyle\sim$}}176M & 7 runs em FIW (estudo de freeze) \\
+M05 & DINOv2 + LoRA + cross-attention diferencial & {\raise.17ex\hbox{$\scriptstyle\sim$}}8,5M & 2 runs em FIW \\
+M06 & Retrieval-augmented sobre galeria de pares positivos & {\raise.17ex\hbox{$\scriptstyle\sim$}}8,2M & 2 runs em FIW \\
+VLM Codex & gpt-5.4-mini, zero-shot e adaptado por prompt & 0 & 750 pares de teste em FIW \\
+VLM Claude & claude-sonnet-4-6, zero-shot direto & 0 & 75 pares de teste em FIW (piloto) \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Resultados em FIW}
+
+A Tabela~\ref{tab:resultados_fiw} mostra a comparação final entre os modelos avaliados sob o protocolo Track-I, com threshold escolhido em validação e aplicado sem reajuste no teste.
+
+\begin{table}[h]
+\centering
+\caption{Resultados em FIW (Track-I). Threshold selecionado em validação e aplicado no teste.}
+\label{tab:resultados_fiw}
+\begin{tabular}{llrrrr}
+\hline
+\textbf{Modelo} & \textbf{Run} & \textbf{Test AUC} & \textbf{Test Acc} & \textbf{TAR@FAR=0,01} & \textbf{Params treináveis} \\
+\hline
+M02 & R031 & \textbf{0,850} & 74,4\% & {\raise.17ex\hbox{$\scriptstyle\sim$}}0,13 & {\raise.17ex\hbox{$\scriptstyle\sim$}}86M \\
+M03 & R002 & \textbf{0,850} & 47,9\% & 0,130 & {\raise.17ex\hbox{$\scriptstyle\sim$}}176M \\
+M03 & R006 & 0,848 & 50,5\% & 0,132 & {\raise.17ex\hbox{$\scriptstyle\sim$}}176M \\
+M05 & R001 & 0,806 & 72,6\% & \textbf{0,152} & 8,47M \\
+M05 & R002 & 0,799 & 72,4\% & 0,095 & 8,47M \\
+M06 & R001 & 0,776 & 69,8\% & 0,062 & 8,16M \\
+M06 & R002 & 0,731 & 66,2\% & 0,042 & {\raise.17ex\hbox{$\scriptstyle\sim$}}12M \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.7\textwidth]{img/m02_roc_fiw.png}
+\caption{Curva ROC do Modelo 02 (R031) em FIW Track-I, run com melhor AUC do trabalho.}
+\label{fig:m02_roc}
+\end{figure}
+
+A Figura~\ref{fig:m02_roc} mostra a curva ROC da melhor run em FIW. Os Modelos 02 e 03 empatam em AUC (0,850), apesar de o segundo ter o dobro de parâmetros. O Modelo 05 fica abaixo no AUC (0,806), porém com a melhor acurácia (72,6\%) e o melhor TAR@FAR=0,01 entre todos os modelos avaliados (0,152), ao custo de cerca de dez vezes menos parâmetros treináveis. O Modelo 06 fica em 0,776 na configuração inicial e 0,731 na ablação que trocou o backbone para DINOv2 e dobrou o K do retrieval, em uma regressão documentada.
+
+\section{Resultados em KinFaceW-I}
+
+Em KinFaceW-I, com validação cruzada de cinco dobras, o Modelo 02 atinge AUC médio de 0,842 e acurácia de 73,6\%, alinhada com o resultado em FIW. A Tabela~\ref{tab:kinface} resume os números do banco.
+
+\begin{table}[h]
+\centering
+\caption{Resultados em KinFaceW-I. Linhas single-run usam a melhor run de cada modelo; linha CV 5-fold reporta média e desvio padrão.}
+\label{tab:kinface}
+\begin{tabular}{llrrrr}
+\hline
+\textbf{Modelo} & \textbf{Avaliação} & \textbf{AUC} & \textbf{Accuracy} & \textbf{F1} & \textbf{Threshold} \\
+\hline
+M01 & Single-run R02 & 0,682 & 68,5\% & 0,727 & 0,55 \\
+M02 & Single-run R23 & \textbf{0,861} & \textbf{74,1\%} & \textbf{0,753} & 0,90 \\
+M02 & CV 5-fold R26 & 0,842 $\pm$ 0,012 & 73,6\% $\pm$ 5,8\% & 0,771 $\pm$ 0,028 & 0,89 $\pm$ 0,02 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Baselines VLM em três regimes}
+
+Os baselines com VLMs foram avaliados em classificação multiclasse das 11 relações do FIW. A Tabela~\ref{tab:vlms} compacta os três regimes testados no Codex e o regime zero-shot piloto do Claude.
+
+\begin{table}[h]
+\centering
+\caption{Baselines VLM em FIW. Acurácia em classificação multiclasse das 11 relações.}
+\label{tab:vlms}
+\begin{tabular}{lllrr}
+\hline
+\textbf{Modelo} & \textbf{Regime} & \textbf{Amostra} & \textbf{Accuracy} & \textbf{Macro F1} \\
+\hline
+Codex (gpt-5.4-mini) & Zero-shot & 750 pares & 33,1\% & 0,257 \\
+Codex (gpt-5.4-mini) & Adaptação por prompt (few-shot) & 750 pares & 26,7\% & 0,223 \\
+Codex (gpt-5.4-mini) & Adaptação + calibração & 750 pares & 26,7\% & 0,223 \\
+Claude Sonnet 4.6 & Zero-shot direto & 75 pares (piloto) & 37,3\% & 0,324 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Análise por tipo de relação}
+
+A análise por relação mostra um padrão consistente entre os regimes. As relações pai-filho, mãe-filha e irmãos atingem acurácia alta no Modelo 02, e mesmo as relações de avós e netos ficam acima de 88\%. Os baselines zero-shot, no entanto, caem para 0\% nessas mesmas classes. O Modelo 06 fica em torno de 61\% nas relações de segundo grau na run inicial, padrão mais uniforme que os modelos paramétricos mas abaixo deles em AUC. A Tabela~\ref{tab:relacoes} compara as quatro fontes de predição em três classes representativas.
+
+\begin{table}[h]
+\centering
+\caption{Acurácia por tipo de relação em FIW, comparando o melhor modelo paramétrico, o retrieval-augmented, e os dois baselines VLM zero-shot.}
+\label{tab:relacoes}
+\begin{tabular}{lrrrr}
+\hline
+\textbf{Relação} & \textbf{M02 R031} & \textbf{M06 R001} & \textbf{Codex} & \textbf{Claude} \\
+\hline
+fs (pai-filho)        & 95,3\% & 78,8\% & 67,1\% & 71,4\% \\
+md (mãe-filha)        & 94,4\% & 85,9\% & 76,4\% & 71,4\% \\
+bb (irmãos)           & 95,5\% & 86,5\% & 8,3\%  & 14,3\% \\
+ss (irmãs)            & 94,7\% & 86,3\% & 20,0\% & 28,6\% \\
+gfgs (avô-neto)       & 95,9\% & 82,7\% & 0,0\%  & 0,0\% \\
+gmgd (avó-neta)       & 91,1\% & 63,4\% & 0,0\%  & 0,0\% \\
+gmgs (avó-neto)       & 88,4\% & 61,2\% & 0,0\%  & 0,0\% \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{img/m06_per_relation.png}
+\caption{Acurácia por tipo de relação no Modelo 06 (R001) em FIW. As barras coloridas correspondem aos onze tipos de relação do banco.}
+\label{fig:m06_per_relation}
+\end{figure}
+
+\section{Histórico do Modelo 03 — estudo de freeze e unfreeze}
+
+A Tabela~\ref{tab:m03_runs} resume as sete runs do Modelo 03 em FIW, que cobrem diferentes estratégias de congelamento dos backbones. As runs 002 e 003 treinaram sem freeze, as runs 004 a 007 partiram de backbones congelados e descongelaram parcial ou totalmente em diferentes pontos do treino.
+
+\begin{table}[h]
+\centering
+\caption{Histórico de runs do Modelo 03 em FIW.}
+\label{tab:m03_runs}
+\begin{tabular}{llrrr}
+\hline
+\textbf{Run} & \textbf{Estratégia de freeze} & \textbf{Test AUC} & \textbf{Val AUC pico} & \textbf{Status} \\
+\hline
+R001 & Sem freeze, batch grande & --- & ---  & OOM crash \\
+R002 & Sem freeze, batch 8 & \textbf{0,850} & 0,885 & Parado por overfitting \\
+R003 & Sem freeze, dropout 0,40 & 0,845 & 0,877 & Parado por overfitting \\
+R004 & Freeze total durante todo o treino & 0,823 & 0,867 & Early stop \\
+R005 & Freeze + full unfreeze (bs 32) & 0,813 & 0,864 & OOM no unfreeze \\
+R006 & Freeze + full unfreeze (bs 16) & 0,848 & 0,873 & Overfitting pós-unfreeze \\
+R007 & Freeze + partial unfreeze, LR conservador & 0,828 & 0,868 & LR muito baixo \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Síntese}
+
