@@ -6,6 +6,156 @@ Newest run on top.
 
 ---
 
+## Run 003 — 2026-05-04 — Stopped manually at epoch 10 (regression on per-relation, AUC flat)
+
+**Status:** Stopped manually (best at epoch 5; user halted before patience triggered)
+**Outcome:** Test ROC AUC = **0.809**, best Val AUC = **0.9091** at epoch 5. **Hipotese de starvation rejeitada** — sampler estratificado nao melhorou classes de avo (gfgs caiu de 39.8% para 28.6%) e degradou todas as outras classes.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 EPOCHS=40 PATIENCE=15 NUM_WORKERS=4 \
+  STRATIFIED_SAMPLER=1 \
+  bash models/05_dinov2_lora_diffattn/AMD/run_pipeline.sh
+```
+
+### Configuration (deltas vs Run 001 in **bold**)
+
+| Param | Value |
+|-------|-------|
+| Dataset | fiw |
+| Backbone | vit_base_patch14_dinov2.lvd142m (frozen) |
+| Img size | 224 |
+| LoRA rank / alpha / dropout | 8 / 16 / 0.0 |
+| Cross-attn | 2 layers, 8 heads (differential) |
+| Embedding dim | 512 |
+| Dropout | 0.1 |
+| Batch size | 4 |
+| Grad accum | 8 (effective batch = 32) |
+| LR | 3e-4 |
+| Scheduler | cosine, warmup=3, min_lr=1e-6 |
+| Weight decay | 1e-4 |
+| Epochs | 40 (stopped at 10) |
+| Patience | 15 |
+| Loss | combined (BCE + 0.5 × contrastive + 0.2 × relation-CE) |
+| Temperature | 0.1 |
+| Relation set | fiw (11 classes) |
+| **Sampler** | **WeightedRandomSampler com 50% positivos divididos igualmente entre 11 relacoes + 50% negativos** (`--stratified_sampler`) |
+| AMP | on |
+| Grad checkpoint | on |
+| Max grad norm | 1.0 |
+| Seed | 42 |
+| Workers | 4 |
+
+### Sampler effect verified empirically (one epoch)
+
+| Grupo | Frequencia natural | Frequencia pos-sampler | Multiplicador |
+|-------|-------------------:|-----------------------:|--------------:|
+| non-kin | 50.00% | 49.94% | 1.0× |
+| md / fs / fd / ms (pais) | 7.7-8.1% | ~4.5% | ~0.6× |
+| sibs / ss / bb (irmaos) | 4.6-5.1% | ~4.5% | ~0.9× |
+| **gfgs** | **1.03%** | **4.54%** | **4.4×** |
+| **gmgs** | 0.94% | 4.54% | 4.8× |
+| **gfgd** | 0.92% | 4.65% | 5.0× |
+| **gmgd** | 0.82% | 4.53% | 5.5× |
+
+A intervencao tecnica funcionou — classes de avo receberam 4-6× mais updates por epoch.
+
+### Training trajectory
+
+- Best Val AUC: **0.9091** at epoch 5
+- Stopped manually at epoch 10 (user halted; not patience-driven)
+- Trainable params: 8,467,980 / 94,192,908 (8.99%) — same as R001
+- Time per epoch: ~85 min
+
+| Epoca | Val AUC R003 | Val AUC R001 | Δ | Train Loss R003 | Note |
+|-------|-------------:|-------------:|----:|----------------:|------|
+| 1 | 0.8798 | 0.9040 | -0.024 | 0.409 | Warmup |
+| 2 | 0.8971 | 0.9045 | -0.007 | 0.273 | |
+| 3 | 0.8926 | 0.9001 | -0.008 | 0.254 | LR pico |
+| 4 | 0.9035 | 0.9058 | -0.002 | 0.222 | |
+| **5** | **0.9091** | **0.9085** | **+0.001** | 0.200 | **Best — R003 ultrapassa R001** |
+| 6 | 0.8930 | 0.9028 | -0.010 | 0.183 | Patience 1 |
+| 7 | 0.8904 | 0.9051 | -0.015 | 0.169 | Patience 2 |
+| 8 | 0.9006 | 0.9050 | -0.004 | 0.161 | Patience 3 |
+| 9 | 0.8998 | 0.8964 | +0.003 | 0.153 | Patience 4 |
+| 10 | 0.8997 | 0.9077 | -0.008 | 0.148 | Patience 5 → user halt |
+
+R003 alcancou paridade com R001 em val AUC peak (0.9091 vs 0.9116 final do R001 — diferenca de 0.003). Train loss consistentemente menor que R001 — sampler maximiza sinal por step.
+
+### Test metrics
+
+Threshold = **0.50** (selected on validation, applied as-is to test). R001 used 0.10, R002 used 0.30. **Threshold drifou progressivamente conforme regularizacao/balancing aumenta.**
+
+| Metric | Run 003 | Run 001 | Run 002 | R003 vs R001 |
+|--------|--------:|--------:|--------:|-------------:|
+| Test ROC AUC | **0.809** | 0.806 | 0.799 | +0.003 |
+| Test Accuracy | 71.0% | 72.6% | 72.4% | -1.6 pp |
+| Balanced Accuracy | 70.5% | 70.3% | 72.6% | +0.2 pp |
+| Test F1 | 0.653 | 0.713 | 0.718 | -0.060 |
+| Test Precision | **76.8%** | 64.5% | 70.3% | **+12.3 pp** |
+| Test Recall | 56.7% | 82.0% | 73.3% | -25.3 pp |
+| Average Precision | 0.778 | 0.792 | 0.772 | -0.014 |
+| TAR@FAR=0.1 | 0.459 | 0.463 | 0.437 | -0.004 |
+| TAR@FAR=0.01 | **0.098** | **0.152** | 0.095 | **-0.057** |
+| TAR@FAR=0.001 | 0.011 | 0.044 | 0.017 | -0.033 |
+| Threshold | 0.50 | 0.10 | 0.30 | — |
+
+**Gap val→teste:** R003: 0.9091 → 0.809 = **-0.100**. R001: 0.9116 → 0.806 = -0.105. Gap ainda em torno de -0.10, igual ao R001/R002 — confirma que **stronger sampler + higher precision tradeoff nao mexe no gap estrutural**.
+
+### Per-relation accuracy (FIW)
+
+| Relation | N | R003 | R001 | R002 | Δ R003 vs R001 |
+|----------|---|----:|----:|----:|---:|
+| sibs | 234 | 63.2% | 83.3% | 85.9% | **-20.1 pp** |
+| bb | 860 | 62.6% | 79.8% | 85.5% | **-17.2 pp** |
+| ss | 731 | 61.4% | 77.2% | 81.1% | -15.8 pp |
+| fs | 1,135 | 62.6% | 71.6% | 73.8% | -9.0 pp |
+| fd | 918 | 62.3% | 71.5% | 72.9% | -9.2 pp |
+| ms | 1,036 | 51.6% | 69.4% | 69.8% | -17.8 pp |
+| md | 1,038 | 50.0% | 67.3% | 70.3% | -17.3 pp |
+| **gmgs** | 121 | 43.0% | 52.1% | 52.1% | -9.1 pp |
+| **gfgd** | 138 | 39.1% | 50.7% | 49.3% | -11.6 pp |
+| **gmgd** | 123 | 35.8% | 40.7% | 45.5% | -4.9 pp |
+| **gfgs** | 98 | **28.6%** | **39.8%** | 38.8% | **-11.2 pp** |
+
+**Todas as 11 classes regrediram**, incluindo as 4 classes de avo que o sampler era para ajudar. Parte da queda e artefato do threshold mais alto (0.50 vs 0.10), mas TAR@FAR=0.01 caiu 36% (0.152 → 0.098) — esse e threshold-independent, confirmando que o ranking efetivo piorou na regiao de alta precisao.
+
+### Notes — analise do resultado
+
+1. **Hipotese central rejeitada.** Sampler que entrega 4-6× mais sinal as classes de avo nao melhorou per-relation nessas classes (gfgs caiu 39.8% → 28.6%, gmgd 40.7% → 35.8%). **Data starvation nao e o gargalo principal.**
+
+2. **Confound metodologico.** A implementacao mistura duas mudancas: (a) balanco entre 11 classes positivas + (b) ratio pos/neg shift de 33/67 para 50/50. A versao limpa preservaria 2:1 e so rebalancearia dentro dos positivos. Esse confound nao explica o resultado isoladamente, mas o muddla.
+
+3. **Threshold drift sistematico.** R001=0.10 → R002=0.30 → R003=0.50. Cada intervencao de regularizacao/balanco diminui a polarizacao da distribuicao de scores. O modelo se torna progressivamente menos confiante. Isso baixa recall + sobe precision, espelhando exatamente o que se ve em R003 (precision 76.8% — maior do projeto, recall 56.7% — menor).
+
+4. **Implicacao para gargalo arquitetonico.** Combinando 3 runs de M05 + 3 hipoteses rejeitadas (defaults, regularizacao, balanco de dados), a leitura mais consistente e: o **DINOv2 frozen + LoRA tem teto arquitetonico em ~0.81 AUC nesta tarefa**. Mais sinal sobre features fixas nao gera informacao que as features nao codificam.
+
+5. **Implicacao para split RFIW.** Os tres runs sustentam val→teste gap em torno de -0.10. Convergencia: o gap e **propriedade do split**, nao do modelo. R002 (mais regularizacao) e R003 (mais balanco) ambos falharam em fechar o gap.
+
+6. **TAR@FAR=0.01 regrediu permanentemente** vs R001 nesta direcao de hiperparametros. Para uso de alta precisao (verificacao biometrica), R001 fica como o melhor checkpoint do M05 — provavelmente o melhor checkpoint do projeto inteiro.
+
+### Follow-up — Run 004 ja em planejamento
+
+Proxima fronteira: descongelamento parcial dos ultimos 4 blocos do DINOv2 com LR diferenciado. Se features fixas sao o teto, descongelar ataca o teto diretamente. Manter R001 hyperparams + adicionar:
+
+```bash
+SKIP_INSTALL=1 EPOCHS=20 PATIENCE=10 NUM_WORKERS=4 \
+  UNFREEZE_BACKBONE_BLOCKS=4 BACKBONE_LR_FACTOR=0.01 \
+  bash models/05_dinov2_lora_diffattn/AMD/run_pipeline.sh
+```
+
+Hipotese: Test AUC sobe para 0.83-0.86 (recuperar o que M02 R031 atingiu com full fine-tune do ImageNet ViT). Se mesmo isso nao quebrar o teto, o limite e o split — aceita-se M05 R001 como ponto de Pareto e move-se para outras direcoes.
+
+### Artifacts
+
+- Checkpoints: `output/003/checkpoints/{best.pt, epoch_5.pt, epoch_10.pt}`
+- Logs: `output/003/logs/{train.log, test.log, evaluate.log}`
+- Results: `output/003/results/{test_metrics_rocm.json, metrics_rocm.json, per_relation.json, *.png}`
+- Pipeline log: `output/run_003.log`
+
+---
+
 ## Run 002 — 2026-04-29 — Completed (early stop, regression vs Run 001)
 
 **Status:** Stopped (early stop, patience 10)

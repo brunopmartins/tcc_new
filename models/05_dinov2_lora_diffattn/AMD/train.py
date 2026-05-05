@@ -149,6 +149,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # Partial unfreeze of DINOv2 backbone
+    p.add_argument(
+        "--unfreeze_backbone_blocks", type=int, default=0,
+        help=(
+            "Unfreeze the last N transformer blocks of the DINOv2 backbone "
+            "(0 = stay fully frozen, default). Combined with --backbone_lr_factor "
+            "to keep the backbone LR proportionally low."
+        ),
+    )
+    p.add_argument(
+        "--backbone_lr_factor", type=float, default=0.01,
+        help=(
+            "Multiplier applied to --lr for the unfrozen backbone parameter group "
+            "(default 0.01 = 100× lower than head LR). Ignored when "
+            "--unfreeze_backbone_blocks=0."
+        ),
+    )
+
     return p.parse_args()
 
 
@@ -497,6 +515,86 @@ def main() -> None:
         relation_to_index=model.relation_to_index,
         monitor_metric=train_config.monitor_metric,
     )
+
+    # Partial unfreeze of the DINOv2 backbone with a separate LR group.
+    # Replaces the trainer's single-LR optimizer with a 2-group AdamW
+    # (head_lr, head_lr * backbone_lr_factor) and rebuilds the scheduler
+    # as SequentialLR(LinearLR warmup, CosineAnnealingLR) so per-group
+    # initial_lrs are respected during warmup. The base trainer's manual
+    # warmup is suppressed by setting config.warmup_epochs = 0.
+    if args.unfreeze_backbone_blocks > 0:
+        from torch.optim import AdamW
+        from torch.optim.lr_scheduler import (
+            LinearLR, CosineAnnealingLR, SequentialLR,
+        )
+
+        n_unfreeze = int(args.unfreeze_backbone_blocks)
+        backbone_blocks = model.backbone.vit.blocks
+        n_blocks = len(backbone_blocks)
+        start = max(0, n_blocks - n_unfreeze)
+
+        backbone_params = []
+        for i in range(start, n_blocks):
+            for p in backbone_blocks[i].parameters():
+                p.requires_grad = True
+                backbone_params.append(p)
+        # Also unfreeze the final encoder norm if present.
+        for name in ("norm", "fc_norm"):
+            mod = getattr(model.backbone.vit, name, None)
+            if mod is not None:
+                for p in mod.parameters():
+                    p.requires_grad = True
+                    backbone_params.append(p)
+
+        backbone_param_ids = {id(p) for p in backbone_params}
+        head_params = [
+            p for p in model.parameters()
+            if p.requires_grad and id(p) not in backbone_param_ids
+        ]
+
+        head_lr = float(args.lr)
+        backbone_lr = head_lr * float(args.backbone_lr_factor)
+
+        trainer.optimizer = AdamW(
+            [
+                {"params": head_params, "lr": head_lr},
+                {"params": backbone_params, "lr": backbone_lr},
+            ],
+            weight_decay=args.weight_decay,
+            eps=1e-8,
+        )
+
+        warmup_epochs = max(1, int(args.warmup_epochs))
+        warmup_sched = LinearLR(
+            trainer.optimizer,
+            start_factor=1.0 / warmup_epochs,
+            end_factor=1.0,
+            total_iters=warmup_epochs,
+        )
+        cosine_sched = CosineAnnealingLR(
+            trainer.optimizer,
+            T_max=max(args.epochs - warmup_epochs, 1),
+            eta_min=args.min_lr,
+        )
+        trainer.scheduler = SequentialLR(
+            trainer.optimizer,
+            schedulers=[warmup_sched, cosine_sched],
+            milestones=[warmup_epochs],
+        )
+        # Suppress base trainer's hard-coded warmup overwrite.
+        trainer.config.warmup_epochs = 0
+
+        n_back = sum(p.numel() for p in backbone_params)
+        n_head = sum(p.numel() for p in head_params)
+        print(
+            f"  [partial unfreeze] last {n_unfreeze}/{n_blocks} DINOv2 blocks "
+            f"({n_back:,} backbone params @ LR {backbone_lr:.2e}; "
+            f"{n_head:,} head/LoRA params @ LR {head_lr:.2e})"
+        )
+        print(
+            f"  [partial unfreeze] scheduler: SequentialLR(LinearLR×{warmup_epochs} → "
+            f"CosineAnnealingLR×{args.epochs - warmup_epochs}, eta_min={args.min_lr})"
+        )
 
     if args.resume:
         print(f"Resuming from {args.resume}")

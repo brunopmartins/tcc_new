@@ -433,6 +433,74 @@ R002 atingiu seu pico (0.9048) na epoca 4, R001 atingiu 0.9116 na epoca 12. R002
 
 ---
 
+### Modelo 05 — DINOv2 + LoRA + Differential Attention — Run 003 (FIW, ablation de class-balanced sampling)
+
+Run 003 testa a hipotese de que **starvation de dados nas classes de avo (1.6-2.1% do treino) explica a falha em gfgs/gmgd** observada em R001. Substitui o sampler aleatorio por `WeightedRandomSampler` que entrega 50% de positivos divididos igualmente entre as 11 relacoes do FIW + 50% de negativos. Em verificacao empirica, gfgs sai de 1.03% para 4.54% das amostras por epoch (4.4× mais updates).
+
+Todos os outros hyperparams identicos a R001 — ablacao limpa do sampler.
+
+**Configuracao (delta vs R001):**
+
+| Parametro | R001 | R003 |
+|-----------|------|------|
+| Sampler | random shuffle | **WeightedRandomSampler** (50/50 pos-neg + balance entre 11 relacoes positivas) |
+
+Outros parametros (LR, dropout, λ_rel, etc) inalterados. Treino interrompido manualmente na epoca 10 com best em epoca 5.
+
+**Trajetoria de val (selecionada):**
+
+| Epoca | Val AUC R003 | Val AUC R001 | Δ |
+|-------|------------:|------------:|------:|
+| 1 | 0.8798 | 0.9040 | -0.024 |
+| 4 | 0.9035 | 0.9058 | -0.002 |
+| **5** | **0.9091** | 0.9085 | **+0.001** (R003 paridade) |
+| Best (R001 ep 12) | — | **0.9116** | — |
+| Stop | ep 10 (manual) | ep 22 | — |
+
+R003 atingiu paridade com R001 em pico de val mas nao progrediu alem da ep 5. Train loss consistentemente menor que R001 em cada epoch.
+
+**Metricas de teste — comparacao R001 vs R002 vs R003:**
+
+| Metrica | R001 | R002 | R003 |
+|---------|------:|------:|------:|
+| **Test ROC AUC** | 0.806 | 0.799 | **0.809** |
+| Test Accuracy | **72.6%** | 72.4% | 71.0% |
+| Test F1 | 0.713 | 0.718 | 0.653 |
+| Test Precision | 64.5% | 70.3% | **76.8%** |
+| Test Recall | **82.0%** | 73.3% | 56.7% |
+| Avg Precision | **0.792** | 0.772 | 0.778 |
+| **TAR@FAR=0.1** | **0.463** | 0.437 | 0.459 |
+| **TAR@FAR=0.01** | **0.152** | 0.095 | 0.098 |
+| TAR@FAR=0.001 | **0.044** | 0.017 | 0.011 |
+| Threshold (val) | 0.10 | 0.30 | **0.50** |
+| Val→teste gap | -0.105 | -0.106 | -0.100 |
+
+**Per-relation comparison:**
+
+| Relacao | N | R001 | R002 | R003 | Δ R003 vs R001 |
+|---------|---:|----:|----:|----:|---:|
+| sibs | 234 | 83.3% | **85.9%** | 63.2% | -20.1 pp |
+| bb | 860 | 79.8% | **85.5%** | 62.6% | -17.2 pp |
+| ss | 731 | 77.2% | **81.1%** | 61.4% | -15.8 pp |
+| fs | 1,135 | 71.6% | **73.8%** | 62.6% | -9.0 pp |
+| fd | 918 | 71.5% | **72.9%** | 62.3% | -9.2 pp |
+| md | 1,038 | 67.3% | **70.3%** | 50.0% | -17.3 pp |
+| ms | 1,036 | 69.4% | **69.8%** | 51.6% | -17.8 pp |
+| **gmgs** | 121 | **52.1%** | **52.1%** | 43.0% | -9.1 pp |
+| **gfgd** | 138 | **50.7%** | 49.3% | 39.1% | -11.6 pp |
+| **gmgd** | 123 | 40.7% | **45.5%** | 35.8% | -4.9 pp |
+| **gfgs** | 98 | **39.8%** | 38.8% | **28.6%** | -11.2 pp |
+
+**Observacoes — hipotese rejeitada:**
+
+- **Todas as 11 classes regrediram em R003**, incluindo as 4 classes de avo que o sampler era para ajudar. gfgs caiu para 28.6% (era 39.8% em R001).
+- **Test AUC ficou estatisticamente igual** (0.809 vs 0.806). TAR@FAR=0.01 caiu para 0.098 (de 0.152 em R001).
+- Parte da queda per-relation e artefato do threshold mais alto (0.50 vs 0.10). Mas TAR@FAR=0.01 e threshold-independent, e tambem caiu — entao o ranking efetivo na regiao de alta precisao piorou.
+- **Convergencia das tres runs:** val→teste gap em torno de -0.10 nas tres (-0.105, -0.106, -0.100). Tres intervencoes diferentes, mesmo gap. Isso e a evidencia mais forte de que **o gap e propriedade do split RFIW Track-I**, nao do modelo.
+- **Hipotese sobrevivente para classes de avo:** **gargalo arquitetonico** — DINOv2 frozen extrai features que nao distinguem essas classes, e nenhuma quantidade de updates sobre features fixas pode adicionar informacao nao-codificada. Teste direto: descongelar parcialmente o backbone (Run 004 planejado).
+
+---
+
 ### Modelo 06 — Retrieval-Augmented Kinship — Run 001 (FIW)
 
 Primeira run do modelo retrieval-augmented, com encoder ViT-B/16 congelado e galeria de 33.207 pares positivos do conjunto de treino.
@@ -588,6 +656,7 @@ Este resultado negativo entra no TCC como ablacao: confirma que melhorias "obvia
 | **Modelo 03 R006** | Hybrid + Full Unfreeze | 0.848 | 50.5%* | 0.132 | ~176M | — |
 | **Modelo 05 R001** | DINOv2 + LoRA + DiffAttn + relation head | 0.806 | **72.6%** | **0.152** | **8.47M** | 39.8% (gfgs) |
 | **Modelo 05 R002** | M05 + regularizacao mais forte (LR/2, dropout↑, λ_rel↑) | 0.799 | 72.4% | 0.095 | 8.47M | 38.8% (gfgs) |
+| **Modelo 05 R003** | M05 + stratified sampler (4-6× mais updates por classe rara) | 0.809 | 71.0% | 0.098 | 8.47M | 28.6% (gfgs) |
 | **Modelo 06 R001** | Retrieval-Augmented (frozen ViT-B/16, K=32) | 0.776 | 69.8% | 0.062 | 8.16M | 61.2% (gmgs) |
 | **Modelo 06 R002** | Retrieval-Augmented (frozen DINOv2, K=64) | 0.731 | 66.2% | 0.042 | ~12M | 41.3% (gmgs) |
 | Codex VLM zero-shot | gpt-5.4-mini | — | 33.1% | — | 0 (zero-shot) | 0.0% |
@@ -857,3 +926,5 @@ Hiperparametros refinados ao longo de 32+ experimentos:
 12. **Modelo 05 (DINOv2 + LoRA + DiffAttn) eleva o teto de Val AUC mas com gap val→teste alto:** Run 001 atingiu **Val AUC=0.9116** (maior do projeto) e **TAR@FAR=0.01=0.152** (melhor de todos), mas Test AUC ficou em 0.806 — gap de **-0.105**. A combinacao de DINOv2 self-supervised + LoRA rank=8 + differential cross-attention captura discriminacao mais forte que os modelos parametricos plenos. Apenas 8.47M parametros treinaveis (vs 86-176M dos parametricos plenos). Para regimes de threshold rigoroso (TAR@FAR=0.01), M05 R001 e a melhor opcao do projeto. O sinal multitarefa de classificacao de relacao (lambda=0.2) nao foi suficiente para resolver as classes de avo/avoa (40-52%) — e a relacao gfgs e a pior (39.8%), invertendo o padrao do M02 onde gfgs era a melhor.
 
 13. **Regularizacao mais forte no Modelo 05 nao fecha o gap val→teste** (Run 002): aumentar relation_loss_weight para 0.4, adicionar LoRA dropout 0.1 e dropout 0.2, e cortar LR pico pela metade **manteve o gap em -0.106** (vs -0.105 da R001) e **reduziu TAR@FAR=0.01 de 0.152 para 0.095**. Aumentos pequenos (+3-6 pp) em classes intra-geracao (bb/ss/sibs) e mae/pai-filho(a) ao custo de precisao em thresholds rigorosos. **Implicacao central:** se overfitting fosse a causa do gap, R002 deveria fecha-lo; como nao fechou, o gap e provavelmente **estrutural — divergencia entre as distribuicoes de familia val e teste do RFIW Track-I**, nao propriedade do modelo. Isso desloca a investigacao para validacao cruzada k-fold e analise da composicao dos splits, em vez de ablacoes adicionais de hiperparametros. Aumentar lambda da relation-CE para 0.4 nao consertou as classes de avo/avoa, sugerindo que o gargalo nessas classes nao e o sinal multitarefa, mas insuficiencia de exemplos no treino.
+
+14. **Class-balanced sampling tambem nao resolve as classes de avo** (Run 003 do Modelo 05): substituir o sampler aleatorio por `WeightedRandomSampler` que entrega 50% positivos divididos igualmente entre 11 relacoes do FIW + 50% negativos, dando **4-6× mais updates por epoch as classes raras** (gfgs vai de 1.03% para 4.54%), nao melhorou o desempenho dessas classes — gfgs caiu de 39.8% para 28.6%, todas as 11 classes regrediram, TAR@FAR=0.01 caiu para 0.098. **Implicacoes que reescrevem o diagnostico do M05:** (a) starvation de dados **nao** era o gargalo principal — mais updates sobre features fixas nao adiciona informacao que as features nao codificam; (b) o val→teste gap manteve-se em **-0.100**, igual a R001 (-0.105) e R002 (-0.106) — **tres intervencoes diferentes, mesmo gap, confirmando que o gap e propriedade do split RFIW Track-I, nao do modelo**; (c) o gargalo das classes de avo e arquitetonico — DINOv2 frozen extrai features que ja nao discriminam essas classes; (d) **R001 permanece como o checkpoint Pareto-otimal do M05** para uso de alta precisao (TAR@FAR=0.01 = 0.152, melhor de todo o projeto). A direcao que resta para mover o teto e descongelar parcialmente o DINOv2 — Run 004 planejada.
