@@ -6,6 +6,258 @@ Newest run on top.
 
 ---
 
+## Run 007 — 2026-05-08 — Stopped manually at epoch 19 (hybrid backbone, H1/H2 not met)
+
+**Status:** Stopped manually (best at ep 13, AUC plateaued)
+**Outcome:** Test ROC AUC = **0.810**, best Val AUC = 0.9066 at epoch 13. Hipótese de superar M02 via fusão DINOv2 + M02-trained-ViT **não confirmada** — Test AUC ficou entre R001 e R004, e per-relation regrediu vs R001.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 EPOCHS=20 PATIENCE=10 NUM_WORKERS=4 \
+  USE_HYBRID_BACKBONE=1 \
+  FACE_BACKBONE_NAME=vit_base_patch16_224 \
+  FACE_BACKBONE_CHECKPOINT=/home/bruno/Desktop/tcc_new/models/02_vit_facor_crossattn/output/031/checkpoints/epoch_5.pt \
+  FACE_BACKBONE_STATE_PREFIX=vit. \
+  INTRA_FACE_ATTN_LAYERS=1 \
+  bash models/05_dinov2_lora_diffattn/AMD/run_pipeline.sh
+```
+
+### Configuration
+
+| Param | Value |
+|-------|-------|
+| Dataset | fiw |
+| **Backbone 1 (DINOv2)** | vit_base_patch14_dinov2.lvd142m (frozen) |
+| **Backbone 2 (face-specific)** | vit_base_patch16_224 (frozen, weights from M02 R031 epoch_5.pt) |
+| **Intra-face attention** | 1 layer DiffAttn (DINOv2 ↔ M02-ViT) |
+| **Inter-face attention** | 2 layers DiffAttn (face1 ↔ face2) |
+| Embedding dim | 512 |
+| Loss | combined (BCE + 0.5 × contrastive + 0.2 × relation-CE) |
+| LR | 3e-4 |
+| Scheduler | cosine, warmup=3, min_lr=1e-6 |
+| Weight decay | 1e-4 |
+| Batch size | 4 (grad_accum 8 → eff. 32) |
+| Dropout | 0.1 |
+| Patience | 10 |
+| Total params | 183,100,428 |
+| **Trainable** | **11,576,844 (6.3%)** — both backbones frozen |
+| Time/epoch | ~62 min |
+
+### Training trajectory (selected)
+
+| Epoch | Val AUC | Train Loss | LR | Note |
+|-------|---------|------------|-----|------|
+| 1 | 0.8920 | 0.369 | 1.0e-4 | Warmup |
+| 2 | 0.8901 | 0.293 | 2.0e-4 | |
+| 3 | 0.8945 | 0.280 | 3.0e-4 | LR pico |
+| 4 | 0.8955 | 0.251 | 3.0e-4 | |
+| 5 | 0.8982 | 0.234 | 2.9e-4 | |
+| 6 | 0.9004 | 0.216 | 2.8e-4 | |
+| 7 | 0.9023 | 0.198 | 2.6e-4 | |
+| 8 | 0.8978 | 0.183 | 2.4e-4 | Patience 1 |
+| 9 | 0.9010 | 0.167 | 2.2e-4 | |
+| 10 | 0.8996 | 0.151 | 1.9e-4 | |
+| 11 | 0.9045 | 0.135 | 1.6e-4 | |
+| 12 | 0.8956 | 0.119 | 1.4e-4 | |
+| **13** | **0.9066** | 0.104 | 1.1e-4 | **Best** |
+| 14 | 0.8954 | 0.088 | 8.4e-5 | Patience 1 |
+| 15 | 0.9013 | 0.075 | 6.0e-5 | |
+| 16 | 0.8969 | 0.064 | 4.0e-5 | |
+| 17 | 0.8984 | 0.052 | 2.3e-5 | |
+| 18 | 0.8992 | 0.044 | 1.1e-5 | Manual halt |
+
+### Test metrics
+
+| Metric | R007 | R001 | R005 | M02 R031 |
+|--------|----:|-----:|-----:|---------:|
+| Test ROC AUC | 0.810 | 0.806 | 0.822 | **0.850** |
+| Test Accuracy | 71.9% | 72.6% | 72.0% | **74.4%** |
+| Test F1 | 0.652 | 0.713 | 0.645 | 0.779 |
+| Test Precision | **80.0%** | 64.5% | 82.2% | 66.5% |
+| Test Recall | 55.1% | 82.0% | 53.0% | 94.1% |
+| Avg Precision | 0.796 | 0.792 | 0.798 | 0.817 |
+| TAR@FAR=0.1 | 0.495 | 0.463 | 0.511 | 0.499 |
+| TAR@FAR=0.01 | 0.136 | 0.152 | 0.100 | ~0.13 |
+| Val→Test gap | -0.097 | -0.105 | -0.071 | -0.031 |
+| Threshold | 0.50 | 0.10 | 0.50 | 0.90 |
+
+### Per-relation accuracy (FIW)
+
+| Relation | N | R007 | R001 | M02 R031 |
+|----------|---|----:|----:|---------:|
+| sibs | 234 | 60.7% | 83.3% | 94.9% |
+| bb | 860 | 57.8% | 79.8% | 95.5% |
+| fs | 1,135 | 59.1% | 71.6% | 95.3% |
+| fd | 918 | 57.0% | 71.5% | 91.7% |
+| ss | 731 | 57.2% | 77.2% | 94.7% |
+| ms | 1,036 | 56.8% | 69.4% | 93.9% |
+| md | 1,038 | 53.4% | 67.3% | 94.4% |
+| gfgd | 138 | 41.3% | 50.7% | 89.9% |
+| **gfgs** | 98 | 32.7% | 39.8% | **95.9%** |
+| gmgd | 123 | 27.6% | 40.7% | 91.1% |
+| gmgs | 121 | 24.0% | 52.1% | 88.4% |
+
+### Notes — analysis of negative result
+
+1. **H0 (null) confirmado.** Test AUC=0.810 está estatisticamente indistinguível de R001 (0.806) e R004 (0.812). A combinação DINOv2 + M02-ViT congelados **não gera ganho material**.
+
+2. **H1 (≥0.83) e H2 (≥0.85) NÃO confirmadas.** O ganho esperado da fusão de backbones complementares não materializou.
+
+3. **H3 (M02 backbone domina) parcialmente observado**, mas com twist: o M02-ViT extraído NÃO consegue produzir as features fortes que M02 R031 mostrava. Em M02, os 95.9% de accuracy em gfgs vinham do **sistema completo treinado-em-conjunto** (ViT + cross-attention bidirecional FaCoR + supervised contrastive + threshold 0.90). Reusar só os pesos do ViT e plugar em outra arquitetura quebra o ecossistema.
+
+4. **Per-relation regrediu vs R001 em todas as 11 classes.** R007 nem sequer manteve o nível do R001 frozen+LoRA — o threshold 0.50 (vs R001 0.10) é fator, mas a estrutura de scores é diferente: R007 produz scores polarizados (precisão 80%) com baixo recall (55%). Modelo extremamente conservador.
+
+5. **TAR@FAR=0.01 = 0.136** é razoável (entre R001's 0.152 e R004's 0.119). Em regimes de alta precisão, a fusão preserva alguma discriminação.
+
+6. **Val→Test gap = -0.097** confirma o padrão estrutural — 7 runs M05, gap consistentemente em -0.07 a -0.11. **Não é overfitting do modelo, é o split RFIW Track-I.**
+
+### Lições gerais (após 7 runs M05)
+
+- **Backbones face-specific isolados não compõem com DINOv2** sem retreinar todo o pipeline juntos. M02's success era do sistema, não do ViT.
+- **O teto do M05 é 0.81-0.82 em qualquer configuração frozen** (R001, R002, R003, R004, R006, R007 todos nessa faixa).
+- **Full fine-tune (R005)** moveu o teto marginalmente para 0.822 — única intervenção que mexeu o ranking de teste.
+- **Para superar 0.85**, seria necessário ou (a) full fine-tune com receita CosFace/ArcFace, ou (b) trocar arquitetura (M07).
+
+### Bug encontrado e corrigido
+
+`test.py` e `evaluate.py` instanciavam apenas `DINOv2LoRAKinship`, ignorando o caso hybrid. Com `strict=False` no `load_state_dict`, os pesos `face_vit.*` e `intra_face_layers.*` eram silenciosamente descartados. **Primeira execução do test.py em R007 deu Test AUC = 0.504 (random)** — bug catastrófico. Corrigido: ambos scripts agora detectam arquitetura hybrid pelos prefixos do state_dict e instanciam `DINOv2HybridKinship` quando apropriado. Re-execução produziu Test AUC = 0.810 (resultado real).
+
+### Artifacts
+
+- Checkpoints: `output/007/checkpoints/{best.pt, epoch_5.pt, epoch_10.pt, epoch_15.pt}`
+- Logs: `output/007/logs/{train.log, test.log, evaluate.log}`
+- Results: `output/007/results/{test_metrics_rocm.json, metrics_rocm.json, per_relation.json, *.png}`
+- Pipeline log: `output/run_007.log`
+
+---
+
+## Run 006 — 2026-05-07 — Completed naturally (heavy contrastive loss)
+
+**Status:** Completed (full 20 epochs, natural early stop pattern)
+**Outcome:** Test ROC AUC = **0.814**, best Val AUC = 0.9115 at epoch 4. Hipótese de loss contrastive-heavy bater R001 não confirmada.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 EPOCHS=20 PATIENCE=10 NUM_WORKERS=4 \
+  LOSS=combined CONTRASTIVE_WEIGHT=0.9 RELATION_LOSS_WEIGHT=0 \
+  bash models/05_dinov2_lora_diffattn/AMD/run_pipeline.sh
+```
+
+Versão corrigida da Opção A (LOSS=contrastive puro deixou binary head sem treino → AUC random). Combined com 0.9 peso em contrastive + 0.1 em BCE mantém head viva enquanto contrastive domina.
+
+### Configuration deltas vs R001
+
+| Param | R001 | R006 |
+|-------|------|------|
+| LOSS | combined | combined |
+| CONTRASTIVE_WEIGHT | 0.5 | **0.9** |
+| RELATION_LOSS_WEIGHT | 0.2 | **0** |
+
+### Test metrics
+
+| Metric | R006 | R001 |
+|--------|----:|-----:|
+| Test ROC AUC | 0.814 | 0.806 |
+| Test Accuracy | 72.9% | 72.6% |
+| Test F1 | 0.721 | 0.713 |
+| TAR@FAR=0.01 | 0.094 | 0.152 |
+| Val AUC peak | 0.9115 (ep 4) | 0.9116 (ep 12) |
+| Val→Test gap | -0.10 | -0.105 |
+
+### Per-relation highlights
+
+- bb: **83.4%** (best M05), sibs: **86.8%** (best M05)
+- gfgs: 45.9%, gmgd: 39.8% (worse than R001 on grandparents)
+
+### Notes
+
+- Heavy contrastive ajudou classes intra-geração (bb, ss, sibs) mas regrediu em avô-neto.
+- Test AUC marginal +0.008 vs R001 — dentro de ruído.
+- Confirma que a loss não é o gargalo principal do M05.
+
+### Artifacts
+
+- `output/006/checkpoints/best.pt` (~700MB), final.pt, epoch_5/10.pt
+- `output/006/results/{test_metrics_rocm.json, per_relation.json, *.png}`
+
+---
+
+## Run 005 — 2026-05-04 — Stopped manually at epoch 10 (full unfreeze, M02-style LR)
+
+**Status:** Stopped manually (slow convergence due to LR=5e-6 with random head)
+**Outcome:** Test ROC AUC = **0.822** (highest M05), best Val AUC = 0.8930 at epoch 12. Val→test gap = **-0.071** (smallest M05).
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 EPOCHS=20 PATIENCE=10 NUM_WORKERS=4 \
+  UNFREEZE_BACKBONE_BLOCKS=12 BACKBONE_LR_FACTOR=1.0 \
+  LEARNING_RATE=5e-6 WARMUP_EPOCHS=5 DROPOUT=0.2 \
+  bash models/05_dinov2_lora_diffattn/AMD/run_pipeline.sh
+```
+
+### Configuration
+
+| Param | Value |
+|-------|-------|
+| Backbone | DINOv2 ViT-B/14 (full fine-tune) |
+| **Trainable** | **93.5M (99.3%)** |
+| LR | 5e-6 (M02-style) |
+| Warmup | 5 epochs |
+| Dropout | 0.2 |
+| LoRA rank/alpha | 8 / 16 (still active as overlay) |
+| Loss | combined |
+
+### Notes
+
+- Initial 5 epochs were broken (Val AUC stuck at 0.5-0.7) due to LR=5e-6 being too low for un-trained head. Recovered at epoch 6 (Val AUC 0.84) when warmup completed.
+- **Best M05 Test AUC (0.822)** but at the cost of much heavier compute.
+- Val→test gap shrunk from -0.10 to -0.07 with full plasticity — partial evidence that the gap is influenced by capacity, not purely structural.
+- TAR@FAR=0.1 = 0.511 (best of M05).
+
+### Artifacts
+
+- `output/005/checkpoints/best.pt`, final.pt
+- `output/005/results/{test_metrics_rocm.json, per_relation.json, *.png}`
+
+---
+
+## Run 004 — 2026-04-30 — Stopped manually at epoch 7 (partial unfreeze, last 4 DINOv2 blocks)
+
+**Status:** Stopped manually after overfitting signature
+**Outcome:** Test ROC AUC = **0.812**, best Val AUC = 0.9108 at epoch 4.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 EPOCHS=20 PATIENCE=10 NUM_WORKERS=4 \
+  UNFREEZE_BACKBONE_BLOCKS=4 BACKBONE_LR_FACTOR=0.01 \
+  bash models/05_dinov2_lora_diffattn/AMD/run_pipeline.sh
+```
+
+### Configuration
+
+| Param | Value |
+|-------|-------|
+| Backbone | DINOv2 ViT-B/14 (last 4 blocks unfrozen) |
+| **Trainable** | **36.8M (39.1%)** |
+| LR | 3e-4 (head + LoRA), 3e-6 (backbone group via factor=0.01) |
+
+### Notes
+
+- Implementation introduced multi-LR optimizer (head_lr + backbone_lr) and `SequentialLR(LinearLR + CosineAnnealingLR)` for warmup that respects per-group LRs.
+- Stopped early because train loss collapsed (overfit signature) while Val AUC plateaued.
+- Test AUC 0.812 — marginal +0.006 vs R001.
+
+### Artifacts
+
+- `output/004/checkpoints/best.pt`
+- `output/004/results/{test_metrics_rocm.json, per_relation.json, *.png}`
+
+---
+
 ## Run 003 — 2026-05-04 — Stopped manually at epoch 10 (regression on per-relation, AUC flat)
 
 **Status:** Stopped manually (best at epoch 5; user halted before patience triggered)

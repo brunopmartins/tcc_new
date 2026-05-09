@@ -54,6 +54,11 @@
 #   STRATIFIED_SAMPLER    0   (1 = class-balanced WeightedRandomSampler)
 #   UNFREEZE_BACKBONE_BLOCKS 0  (N = unfreeze last N transformer blocks of DINOv2)
 #   BACKBONE_LR_FACTOR    0.01 (multiplier on --lr for the unfrozen backbone group)
+#   USE_HYBRID_BACKBONE   0    (1 = DINOv2 + face-specific ViT, both frozen)
+#   FACE_BACKBONE_NAME    vit_base_patch16_224
+#   FACE_BACKBONE_CHECKPOINT  (path to checkpoint with face-specific ViT weights)
+#   FACE_BACKBONE_STATE_PREFIX  vit.
+#   INTRA_FACE_ATTN_LAYERS  1
 #   GPU_ID                0
 #   SEED                  42
 #   SKIP_INSTALL          0
@@ -102,6 +107,11 @@ NO_GRAD_CKPT="${NO_GRAD_CKPT:-0}"
 STRATIFIED_SAMPLER="${STRATIFIED_SAMPLER:-0}"
 UNFREEZE_BACKBONE_BLOCKS="${UNFREEZE_BACKBONE_BLOCKS:-0}"
 BACKBONE_LR_FACTOR="${BACKBONE_LR_FACTOR:-0.01}"
+USE_HYBRID_BACKBONE="${USE_HYBRID_BACKBONE:-0}"
+FACE_BACKBONE_NAME="${FACE_BACKBONE_NAME:-vit_base_patch16_224}"
+FACE_BACKBONE_CHECKPOINT="${FACE_BACKBONE_CHECKPOINT:-}"
+FACE_BACKBONE_STATE_PREFIX="${FACE_BACKBONE_STATE_PREFIX:-vit.}"
+INTRA_FACE_ATTN_LAYERS="${INTRA_FACE_ATTN_LAYERS:-1}"
 GPU_ID="${GPU_ID:-0}"
 SEED="${SEED:-42}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
@@ -117,7 +127,9 @@ if [ -e /dev/kfd ] && [ -z "${_ROCM_SETUP_COMPLETE}" ]; then
     export CROSS_ATTN_LAYERS CROSS_ATTN_HEADS DROPOUT EMBEDDING_DIM
     export LOSS CONTRASTIVE_WEIGHT TEMPERATURE RELATION_SET RELATION_LOSS_WEIGHT
     export NEGATIVE_RATIO EVAL_NEGATIVE_RATIO TRAIN_NEG_STRATEGY EVAL_NEG_STRATEGY
-    export NUM_WORKERS PATIENCE MAX_GRAD_NORM DISABLE_AMP NO_GRAD_CKPT STRATIFIED_SAMPLER UNFREEZE_BACKBONE_BLOCKS BACKBONE_LR_FACTOR GPU_ID SEED SKIP_INSTALL
+    export NUM_WORKERS PATIENCE MAX_GRAD_NORM DISABLE_AMP NO_GRAD_CKPT STRATIFIED_SAMPLER UNFREEZE_BACKBONE_BLOCKS BACKBONE_LR_FACTOR
+    export USE_HYBRID_BACKBONE FACE_BACKBONE_NAME FACE_BACKBONE_CHECKPOINT FACE_BACKBONE_STATE_PREFIX INTRA_FACE_ATTN_LAYERS
+    export GPU_ID SEED SKIP_INSTALL
     export _ROCM_SETUP_COMPLETE=1
     SELF="$(readlink -f "${BASH_SOURCE[0]}")"
     echo "  [ROCm] Restarting script with render group active..."
@@ -221,6 +233,13 @@ echo "Grad checkpoint:   $([ "${NO_GRAD_CKPT}" = "1" ] && echo off || echo on)"
 echo "Stratified samp.:  $([ "${STRATIFIED_SAMPLER}" = "1" ] && echo on || echo off)"
 echo "Unfreeze blocks:   ${UNFREEZE_BACKBONE_BLOCKS}"
 echo "Backbone LR fact:  ${BACKBONE_LR_FACTOR}"
+echo "Hybrid backbone:   $([ "${USE_HYBRID_BACKBONE}" = "1" ] && echo on || echo off)"
+if [ "${USE_HYBRID_BACKBONE}" = "1" ]; then
+    echo "  Face backbone:   ${FACE_BACKBONE_NAME}"
+    echo "  Face ckpt:       ${FACE_BACKBONE_CHECKPOINT:-(none)}"
+    echo "  Face prefix:     ${FACE_BACKBONE_STATE_PREFIX}"
+    echo "  Intra-face attn: ${INTRA_FACE_ATTN_LAYERS} layers"
+fi
 echo "Dataset:           ${TRAIN_DATASET}"
 echo "Seed:              ${SEED}"
 echo "ROCm device:       ${GPU_ID}"
@@ -268,6 +287,12 @@ TRAIN_ARGS=(
 [ "${NO_GRAD_CKPT}" = "1" ]       && TRAIN_ARGS+=(--no_grad_ckpt)
 [ "${STRATIFIED_SAMPLER}" = "1" ] && TRAIN_ARGS+=(--stratified_sampler)
 [ "${UNFREEZE_BACKBONE_BLOCKS}" != "0" ] && TRAIN_ARGS+=(--unfreeze_backbone_blocks "${UNFREEZE_BACKBONE_BLOCKS}" --backbone_lr_factor "${BACKBONE_LR_FACTOR}")
+if [ "${USE_HYBRID_BACKBONE}" = "1" ]; then
+    TRAIN_ARGS+=(--use_hybrid_backbone --face_backbone_name "${FACE_BACKBONE_NAME}" \
+                 --face_backbone_state_prefix "${FACE_BACKBONE_STATE_PREFIX}" \
+                 --intra_face_attn_layers "${INTRA_FACE_ATTN_LAYERS}")
+    [ -n "${FACE_BACKBONE_CHECKPOINT}" ] && TRAIN_ARGS+=(--face_backbone_checkpoint "${FACE_BACKBONE_CHECKPOINT}")
+fi
 
 TEST_ARGS=(
     --checkpoint   "${CKPT_DIR}/best.pt"

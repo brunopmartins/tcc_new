@@ -501,6 +501,35 @@ R003 atingiu paridade com R001 em pico de val mas nao progrediu alem da ep 5. Tr
 
 ---
 
+### Modelo 05 — Sumario das Runs 004-007 (FIW)
+
+Quatro runs adicionais foram executadas testando direcoes arquitetonicas e
+variantes de loss / plasticidade. **Nenhuma moveu o teto de Test AUC do M05
+significativamente** alem do patamar 0.81-0.82 ja estabelecido em R001-R003.
+Detalhes completos em [models/05_dinov2_lora_diffattn/RUN_LOG.md](../../models/05_dinov2_lora_diffattn/RUN_LOG.md)
+e [run-review/](../../models/05_dinov2_lora_diffattn/run-review/).
+
+| Run | Approach | Trainable | Test AUC | Val→Test gap | TAR@FAR=0.01 | Veredito |
+|-----|----------|----------:|---------:|-------------:|-------------:|----------|
+| R004 | Partial unfreeze (last 4 DINOv2 blocks) | 36.8M | 0.812 | -0.099 | 0.119 | Marginal +0.006 vs R001 |
+| R005 | Full unfreeze + LR M02-style (5e-6) | 93.5M | **0.822** | **-0.071** | 0.100 | Best M05 AUC; menor gap |
+| R006 | Heavy contrastive loss (peso 0.9 vs 0.5) | 8.5M | 0.814 | -0.10 | 0.094 | Marginal +0.008 vs R001 |
+| R007 | DINOv2 + M02-trained-ViT hybrid backbone | 11.6M | 0.810 | -0.097 | 0.136 | H0 confirmado, hibrido nao bate M02 |
+
+**Tres direcoes arquitetonicas testadas em R004-R007:**
+
+1. **Plasticidade total (R005)** — descongelar todo o DINOv2 com LR M02-style (5e-6) **moveu o teto marginalmente** para 0.822 (de 0.806 do R001) e **reduziu o val→teste gap** para -0.071 (vs -0.10 das demais). Unica intervencao com efeito mensuravel sobre o gap, sugerindo que parte do gap e atribuivel a capacidade limitada do head com backbone frozen.
+
+2. **Loss heavy-contrastive (R006)** — substituir o peso 0.5/0.5 entre BCE e contrastive por 0.9/0.1, com `relation_loss_weight=0`. Teste de "pode loss puramente contrastive (estilo M02) ajudar M05?". **Resultado:** ganho de +0.008 AUC vs R001, dentro de margem de ruido. Loss nao e o gargalo principal de M05.
+
+3. **Backbone hibrido (R007)** — fundir DINOv2 (general visual) + M02-trained-ViT (kinship-tuned, extraido de M02 R031 epoch_5.pt) com cross-attention diferencial intra-face. **Hipotese**: combinar self-supervised + task-specific deveria gerar features complementares que nem M02 nem DINOv2 sozinhos atingem. **Resultado: H0 confirmado** — Test AUC = 0.810, identico a R001 sem o M02 backbone. **Per-relation regrediu em todas as 11 classes** vs R001. Conclusao: as features kinship-fortes do M02 R031 nao sao do ViT alone — vem do **sistema completo** (ViT + FaCoR cross-attention + supervised contrastive + threshold 0.90 calibrados juntos). Reusar so os pesos do ViT em outra arquitetura quebra o ecossistema.
+
+**Bug encontrado durante R007:** `test.py` e `evaluate.py` instanciavam apenas `DINOv2LoRAKinship`, ignorando a arquitetura hybrid. Com `strict=False` em `load_state_dict`, os pesos `face_vit.*` e `intra_face_layers.*` eram silenciosamente descartados, produzindo Test AUC random (0.504) na primeira execucao. Corrigido para detectar arquitetura via prefixos do state_dict.
+
+**Sintese pos-7-runs do M05:** o teto arquitetonico de 0.81-0.82 e robusto a 7 hipoteses diferentes. O val→teste gap de ~-0.10 e estrutural ao split RFIW Track-I (so quebra parcialmente com plasticidade total). Para superar M02 R031 (Test AUC 0.85), o caminho viavel seria (a) full fine-tune com receita CosFace/ArcFace + LoRA rank 16 + LR 1e-4 (replicacao de FRoundation), ou (b) trocar arquitetura completa para M07 com backbone face-specific pretrained + co-design de head/loss. **R001 permanece como o checkpoint Pareto-otimal do M05** para TAR@FAR=0.01 (0.152, melhor de todo o projeto).
+
+---
+
 ### Modelo 06 — Retrieval-Augmented Kinship — Run 001 (FIW)
 
 Primeira run do modelo retrieval-augmented, com encoder ViT-B/16 congelado e galeria de 33.207 pares positivos do conjunto de treino.
@@ -657,6 +686,10 @@ Este resultado negativo entra no TCC como ablacao: confirma que melhorias "obvia
 | **Modelo 05 R001** | DINOv2 + LoRA + DiffAttn + relation head | 0.806 | **72.6%** | **0.152** | **8.47M** | 39.8% (gfgs) |
 | **Modelo 05 R002** | M05 + regularizacao mais forte (LR/2, dropout↑, λ_rel↑) | 0.799 | 72.4% | 0.095 | 8.47M | 38.8% (gfgs) |
 | **Modelo 05 R003** | M05 + stratified sampler (4-6× mais updates por classe rara) | 0.809 | 71.0% | 0.098 | 8.47M | 28.6% (gfgs) |
+| **Modelo 05 R004** | M05 + partial unfreeze (last 4 DINOv2 blocks) | 0.812 | 72.9% | 0.119 | 36.8M | — |
+| **Modelo 05 R005** | M05 + full unfreeze (LR=5e-6 M02-style) | **0.822** | 72.0% | 0.100 | 93.5M | 23.5% (gfgs) |
+| **Modelo 05 R006** | M05 + heavy contrastive loss (peso 0.9) | 0.814 | 72.9% | 0.094 | 8.47M | 45.9% (gfgs) |
+| **Modelo 05 R007** | M05 + DINOv2 + M02-trained-ViT hybrid backbone | 0.810 | 71.9% | 0.136 | 11.58M | 32.7% (gfgs) |
 | **Modelo 06 R001** | Retrieval-Augmented (frozen ViT-B/16, K=32) | 0.776 | 69.8% | 0.062 | 8.16M | 61.2% (gmgs) |
 | **Modelo 06 R002** | Retrieval-Augmented (frozen DINOv2, K=64) | 0.731 | 66.2% | 0.042 | ~12M | 41.3% (gmgs) |
 | Codex VLM zero-shot | gpt-5.4-mini | — | 33.1% | — | 0 (zero-shot) | 0.0% |
@@ -928,3 +961,5 @@ Hiperparametros refinados ao longo de 32+ experimentos:
 13. **Regularizacao mais forte no Modelo 05 nao fecha o gap val→teste** (Run 002): aumentar relation_loss_weight para 0.4, adicionar LoRA dropout 0.1 e dropout 0.2, e cortar LR pico pela metade **manteve o gap em -0.106** (vs -0.105 da R001) e **reduziu TAR@FAR=0.01 de 0.152 para 0.095**. Aumentos pequenos (+3-6 pp) em classes intra-geracao (bb/ss/sibs) e mae/pai-filho(a) ao custo de precisao em thresholds rigorosos. **Implicacao central:** se overfitting fosse a causa do gap, R002 deveria fecha-lo; como nao fechou, o gap e provavelmente **estrutural — divergencia entre as distribuicoes de familia val e teste do RFIW Track-I**, nao propriedade do modelo. Isso desloca a investigacao para validacao cruzada k-fold e analise da composicao dos splits, em vez de ablacoes adicionais de hiperparametros. Aumentar lambda da relation-CE para 0.4 nao consertou as classes de avo/avoa, sugerindo que o gargalo nessas classes nao e o sinal multitarefa, mas insuficiencia de exemplos no treino.
 
 14. **Class-balanced sampling tambem nao resolve as classes de avo** (Run 003 do Modelo 05): substituir o sampler aleatorio por `WeightedRandomSampler` que entrega 50% positivos divididos igualmente entre 11 relacoes do FIW + 50% negativos, dando **4-6× mais updates por epoch as classes raras** (gfgs vai de 1.03% para 4.54%), nao melhorou o desempenho dessas classes — gfgs caiu de 39.8% para 28.6%, todas as 11 classes regrediram, TAR@FAR=0.01 caiu para 0.098. **Implicacoes que reescrevem o diagnostico do M05:** (a) starvation de dados **nao** era o gargalo principal — mais updates sobre features fixas nao adiciona informacao que as features nao codificam; (b) o val→teste gap manteve-se em **-0.100**, igual a R001 (-0.105) e R002 (-0.106) — **tres intervencoes diferentes, mesmo gap, confirmando que o gap e propriedade do split RFIW Track-I, nao do modelo**; (c) o gargalo das classes de avo e arquitetonico — DINOv2 frozen extrai features que ja nao discriminam essas classes; (d) **R001 permanece como o checkpoint Pareto-otimal do M05** para uso de alta precisao (TAR@FAR=0.01 = 0.152, melhor de todo o projeto). A direcao que resta para mover o teto e descongelar parcialmente o DINOv2 — Run 004 planejada.
+
+15. **Sete runs do M05, sete hipoteses rejeitadas, teto persistente em 0.81-0.82 AUC**: alem de R001-R003, foram testadas Run 004 (partial unfreeze dos ultimos 4 blocos DINOv2, AUC=0.812), Run 005 (full unfreeze com LR=5e-6 estilo M02, **AUC=0.822** — melhor M05 e menor val→teste gap em -0.071), Run 006 (heavy contrastive loss com peso 0.9, AUC=0.814) e Run 007 (**hibrido DINOv2 + M02-trained-ViT como backbones complementares frozen, AUC=0.810**). **R007 testou a hipotese mais ambiciosa**: combinar DINOv2 (general visual rico) com o ViT do M02 R031 (kinship-tuned via supervised contrastive) deveria gerar features complementares. Resultado: H0 confirmado, AUC identico a R001 sem o backbone face-specific. **Conclusao arquitetonica do M05:** as features kinship-fortes do M02 R031 nao sao do ViT alone — vem do **sistema completo treinado-em-conjunto** (ViT + FaCoR cross-attention + supervised contrastive + threshold 0.90 calibrados juntos). Reusar so os pesos do ViT em outra arquitetura quebra o ecossistema. **Para superar M02 (Test AUC 0.85) com filosofia M05, seria necessario abandonar o regime "frozen backbone + adapter"** e adotar full fine-tune com receita FRoundation (CosFace/ArcFace loss, LoRA rank 16, LR 1e-4) — mas isso replicaria a literatura sem novidade arquitetonica. **R001 permanece o checkpoint Pareto-otimal** do M05 (TAR@FAR=0.01 = 0.152, ainda melhor de todo o projeto). R005 e o melhor em ROC-AUC absoluto (0.822). R007 valida a tese comparativa do TCC com um achado negativo concreto: **fusao de backbones congelados nao recupera a performance de um sistema treinado-em-conjunto**.

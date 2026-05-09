@@ -60,7 +60,7 @@ from protocol import (  # noqa: E402
 
 # Model.
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from model import DINOv2LoRAKinship, RELATION_SETS  # noqa: E402
+from model import DINOv2LoRAKinship, DINOv2HybridKinship, RELATION_SETS  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -165,6 +165,34 @@ def parse_args() -> argparse.Namespace:
             "(default 0.01 = 100× lower than head LR). Ignored when "
             "--unfreeze_backbone_blocks=0."
         ),
+    )
+
+    # Hybrid backbone (DINOv2 + face-specific ViT)
+    p.add_argument(
+        "--use_hybrid_backbone", action="store_true",
+        help=(
+            "Use DINOv2HybridKinship (DINOv2 + face-specific ViT). Both "
+            "backbones frozen; fusion + heads trainable."
+        ),
+    )
+    p.add_argument(
+        "--face_backbone_name", type=str, default="vit_base_patch16_224",
+        help="timm model name for the face-specific backbone (hybrid mode only).",
+    )
+    p.add_argument(
+        "--face_backbone_checkpoint", type=str, default=None,
+        help=(
+            "Path to a checkpoint whose state dict contains the face-specific ViT "
+            "weights (e.g. M02 R031 final.pt). Only used in hybrid mode."
+        ),
+    )
+    p.add_argument(
+        "--face_backbone_state_prefix", type=str, default="vit.",
+        help="State-dict prefix to filter the face backbone weights from the checkpoint.",
+    )
+    p.add_argument(
+        "--intra_face_attn_layers", type=int, default=1,
+        help="Number of cross-attention layers fusing DINOv2 ↔ face backbone (hybrid only).",
     )
 
     return p.parse_args()
@@ -471,21 +499,48 @@ def main() -> None:
     print(f"  relation set:   {relation_set} ({num_relations} classes)")
     print(f"  grad ckpt:      {not args.no_grad_ckpt}")
 
-    model = DINOv2LoRAKinship(
-        backbone_name=args.backbone_name,
-        img_size=args.img_size,
-        lora_rank=args.lora_rank,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        backbone_pretrained=not args.no_pretrained,
-        use_gradient_checkpointing=not args.no_grad_ckpt,
-        embedding_dim=args.embedding_dim,
-        cross_attn_layers=args.cross_attn_layers,
-        cross_attn_heads=args.cross_attn_heads,
-        dropout=args.dropout,
-        relation_set=relation_set,
-        relation_loss_weight=args.relation_loss_weight,
-    )
+    if args.use_hybrid_backbone:
+        print(f"  HYBRID BACKBONE MODE")
+        print(f"  dinov2:         {args.backbone_name}")
+        print(f"  face_backbone:  {args.face_backbone_name}")
+        if args.face_backbone_checkpoint:
+            print(f"  face_ckpt:      {args.face_backbone_checkpoint}")
+            print(f"  state_prefix:   {args.face_backbone_state_prefix!r}")
+        else:
+            print(f"  face_ckpt:      none (random init for face backbone)")
+        print(f"  intra_face_attn_layers: {args.intra_face_attn_layers}")
+        model = DINOv2HybridKinship(
+            dinov2_name=args.backbone_name,
+            face_backbone_name=args.face_backbone_name,
+            face_backbone_checkpoint=args.face_backbone_checkpoint,
+            face_backbone_state_prefix=args.face_backbone_state_prefix,
+            img_size=args.img_size,
+            embedding_dim=args.embedding_dim,
+            intra_face_attn_layers=args.intra_face_attn_layers,
+            cross_attn_layers=args.cross_attn_layers,
+            cross_attn_heads=args.cross_attn_heads,
+            dropout=args.dropout,
+            relation_set=relation_set,
+            relation_loss_weight=args.relation_loss_weight,
+            backbone_pretrained=not args.no_pretrained,
+            use_gradient_checkpointing=not args.no_grad_ckpt,
+        )
+    else:
+        model = DINOv2LoRAKinship(
+            backbone_name=args.backbone_name,
+            img_size=args.img_size,
+            lora_rank=args.lora_rank,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            backbone_pretrained=not args.no_pretrained,
+            use_gradient_checkpointing=not args.no_grad_ckpt,
+            embedding_dim=args.embedding_dim,
+            cross_attn_layers=args.cross_attn_layers,
+            cross_attn_heads=args.cross_attn_heads,
+            dropout=args.dropout,
+            relation_set=relation_set,
+            relation_loss_weight=args.relation_loss_weight,
+        )
     model = optimize_for_rocm(model)
 
     total_params = sum(p.numel() for p in model.parameters())
@@ -493,7 +548,9 @@ def main() -> None:
     print(f"  total params:     {total_params:,}")
     print(f"  trainable params: {trainable_params:,}  "
           f"({100 * trainable_params / total_params:.2f}%)")
-    print(f"  LoRA modules:     {model.backbone.n_injected}\n")
+    if hasattr(model, "backbone") and hasattr(model.backbone, "n_injected"):
+        print(f"  LoRA modules:     {model.backbone.n_injected}")
+    print()
 
     loss_fn = KinshipCombinedLoss(
         num_relations=num_relations,

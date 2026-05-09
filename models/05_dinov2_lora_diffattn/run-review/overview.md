@@ -4,29 +4,62 @@
 **GPU:** AMD Radeon RX 6750 XT (11.98 GB VRAM, gfx1031, ROCm 5.7)
 **Dataset:** FIW (RFIW Track-I)
 
-Individual run details: [run-001.md](run-001.md) · [run-002.md](run-002.md) · [run-003.md](run-003.md)
+Individual run details: [run-001.md](run-001.md) · [run-002.md](run-002.md) · [run-003.md](run-003.md) · [run-007.md](run-007.md)
+
+(R004, R005, R006 documented in [RUN_LOG.md](../RUN_LOG.md) without dedicated run-review docs.)
 
 ---
 
-## Run Comparison
+## All Runs Summary
 
-| | Run 001 | Run 002 | Run 003 |
-|---|---|---|---|
-| **Date** | 2026-04-27 | 2026-04-29 | 2026-05-04 |
-| **Purpose** | Defaults, design hypothesis | Stronger regularization closes val→test gap? | Stratified sampler closes grandparent gap? |
-| **Backbone** | DINOv2 ViT-B/14 (frozen) | same | same |
-| **LoRA rank / alpha** | 8 / 16 | same | same |
-| **LoRA dropout** | 0.0 | **0.1** | 0.0 |
-| **Head dropout** | 0.1 | **0.2** | 0.1 |
-| **LR (peak)** | 3e-4 | **1.5e-4** | 3e-4 |
-| **Warmup** | 3 ep | same | same |
-| **Loss λ_rel** | 0.2 | **0.4** | 0.2 |
-| **Sampler** | random | random | **WeightedRandomSampler** (50/50 pos-neg + 11-rel balance) |
-| **Patience** | 15 (effective 10) | 10 | 15 |
-| **Epochs trained** | 22/40 | 14/40 | 10/40 (manual halt) |
-| **Best epoch** | 12 | 4 | 5 |
-| **Trainable params** | 8.47M / 94.2M (8.99%) | same | same |
-| **Time / epoch** | ~84 min | ~86 min | ~85 min |
+| Run | Date | Approach | Trainable | Test AUC | Test Acc | TAR@FAR=0.01 | Val→Test gap |
+|-----|------|----------|----------:|---------:|---------:|-------------:|-------------:|
+| R001 | 2026-04-27 | frozen DINOv2 + LoRA defaults | 8.5M | 0.806 | 72.6% | **0.152** | -0.105 |
+| R002 | 2026-04-29 | + stronger regularization | 8.5M | 0.799 | 72.4% | 0.095 | -0.106 |
+| R003 | 2026-05-04 | + stratified sampler | 8.5M | 0.809 | 71.0% | 0.098 | -0.100 |
+| R004 | 2026-04-30 | partial unfreeze (last 4 blocks) | 36.8M | 0.812 | 72.9% | 0.119 | -0.099 |
+| R005 | 2026-05-04 | full unfreeze (M02-style LR) | 93.5M | **0.822** | 72.0% | 0.100 | **-0.071** |
+| R006 | 2026-05-07 | heavy contrastive loss (0.9) | 8.5M | 0.814 | 72.9% | 0.094 | -0.10 |
+| R007 | 2026-05-08 | DINOv2 + M02-trained-ViT hybrid | 11.6M | 0.810 | 71.9% | 0.136 | -0.097 |
+
+**Reference:** M02 R031 (ViT + FaCoR full fine-tune) achieves Test AUC = 0.850 with -0.031 val→test gap.
+
+## Key Findings After 7 Runs
+
+1. **The M05 ceiling is structurally at Test AUC ≈ 0.81-0.82** across all configurations. Seven hypotheses tested (defaults, regularization, class-balanced sampling, partial unfreeze, full unfreeze, heavy contrastive, hybrid backbone), none lifted the ceiling beyond noise margin.
+
+2. **Val→Test gap of ~-0.10 is structural**, not model-driven. Six of seven runs show this gap regardless of plasticity, regularization, or architectural variants. Only R005's full unfreeze reduced it to -0.07. Interpretation: gap is largely a property of the RFIW Track-I family split (val and test families have different visual discriminability profiles), with a smaller fraction attributable to model capacity.
+
+3. **R001 (frozen + LoRA) remains the Pareto-optimal M05 checkpoint.** Highest TAR@FAR=0.01 (0.152) of the entire project. 10× fewer trainable params than M02. Best for high-precision applications.
+
+4. **Full fine-tune (R005)** moved Test AUC marginally to 0.822. Smallest gap (-0.071). Best raw AUC. Trade-off: 11× more trainable params (93.5M vs 8.5M of R001).
+
+5. **R007 hybrid (DINOv2 + M02-trained-ViT)** did **not** beat M02 R031. Confirmed that M02's success comes from its full ecosystem (ViT + FaCoR cross-attention + supervised contrastive loss + threshold tuning), not from the ViT alone. Extracting just the ViT weights and reusing them in a different architecture does not preserve the kinship-discriminative features.
+
+6. **Per-relation grandparent classes (gfgs/gmgs/gfgd/gmgd) hover at 25-55% across all M05 runs**, vs 88-96% for M02 R031. Three causes confirmed:
+   - **Data scarcity** (1.6-2.1% of training pairs) — not the primary bottleneck (R003 stratified sampler gave 4-6× more updates and didn't help).
+   - **Frozen DINOv2 features lack face-identity discrimination** specifically for these classes — confirmed by R007 hybrid failing to leverage M02-ViT's known strength here.
+   - **Threshold drift** — M05 uses thresholds 0.10-0.50; M02 used 0.90 with much sharper score polarization.
+
+7. **The recipe gap is real (FRoundation paper).** M05 used BCE+contrastive with LR=3e-4 and LoRA rank=8; FRoundation establishes that DINOv2 face tasks need CosFace/ArcFace loss with LR=1e-4 and LoRA rank=16. Untested in M05 because that direction would replicate FRoundation rather than contribute novelty.
+
+## Possible directions not pursued (catalogued in IMPROVEMENT_OPTIONS.md)
+
+- **Option I**: M05 architecture + ArcFace-pair loss + tuned hyperparams. Medium novelty, 50-60% chance of breaking 0.83.
+- **Option L**: Self-supervised pair pretraining on FIW. Highest novelty, highest risk.
+- **Option F**: Stop iterating M05 and pivot to M07 (different architecture) or finalize TCC text writing.
+
+## Run Comparison (compact)
+
+| | R001 | R002 | R003 | R007 |
+|---|---|---|---|---|
+| **Date** | 2026-04-27 | 2026-04-29 | 2026-05-04 | 2026-05-08 |
+| **Purpose** | Defaults | Regularization closes gap? | Stratified sampler helps grandparents? | Hybrid backbone beats M02? |
+| **Backbone** | DINOv2 frozen | same | same | DINOv2 + M02-ViT (both frozen) |
+| **Trainable params** | 8.5M | 8.5M | 8.5M | 11.6M |
+| **Best Val AUC** | 0.9116 | 0.9048 | 0.9091 | 0.9066 |
+| **Test AUC** | 0.806 | 0.799 | 0.809 | 0.810 |
+| **Verdict** | baseline | rejected | rejected | rejected |
 
 ### Validation peak
 

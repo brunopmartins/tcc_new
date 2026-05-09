@@ -475,6 +475,254 @@ class DINOv2LoRAKinship(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# Hybrid backbone: DINOv2 (general) + face-specific ViT (e.g. M02-trained)
+# ---------------------------------------------------------------------------
+class DINOv2HybridKinship(nn.Module):
+    """
+    Hybrid M05 architecture using two frozen complementary backbones:
+      (1) DINOv2 ViT-B/14 — self-supervised on 142M images, rich general
+          visual features.
+      (2) A face-specific ViT (e.g. M02 R031 ViT-B/16) — supervised on FIW
+          kinship with margin-style contrastive loss, embeddings already
+          tuned for face-pair discrimination.
+
+    Both backbones are frozen at construction. A small intra-face fusion
+    block uses differential cross-attention to combine the two token
+    streams of the same face. A second (existing) cross-attention stack
+    then handles inter-face kinship reasoning. Heads are unchanged from
+    DINOv2LoRAKinship so all downstream training/eval code is reusable.
+
+    Targets the diagnostic that "DINOv2 lacks face-specificity":
+    ArcFace/AdaFace pretraining is the missing ingredient cited in the
+    kinship literature, but published works only swap one backbone for
+    another. Here we keep both.
+    """
+
+    def __init__(
+        self,
+        # DINOv2 backbone
+        dinov2_name: str = "vit_base_patch14_dinov2.lvd142m",
+        # Face-specific backbone
+        face_backbone_name: str = "vit_base_patch16_224",
+        face_backbone_checkpoint: Optional[str] = None,
+        face_backbone_state_prefix: str = "vit.",
+        img_size: int = 224,
+        # Fusion + heads
+        embedding_dim: int = 512,
+        intra_face_attn_layers: int = 1,
+        cross_attn_layers: int = 2,
+        cross_attn_heads: int = 8,
+        dropout: float = 0.1,
+        relation_set: str = "fiw",
+        relation_loss_weight: float = 0.2,
+        # Misc
+        backbone_pretrained: bool = True,
+        use_gradient_checkpointing: bool = True,
+    ):
+        super().__init__()
+        self.use_gradient_checkpointing = use_gradient_checkpointing
+
+        # ---- DINOv2 (general) ----
+        self.dinov2 = timm.create_model(
+            dinov2_name,
+            pretrained=backbone_pretrained,
+            num_classes=0,
+            img_size=img_size,
+        )
+        self.dinov2_dim = self.dinov2.num_features
+        self.dinov2_num_prefix = getattr(self.dinov2, "num_prefix_tokens", 1)
+        for p in self.dinov2.parameters():
+            p.requires_grad = False
+
+        # ---- Face-specific ViT (frozen) ----
+        self.face_vit = timm.create_model(
+            face_backbone_name,
+            pretrained=False,
+            num_classes=0,
+            img_size=img_size,
+        )
+        self.face_dim = self.face_vit.num_features
+        self.face_num_prefix = getattr(self.face_vit, "num_prefix_tokens", 1)
+        if face_backbone_checkpoint is not None:
+            self._load_face_backbone(face_backbone_checkpoint, face_backbone_state_prefix)
+        for p in self.face_vit.parameters():
+            p.requires_grad = False
+
+        # ---- Projections to common embedding space ----
+        self.dinov2_proj = nn.Sequential(
+            nn.Linear(self.dinov2_dim, embedding_dim),
+            nn.LayerNorm(embedding_dim),
+        )
+        self.face_proj = nn.Sequential(
+            nn.Linear(self.face_dim, embedding_dim),
+            nn.LayerNorm(embedding_dim),
+        )
+
+        # ---- Intra-face fusion: DINOv2 tokens ↔ face-ViT tokens ----
+        self.intra_face_layers = nn.ModuleList([
+            CrossAttnBlock(
+                embedding_dim, cross_attn_heads, layer_idx=i + 1, dropout=dropout,
+            )
+            for i in range(intra_face_attn_layers)
+        ])
+
+        # ---- Inter-face kinship reasoning (existing M05 cross-attn) ----
+        self.cross_attn_blocks = nn.ModuleList([
+            CrossAttnBlock(
+                embedding_dim, cross_attn_heads, layer_idx=i + 1, dropout=dropout,
+            )
+            for i in range(cross_attn_layers)
+        ])
+
+        # ---- Learnable [REL] token for relation head ----
+        self.rel_token = nn.Parameter(torch.zeros(1, 1, embedding_dim))
+        nn.init.trunc_normal_(self.rel_token, std=0.02)
+
+        self.pool_norm = nn.LayerNorm(embedding_dim)
+
+        self.projection = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.LayerNorm(embedding_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embedding_dim, embedding_dim),
+        )
+
+        self.binary_head = nn.Sequential(
+            nn.Linear(embedding_dim * 4, 256),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 1),
+        )
+
+        if relation_set not in RELATION_SETS:
+            raise ValueError(f"unknown relation_set '{relation_set}'")
+        self.relation_classes = RELATION_SETS[relation_set]
+        self.relation_set = relation_set
+        self.relation_loss_weight = relation_loss_weight
+
+        self.relation_head = nn.Sequential(
+            nn.Linear(embedding_dim * 2, 256),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, len(self.relation_classes)),
+        )
+
+        self.embedding_dim = embedding_dim
+
+    # ----------------------------------------------------------------------
+    def _load_face_backbone(self, ckpt_path: str, state_prefix: str) -> None:
+        """Load the face-specific ViT weights from a foreign checkpoint."""
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        full_sd = ckpt.get("model_state_dict") or ckpt.get("state_dict") or ckpt
+        # Filter to the face_vit portion of the state dict and strip the prefix.
+        target_sd = {
+            k[len(state_prefix):]: v
+            for k, v in full_sd.items()
+            if k.startswith(state_prefix)
+        }
+        if not target_sd:
+            raise RuntimeError(
+                f"No keys with prefix '{state_prefix}' found in {ckpt_path}; "
+                f"sample top-level keys: {list(full_sd)[:5]}"
+            )
+        missing, unexpected = self.face_vit.load_state_dict(target_sd, strict=False)
+        # Both should be small/empty; print for transparency.
+        if missing:
+            print(f"  [hybrid] face_vit missing keys: {len(missing)} (e.g. {missing[:3]})")
+        if unexpected:
+            print(f"  [hybrid] face_vit unexpected keys: {len(unexpected)} (e.g. {unexpected[:3]})")
+
+    # ----------------------------------------------------------------------
+    @torch.no_grad()
+    def _extract_dinov2(self, x: torch.Tensor) -> torch.Tensor:
+        feats = self.dinov2.forward_features(x)
+        return feats[:, self.dinov2_num_prefix:]
+
+    @torch.no_grad()
+    def _extract_face(self, x: torch.Tensor) -> torch.Tensor:
+        # timm ViT forward_features returns (B, N+prefix, D)
+        feats = self.face_vit.forward_features(x)
+        return feats[:, self.face_num_prefix:]
+
+    def _encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Encode a single face into fused tokens (B, 1 + N_dinov2, D)."""
+        d_tokens = self._extract_dinov2(x)  # (B, 256, 768)
+        f_tokens = self._extract_face(x)    # (B, 196, 768)
+
+        d_tokens = self.dinov2_proj(d_tokens)  # (B, 256, D)
+        f_tokens = self.face_proj(f_tokens)    # (B, 196, D)
+
+        # Intra-face fusion: bidirectional CrossAttnBlock between the two
+        # streams. Keep the dinov2 stream as the spatial scaffold (more
+        # tokens). The face stream is consumed but its information is
+        # injected into dinov2 via cross-attention.
+        for layer in self.intra_face_layers:
+            if self.use_gradient_checkpointing and self.training:
+                d_tokens, f_tokens = grad_checkpoint(layer, d_tokens, f_tokens, use_reentrant=False)
+            else:
+                d_tokens, f_tokens = layer(d_tokens, f_tokens)
+
+        B = d_tokens.size(0)
+        rel = self.rel_token.expand(B, -1, -1)
+        return torch.cat([rel, d_tokens], dim=1)  # (B, 1 + N, D)
+
+    def _cross_attend(self, z1: torch.Tensor, z2: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        for block in self.cross_attn_blocks:
+            if self.use_gradient_checkpointing and self.training:
+                z1, z2 = grad_checkpoint(block, z1, z2, use_reentrant=False)
+            else:
+                z1, z2 = block(z1, z2)
+        return z1, z2
+
+    # ----------------------------------------------------------------------
+    def forward(self, img1: torch.Tensor, img2: torch.Tensor) -> Dict[str, torch.Tensor]:
+        z1 = self._encode(img1)
+        z2 = self._encode(img2)
+        z1, z2 = self._cross_attend(z1, z2)
+
+        z1 = self.pool_norm(z1)
+        z2 = self.pool_norm(z2)
+
+        emb1 = F.normalize(self.projection(z1[:, 1:].mean(dim=1)), dim=-1)
+        emb2 = F.normalize(self.projection(z2[:, 1:].mean(dim=1)), dim=-1)
+
+        rel_in = torch.cat([z1[:, 0], z2[:, 0]], dim=-1)
+        rel_logits = self.relation_head(rel_in)
+
+        diff = (emb1 - emb2).abs()
+        prod = emb1 * emb2
+        combined = torch.cat([emb1, emb2, diff, prod], dim=-1)
+        logits = self.binary_head(combined)
+
+        return {
+            "logits": logits,
+            "emb1": emb1,
+            "emb2": emb2,
+            "relation_logits": rel_logits,
+        }
+
+    # ----------------------------------------------------------------------
+    def trainable_parameters(self) -> List[nn.Parameter]:
+        return [p for p in self.parameters() if p.requires_grad]
+
+    def count_trainable(self) -> int:
+        return sum(p.numel() for p in self.trainable_parameters())
+
+    def relation_to_index(self, relation_name: str) -> int:
+        try:
+            return self.relation_classes.index(relation_name)
+        except ValueError:
+            return -1
+
+    def relations_to_indices(self, relations: List[str]) -> torch.Tensor:
+        return torch.tensor(
+            [self.relation_to_index(r) for r in relations],
+            dtype=torch.long,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 def create_model(config=None) -> DINOv2LoRAKinship:

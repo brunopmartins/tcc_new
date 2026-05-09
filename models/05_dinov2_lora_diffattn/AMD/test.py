@@ -32,7 +32,7 @@ from protocol import apply_data_root_override, get_checkpoint_threshold, resolve
 from torch.utils.data import DataLoader  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from model import DINOv2LoRAKinship  # noqa: E402
+from model import DINOv2LoRAKinship, DINOv2HybridKinship  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,16 +49,42 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def build_model_from_checkpoint(checkpoint: dict) -> DINOv2LoRAKinship:
+def build_model_from_checkpoint(checkpoint: dict):
     cfg = checkpoint.get("model_config", checkpoint.get("protocol", {}).get("model_config", {}))
+    state_dict = checkpoint.get("model_state_dict", {})
+    is_hybrid = any(k.startswith("face_vit.") or k.startswith("intra_face_layers.")
+                    for k in state_dict.keys())
+
+    if is_hybrid:
+        # Match the hybrid architecture used during training. face_vit weights
+        # come back from state_dict — no need to reload an external checkpoint.
+        n_intra = sum(1 for k in state_dict.keys()
+                      if k.startswith("intra_face_layers.") and k.endswith(".attn.q_proj.weight"))
+        return DINOv2HybridKinship(
+            dinov2_name=cfg.get("backbone_name", "vit_base_patch14_dinov2.lvd142m"),
+            face_backbone_name=cfg.get("face_backbone_name", "vit_base_patch16_224"),
+            face_backbone_checkpoint=None,  # weights come from this run's state_dict
+            face_backbone_state_prefix=cfg.get("face_backbone_state_prefix", "vit."),
+            img_size=cfg.get("img_size", 224),
+            embedding_dim=cfg.get("embedding_dim", 512),
+            intra_face_attn_layers=cfg.get("intra_face_attn_layers", n_intra or 1),
+            cross_attn_layers=cfg.get("cross_attn_layers", 2),
+            cross_attn_heads=cfg.get("cross_attn_heads", 8),
+            dropout=cfg.get("dropout", 0.1),
+            relation_set=cfg.get("relation_set", "fiw"),
+            relation_loss_weight=cfg.get("relation_loss_weight", 0.2),
+            backbone_pretrained=True,  # weights will be overwritten by state_dict
+            use_gradient_checkpointing=False,
+        )
+
     return DINOv2LoRAKinship(
         backbone_name=cfg.get("backbone_name", "vit_base_patch14_dinov2.lvd142m"),
         img_size=cfg.get("img_size", 224),
         lora_rank=cfg.get("lora_rank", 8),
         lora_alpha=cfg.get("lora_alpha", 16),
         lora_dropout=cfg.get("lora_dropout", 0.0),
-        backbone_pretrained=True,  # safe even if no internet; weights overwritten below
-        use_gradient_checkpointing=False,  # inference — no need
+        backbone_pretrained=True,
+        use_gradient_checkpointing=False,
         embedding_dim=cfg.get("embedding_dim", 512),
         cross_attn_layers=cfg.get("cross_attn_layers", 2),
         cross_attn_heads=cfg.get("cross_attn_heads", 8),
