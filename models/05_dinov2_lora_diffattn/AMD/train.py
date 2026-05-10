@@ -194,6 +194,15 @@ def parse_args() -> argparse.Namespace:
         "--intra_face_attn_layers", type=int, default=1,
         help="Number of cross-attention layers fusing DINOv2 ↔ face backbone (hybrid only).",
     )
+    p.add_argument(
+        "--unfreeze_face_backbone_blocks", type=int, default=0,
+        help=(
+            "Hybrid mode only: unfreeze the last N transformer blocks of the "
+            "face-specific backbone (e.g. M02-trained ViT). Uses the same "
+            "--backbone_lr_factor as DINOv2 partial unfreeze. 0 = stay fully "
+            "frozen."
+        ),
+    )
 
     return p.parse_args()
 
@@ -573,35 +582,64 @@ def main() -> None:
         monitor_metric=train_config.monitor_metric,
     )
 
-    # Partial unfreeze of the DINOv2 backbone with a separate LR group.
-    # Replaces the trainer's single-LR optimizer with a 2-group AdamW
-    # (head_lr, head_lr * backbone_lr_factor) and rebuilds the scheduler
-    # as SequentialLR(LinearLR warmup, CosineAnnealingLR) so per-group
-    # initial_lrs are respected during warmup. The base trainer's manual
-    # warmup is suppressed by setting config.warmup_epochs = 0.
-    if args.unfreeze_backbone_blocks > 0:
+    # Partial unfreeze with a separate LR group for backbone params.
+    # Supports two backbones in hybrid mode:
+    #   - model.dinov2.blocks       (DINOv2 ViT-B/14)        — --unfreeze_backbone_blocks
+    #   - model.face_vit.blocks     (face-specific ViT)      — --unfreeze_face_backbone_blocks
+    # In non-hybrid mode only the first is meaningful (model.backbone.vit.blocks).
+    # Both unfrozen groups share --backbone_lr_factor.
+    #
+    # Builds a 2-group AdamW (head_lr, backbone_lr = head_lr * factor) and
+    # SequentialLR(LinearLR warmup, CosineAnnealingLR) so per-group initial_lrs
+    # are respected during warmup. The base trainer's manual warmup is suppressed.
+    n_dinov2_unfreeze = int(args.unfreeze_backbone_blocks)
+    n_face_unfreeze = int(args.unfreeze_face_backbone_blocks) if args.use_hybrid_backbone else 0
+    if n_dinov2_unfreeze > 0 or n_face_unfreeze > 0:
         from torch.optim import AdamW
         from torch.optim.lr_scheduler import (
             LinearLR, CosineAnnealingLR, SequentialLR,
         )
 
-        n_unfreeze = int(args.unfreeze_backbone_blocks)
-        backbone_blocks = model.backbone.vit.blocks
-        n_blocks = len(backbone_blocks)
-        start = max(0, n_blocks - n_unfreeze)
-
         backbone_params = []
-        for i in range(start, n_blocks):
-            for p in backbone_blocks[i].parameters():
-                p.requires_grad = True
-                backbone_params.append(p)
-        # Also unfreeze the final encoder norm if present.
-        for name in ("norm", "fc_norm"):
-            mod = getattr(model.backbone.vit, name, None)
-            if mod is not None:
-                for p in mod.parameters():
+        unfreeze_log = []
+
+        def _unfreeze_last_blocks(blocks, n_unfreeze, label):
+            """Unfreeze last N blocks plus the encoder's final norm(s)."""
+            n_blocks = len(blocks)
+            start = max(0, n_blocks - n_unfreeze)
+            local = []
+            for i in range(start, n_blocks):
+                for p in blocks[i].parameters():
                     p.requires_grad = True
-                    backbone_params.append(p)
+                    local.append(p)
+            unfreeze_log.append(f"{label}: last {n_unfreeze}/{n_blocks} blocks, {sum(p.numel() for p in local):,} params")
+            return local
+
+        def _unfreeze_norms(parent, label):
+            local = []
+            for name in ("norm", "fc_norm"):
+                mod = getattr(parent, name, None)
+                if mod is not None:
+                    for p in mod.parameters():
+                        p.requires_grad = True
+                        local.append(p)
+            if local:
+                unfreeze_log.append(f"{label} final norm: {sum(p.numel() for p in local):,} params")
+            return local
+
+        if args.use_hybrid_backbone:
+            if n_dinov2_unfreeze > 0:
+                backbone_params += _unfreeze_last_blocks(
+                    model.dinov2.blocks, n_dinov2_unfreeze, "DINOv2 backbone")
+                backbone_params += _unfreeze_norms(model.dinov2, "DINOv2")
+            if n_face_unfreeze > 0:
+                backbone_params += _unfreeze_last_blocks(
+                    model.face_vit.blocks, n_face_unfreeze, "Face backbone")
+                backbone_params += _unfreeze_norms(model.face_vit, "Face")
+        else:
+            backbone_params += _unfreeze_last_blocks(
+                model.backbone.vit.blocks, n_dinov2_unfreeze, "DINOv2 backbone")
+            backbone_params += _unfreeze_norms(model.backbone.vit, "DINOv2")
 
         backbone_param_ids = {id(p) for p in backbone_params}
         head_params = [
@@ -643,10 +681,12 @@ def main() -> None:
 
         n_back = sum(p.numel() for p in backbone_params)
         n_head = sum(p.numel() for p in head_params)
+        print(f"  [partial unfreeze] strategy:")
+        for line in unfreeze_log:
+            print(f"    - {line}")
         print(
-            f"  [partial unfreeze] last {n_unfreeze}/{n_blocks} DINOv2 blocks "
-            f"({n_back:,} backbone params @ LR {backbone_lr:.2e}; "
-            f"{n_head:,} head/LoRA params @ LR {head_lr:.2e})"
+            f"  [partial unfreeze] total {n_back:,} backbone params @ LR {backbone_lr:.2e}; "
+            f"{n_head:,} head params @ LR {head_lr:.2e}"
         )
         print(
             f"  [partial unfreeze] scheduler: SequentialLR(LinearLR×{warmup_epochs} → "
