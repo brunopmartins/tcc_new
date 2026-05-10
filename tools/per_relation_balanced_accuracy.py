@@ -120,7 +120,20 @@ def load_model(model_id: str, checkpoint_path: str, device):
     elif model_id == "02":
         sys.path.insert(0, str(project_root / "models" / "02_vit_facor_crossattn"))
         from model import ViTFaCoRModel  # type: ignore
-        model = ViTFaCoRModel(**cfg) if cfg else ViTFaCoRModel()
+        # M02's saved model_config uses different key names than the constructor.
+        # Map the relevant fields to the constructor's signature.
+        m02_kwargs = {}
+        if cfg:
+            m02_kwargs = {
+                "vit_model": cfg.get("vit_model", "vit_base_patch16_224"),
+                "pretrained": False,  # weights overwritten by load_state_dict
+                "embedding_dim": cfg.get("embedding_dim", 512),
+                "num_cross_attn_layers": cfg.get("cross_attn_layers", cfg.get("num_cross_attn_layers", 2)),
+                "cross_attn_heads": cfg.get("cross_attn_heads", 8),
+                "dropout": cfg.get("dropout", 0.1),
+                "freeze_vit": cfg.get("freeze_vit", False),
+            }
+        model = ViTFaCoRModel(**m02_kwargs) if m02_kwargs else ViTFaCoRModel()
     elif model_id == "03":
         sys.path.insert(0, str(project_root / "models" / "03_convnext_vit_hybrid"))
         from model import ConvNeXtViTHybrid  # type: ignore

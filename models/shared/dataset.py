@@ -92,6 +92,7 @@ class KinshipPairDataset(Dataset):
         split_seed: int = 42,
         explicit_pair_ids: Optional[set] = None,
         explicit_group_ids: Optional[set] = None,
+        aligned_root: Optional[str] = None,
     ):
         self.root_dir = Path(root_dir)
         self.dataset_type = dataset_type
@@ -101,6 +102,11 @@ class KinshipPairDataset(Dataset):
         self.negative_sampling_strategy = negative_sampling_strategy
         self.split_seed = split_seed
         self.explicit_group_ids = explicit_group_ids if explicit_group_ids is not None else explicit_pair_ids
+        # When set, paths returned by __getitem__ are remapped from root_dir → aligned_root
+        # at load time. Pair-building logic still uses root_dir (since it inspects the
+        # original directory tree). This way, downstream code (KinshipPairDataset users)
+        # can swap to pre-aligned face crops without changing any pair-construction logic.
+        self.aligned_root = Path(aligned_root) if aligned_root else None
 
         self.relation_types = relation_types or ["fd", "fs", "md", "ms"]
         self.pairs: List[Tuple[str, str, str]] = []
@@ -540,9 +546,25 @@ class KinshipPairDataset(Dataset):
     def __len__(self) -> int:
         return len(self.pairs)
 
+    def _maybe_remap_aligned(self, img_path: str) -> str:
+        """Replace dataset root with aligned_root if configured. Falls back
+        to the original path when the aligned file is missing."""
+        if self.aligned_root is None:
+            return img_path
+        try:
+            rel = Path(img_path).relative_to(self.root_dir)
+        except ValueError:
+            # Path is outside root_dir (rare); use original.
+            return img_path
+        candidate = self.aligned_root / rel
+        return str(candidate) if candidate.exists() else img_path
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         img1_path, img2_path, relation = self.pairs[idx]
         label = self.labels[idx]
+
+        img1_path = self._maybe_remap_aligned(img1_path)
+        img2_path = self._maybe_remap_aligned(img2_path)
 
         img1 = Image.open(img1_path).convert("RGB")
         img2 = Image.open(img2_path).convert("RGB")
@@ -588,8 +610,15 @@ def create_dataloaders(
     train_negative_sampling_strategy: str = "random",
     eval_negative_sampling_strategy: str = "random",
     split_seed: Optional[int] = None,
+    aligned_root: Optional[str] = None,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
-    """Create train, validation, and test dataloaders using the shared protocol."""
+    """Create train, validation, and test dataloaders using the shared protocol.
+
+    aligned_root: if set, image paths are remapped from root_dir to this
+    directory at load time (face-aligned crops produced by
+    tools/align_fiw_dataset.py). Missing aligned files fall back silently
+    to the original under root_dir.
+    """
     root_dir = config.kinface_i_root if dataset_type == "kinface" else config.fiw_root
     num_workers = config.num_workers if num_workers is None else num_workers
     negative_ratio = config.negative_ratio if negative_ratio is None else negative_ratio
@@ -608,6 +637,7 @@ def create_dataloaders(
         negative_ratio=train_negative_ratio,
         negative_sampling_strategy=train_negative_sampling_strategy,
         split_seed=split_seed,
+        aligned_root=aligned_root,
     )
     val_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -617,6 +647,7 @@ def create_dataloaders(
         negative_ratio=eval_negative_ratio,
         negative_sampling_strategy=eval_negative_sampling_strategy,
         split_seed=split_seed,
+        aligned_root=aligned_root,
     )
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -626,6 +657,7 @@ def create_dataloaders(
         negative_ratio=eval_negative_ratio,
         negative_sampling_strategy=eval_negative_sampling_strategy,
         split_seed=split_seed,
+        aligned_root=aligned_root,
     )
 
     train_loader = DataLoader(
