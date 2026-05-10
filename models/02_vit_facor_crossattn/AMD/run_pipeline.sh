@@ -83,6 +83,7 @@ UNFREEZE_LAST_VIT_BLOCKS="${UNFREEZE_LAST_VIT_BLOCKS:-0}"
 USE_CLASSIFIER_HEAD="${USE_CLASSIFIER_HEAD:-0}"
 PATIENCE="${PATIENCE:-50}"
 CV_FOLDS="${CV_FOLDS:-0}"
+ALIGNED_ROOT="${ALIGNED_ROOT:-}"
 GPU_ID="${GPU_ID:-0}"
 SEED="${SEED:-42}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
@@ -97,7 +98,7 @@ if [ -e /dev/kfd ] && [ -z "${_ROCM_SETUP_COMPLETE}" ]; then
     export EPOCHS BATCH_SIZE LEARNING_RATE WEIGHT_DECAY SCHEDULER WARMUP_EPOCHS MIN_LR
     export TRAIN_DATASET VIT_MODEL CROSS_ATTN_LAYERS CROSS_ATTN_HEADS LOSS TEMPERATURE MARGIN
     export NEGATIVE_RATIO EVAL_NEGATIVE_RATIO TRAIN_NEGATIVE_STRATEGY EVAL_NEGATIVE_STRATEGY NUM_WORKERS DROPOUT
-    export FREEZE_VIT UNFREEZE_AFTER_EPOCH UNFREEZE_LAST_VIT_BLOCKS USE_CLASSIFIER_HEAD PATIENCE CV_FOLDS GPU_ID SEED SKIP_INSTALL
+    export FREEZE_VIT UNFREEZE_AFTER_EPOCH UNFREEZE_LAST_VIT_BLOCKS USE_CLASSIFIER_HEAD PATIENCE CV_FOLDS ALIGNED_ROOT GPU_ID SEED SKIP_INSTALL
     export _ROCM_SETUP_COMPLETE=1
     SELF="$(readlink -f "${BASH_SOURCE[0]}")"
     echo "  [ROCm] Restarting script with render group active..."
@@ -248,6 +249,7 @@ SHARED_TRAIN_ARGS=(
 )
 [ "${FREEZE_VIT}" = "1" ] && SHARED_TRAIN_ARGS+=(--freeze_vit)
 [ "${USE_CLASSIFIER_HEAD}" = "1" ] && SHARED_TRAIN_ARGS+=(--use_classifier_head)
+[ -n "${ALIGNED_ROOT}" ] && SHARED_TRAIN_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
 
 TEST_ARGS=(
     --checkpoint  "${CKPT_DIR}/best.pt"
@@ -256,6 +258,7 @@ TEST_ARGS=(
     --output_dir  "${RESULTS_DIR}"
     --rocm_device "${GPU_ID}"
 )
+[ -n "${ALIGNED_ROOT}" ] && TEST_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
 
 EVAL_ARGS=(
     --checkpoint  "${CKPT_DIR}/best.pt"
@@ -266,6 +269,7 @@ EVAL_ARGS=(
     --full_analysis
     --visualize_attention
 )
+[ -n "${ALIGNED_ROOT}" ] && EVAL_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
 
 # ---------- cd into AMD/ so relative imports resolve --------------------------
 cd "${SCRIPT_DIR}"

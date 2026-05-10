@@ -141,6 +141,8 @@ def parse_args():
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints")
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--aligned_root", type=str, default=None,
+                        help="Path to MTCNN-aligned FIW crops; remaps paths at load time.")
 
     return parser.parse_args()
 
@@ -336,6 +338,7 @@ def main():
         train_negative_sampling_strategy=args.train_negative_strategy,
         eval_negative_sampling_strategy=args.eval_negative_strategy,
         split_seed=args.seed,
+        aligned_root=args.aligned_root,
     )
     print(f"Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
 
@@ -350,6 +353,7 @@ def main():
         split_seed=args.seed,
         negative_ratio=args.eval_negative_ratio,
         negative_sampling_strategy=args.eval_negative_strategy,
+        aligned_root=args.aligned_root,
     )
     test_loader = DataLoader(
         test_dataset,

@@ -143,9 +143,9 @@ def parse_args() -> argparse.Namespace:
         "--stratified_sampler", action="store_true",
         help=(
             "Replace random sampling with class-balanced WeightedRandomSampler. "
-            "Each batch has 50% positives split equally across the 11 FIW relations "
-            "and 50% negatives. Targets the data starvation in grandparent classes "
-            "(1.6-2.1% of train) without changing any other hyperparameter."
+            "Each batch has 50%% positives split equally across the 11 FIW relations "
+            "and 50%% negatives. Targets the data starvation in grandparent classes "
+            "(1.6-2.1%% of train) without changing any other hyperparameter."
         ),
     )
 
@@ -202,6 +202,10 @@ def parse_args() -> argparse.Namespace:
             "--backbone_lr_factor as DINOv2 partial unfreeze. 0 = stay fully "
             "frozen."
         ),
+    )
+    p.add_argument(
+        "--aligned_root", type=str, default=None,
+        help="Path to MTCNN-aligned FIW crops; remaps paths at load time.",
     )
 
     return p.parse_args()
@@ -422,6 +426,7 @@ def main() -> None:
         dataset_type=args.train_dataset,
         split_seed=args.seed,
         num_workers=args.num_workers,
+        aligned_root=args.aligned_root,
     )
     print(f"  train: {len(train_loader.dataset)}  val: {len(val_loader.dataset)}")
 
@@ -485,6 +490,7 @@ def main() -> None:
         transform=get_transforms(test_data_config, train=False),
         split_seed=args.seed,
         negative_ratio=test_data_config.negative_ratio,
+        aligned_root=args.aligned_root,
     )
     test_loader = DataLoader(
         test_ds,

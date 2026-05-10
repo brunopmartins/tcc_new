@@ -42,6 +42,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--skip_gallery_rebuild", action="store_true",
                    help="Skip rebuilding the gallery; only safe if checkpoint "
                         "was saved with gallery buffers (it isn't by default).")
+    p.add_argument("--aligned_root", type=str, default=None,
+                   help="Path to MTCNN-aligned FIW crops; remaps paths at load time.")
     return p.parse_args()
 
 
@@ -93,6 +95,7 @@ def main() -> None:
             transform=get_transforms(data_config, train=False),
             split_seed=split_seed,
             negative_ratio=0.0,
+            aligned_root=args.aligned_root,
         )
         gallery_loader = DataLoader(gallery_ds, batch_size=args.batch_size,
                                     shuffle=False, num_workers=args.num_workers, pin_memory=True)
@@ -105,6 +108,7 @@ def main() -> None:
         transform=get_transforms(data_config, train=False),
         split_seed=ckpt.get("protocol", {}).get("split_seed", data_config.split_seed),
         negative_ratio=ckpt.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
+        aligned_root=args.aligned_root,
     )
     loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
                         num_workers=args.num_workers, pin_memory=True)

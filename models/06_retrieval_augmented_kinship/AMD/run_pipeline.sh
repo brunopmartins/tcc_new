@@ -83,6 +83,7 @@ MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 DISABLE_AMP="${DISABLE_AMP:-0}"
 NO_GRAD_CKPT="${NO_GRAD_CKPT:-0}"
 FREEZE_BACKBONE="${FREEZE_BACKBONE:-1}"
+ALIGNED_ROOT="${ALIGNED_ROOT:-}"
 GPU_ID="${GPU_ID:-0}"
 SEED="${SEED:-42}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
@@ -99,7 +100,7 @@ if [ -e /dev/kfd ] && [ -z "${_ROCM_SETUP_COMPLETE}" ]; then
     export LOSS CONTRASTIVE_WEIGHT TEMPERATURE RELATION_SET RELATION_LOSS_WEIGHT
     export MAX_GALLERY STORE_GALLERY_ON_CPU GALLERY_REFRESH_EVERY
     export NUM_WORKERS PATIENCE MAX_GRAD_NORM DISABLE_AMP NO_GRAD_CKPT FREEZE_BACKBONE
-    export GPU_ID SEED SKIP_INSTALL
+    export ALIGNED_ROOT GPU_ID SEED SKIP_INSTALL
     export _ROCM_SETUP_COMPLETE=1
     SELF="$(readlink -f "${BASH_SOURCE[0]}")"
     echo "  [ROCm] Restarting script with render group active..."
@@ -230,6 +231,7 @@ TRAIN_ARGS=(
 [ "${DISABLE_AMP}" = "1" ]           && TRAIN_ARGS+=(--disable_amp)
 [ "${NO_GRAD_CKPT}" = "1" ]          && TRAIN_ARGS+=(--no_grad_ckpt)
 [ "${FREEZE_BACKBONE}" = "0" ]       && TRAIN_ARGS+=(--no_freeze_backbone)
+[ -n "${ALIGNED_ROOT}" ]             && TRAIN_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
 
 TEST_ARGS=(
     --checkpoint  "${CKPT_DIR}/best.pt"
@@ -239,6 +241,7 @@ TEST_ARGS=(
     --num_workers "${NUM_WORKERS}"
     --rocm_device "${GPU_ID}"
 )
+[ -n "${ALIGNED_ROOT}" ] && TEST_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
 
 EVAL_ARGS=(
     --checkpoint   "${CKPT_DIR}/best.pt"
@@ -249,6 +252,7 @@ EVAL_ARGS=(
     --rocm_device  "${GPU_ID}"
     --full_analysis
 )
+[ -n "${ALIGNED_ROOT}" ] && EVAL_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
 
 cd "${SCRIPT_DIR}"
 

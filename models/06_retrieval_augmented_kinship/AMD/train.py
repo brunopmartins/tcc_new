@@ -108,6 +108,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--checkpoint_dir", type=str, default="checkpoints")
     p.add_argument("--resume", type=str, default=None)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--aligned_root", type=str, default=None,
+                   help="Path to MTCNN-aligned FIW crops; remaps paths at load time.")
 
     return p.parse_args()
 
@@ -274,6 +276,7 @@ def main() -> None:
         dataset_type=args.train_dataset,
         split_seed=args.seed,
         num_workers=args.num_workers,
+        aligned_root=args.aligned_root,
     )
     print(f"  train: {len(train_loader.dataset)}  val: {len(val_loader.dataset)}")
 
@@ -285,6 +288,7 @@ def main() -> None:
         transform=get_transforms(test_data_config, train=False),
         split_seed=args.seed,
         negative_ratio=test_data_config.negative_ratio,
+        aligned_root=args.aligned_root,
     )
     test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
                              num_workers=args.num_workers, pin_memory=True)
@@ -330,6 +334,7 @@ def main() -> None:
         transform=get_transforms(train_data_config, train=False),
         split_seed=args.seed,
         negative_ratio=0.0,  # positives only
+        aligned_root=args.aligned_root,
     )
     gallery_loader = DataLoader(
         gallery_ds, batch_size=args.batch_size, shuffle=False,

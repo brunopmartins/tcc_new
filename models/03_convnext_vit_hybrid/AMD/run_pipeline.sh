@@ -77,6 +77,7 @@ UNFREEZE_AFTER="${UNFREEZE_AFTER:-0}"
 BACKBONE_LR_FACTOR="${BACKBONE_LR_FACTOR:-0.01}"
 PARTIAL_UNFREEZE="${PARTIAL_UNFREEZE:-0}"
 PATIENCE="${PATIENCE:-50}"
+ALIGNED_ROOT="${ALIGNED_ROOT:-}"
 GPU_ID="${GPU_ID:-0}"
 SEED="${SEED:-42}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
@@ -90,7 +91,7 @@ if [ -e /dev/kfd ] && [ -z "${_ROCM_SETUP_COMPLETE}" ]; then
     export EPOCHS BATCH_SIZE LEARNING_RATE WEIGHT_DECAY SCHEDULER WARMUP_EPOCHS MIN_LR
     export TRAIN_DATASET CONVNEXT_MODEL VIT_MODEL FUSION_TYPE LOSS TEMPERATURE MARGIN
     export NEGATIVE_RATIO EVAL_NEGATIVE_RATIO TRAIN_NEGATIVE_STRATEGY EVAL_NEGATIVE_STRATEGY NUM_WORKERS DROPOUT
-    export FREEZE_BACKBONES UNFREEZE_AFTER BACKBONE_LR_FACTOR PARTIAL_UNFREEZE PATIENCE GPU_ID SEED SKIP_INSTALL
+    export FREEZE_BACKBONES UNFREEZE_AFTER BACKBONE_LR_FACTOR PARTIAL_UNFREEZE PATIENCE ALIGNED_ROOT GPU_ID SEED SKIP_INSTALL
     export _ROCM_SETUP_COMPLETE=1
     SELF="$(readlink -f "${BASH_SOURCE[0]}")"
     echo "  [ROCm] Restarting script with render group active..."
@@ -240,6 +241,7 @@ TRAIN_ARGS=(
 [ "${UNFREEZE_AFTER}" != "0" ] && TRAIN_ARGS+=(--unfreeze_after "${UNFREEZE_AFTER}")
 TRAIN_ARGS+=(--backbone_lr_factor "${BACKBONE_LR_FACTOR}")
 [ "${PARTIAL_UNFREEZE}" = "1" ] && TRAIN_ARGS+=(--partial_unfreeze)
+[ -n "${ALIGNED_ROOT}" ] && TRAIN_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
 
 TEST_ARGS=(
     --checkpoint  "${CKPT_DIR}/best.pt"
@@ -248,6 +250,7 @@ TEST_ARGS=(
     --output_dir  "${RESULTS_DIR}"
     --rocm_device "${GPU_ID}"
 )
+[ -n "${ALIGNED_ROOT}" ] && TEST_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
 
 EVAL_ARGS=(
     --checkpoint  "${CKPT_DIR}/best.pt"
@@ -257,6 +260,7 @@ EVAL_ARGS=(
     --rocm_device "${GPU_ID}"
     --full_analysis
 )
+[ -n "${ALIGNED_ROOT}" ] && EVAL_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
 
 # ---------- cd into AMD/ so relative imports resolve --------------------------
 cd "${SCRIPT_DIR}"

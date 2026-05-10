@@ -132,6 +132,10 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--patience", type=int, default=50,
                         help="Early stopping patience (epochs without AUC improvement)")
+    parser.add_argument("--aligned_root", type=str, default=None,
+                        help="Path to MTCNN-aligned FIW crops (e.g. datasets/FIW_aligned). "
+                             "Image paths are remapped at load time with silent fallback "
+                             "to the original under root_dir if an aligned file is missing.")
 
     return parser.parse_args()
 
@@ -304,6 +308,7 @@ def main():
         train_negative_sampling_strategy=args.train_negative_strategy,
         eval_negative_sampling_strategy=args.eval_negative_strategy,
         split_seed=args.seed,
+        aligned_root=args.aligned_root,
     )
     print(f"Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
 
@@ -317,6 +322,7 @@ def main():
         transform=get_transforms(test_data_config, train=False),
         split_seed=args.seed,
         negative_ratio=args.eval_negative_ratio,
+        aligned_root=args.aligned_root,
         negative_sampling_strategy=args.eval_negative_strategy,
     )
     test_loader = DataLoader(

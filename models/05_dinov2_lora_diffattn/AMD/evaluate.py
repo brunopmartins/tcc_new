@@ -57,6 +57,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output_dir", type=str, default="evaluation_results")
     p.add_argument("--full_analysis", action="store_true")
     p.add_argument("--rocm_device", type=int, default=0)
+    p.add_argument("--aligned_root", type=str, default=None,
+                   help="Path to MTCNN-aligned FIW crops; remaps paths at load time.")
     return p.parse_args()
 
 
@@ -211,6 +213,7 @@ def main() -> None:
         transform=get_transforms(data_config, train=False),
         split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
         negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
+        aligned_root=args.aligned_root,
     )
     loader = DataLoader(
         test_ds,

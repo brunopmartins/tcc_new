@@ -60,6 +60,8 @@ def parse_args():
 
     # ROCm specific
     parser.add_argument("--rocm_device", type=int, default=0)
+    parser.add_argument("--aligned_root", type=str, default=None,
+                        help="Path to MTCNN-aligned FIW crops; remaps paths at load time.")
 
     return parser.parse_args()
 
@@ -309,6 +311,7 @@ def main():
         transform=get_transforms(data_config, train=False),
         split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
         negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
+        aligned_root=args.aligned_root,
     )
 
     test_loader = DataLoader(
