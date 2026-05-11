@@ -1,0 +1,5 @@
+*.pth
+*.onnx
+*.bin
+!.gitignore
+!README.md
