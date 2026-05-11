@@ -42,6 +42,9 @@
 #   SKIP_INSTALL             1 = skip venv/pip setup      (default: 0)
 #   ALIGNED_ROOT             Path to MTCNN-aligned FIW crops  (default: empty)
 #   DATA_ROOT                Dataset root w/ track-I CSVs (default: <project>/datasets/FIW)
+#   AGE_AUGMENT_ROOT         Path to SAM-aged variants    (default: empty — off)
+#   AGE_TARGET_AGES          Comma-separated ages         (default: 8,25,70)
+#   AGE_ORIGINAL_WEIGHT      Weight for original face     (default: 0.5)
 # =============================================================================
 set -eo pipefail
 
@@ -86,6 +89,9 @@ SEED="${SEED:-42}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
 ALIGNED_ROOT="${ALIGNED_ROOT:-}"
 DATA_ROOT="${DATA_ROOT:-${PROJECT_ROOT}/datasets/FIW}"
+AGE_AUGMENT_ROOT="${AGE_AUGMENT_ROOT:-}"
+AGE_TARGET_AGES="${AGE_TARGET_AGES:-8,25,70}"
+AGE_ORIGINAL_WEIGHT="${AGE_ORIGINAL_WEIGHT:-0.5}"
 
 # ---------- ROCm: render group fix --------------------------------------------
 if [ -e /dev/kfd ] && [ -z "${_ROCM_SETUP_COMPLETE}" ]; then
@@ -99,6 +105,7 @@ if [ -e /dev/kfd ] && [ -z "${_ROCM_SETUP_COMPLETE}" ]; then
     export LOSS TEMPERATURE MARGIN NEGATIVE_RATIO EVAL_NEGATIVE_RATIO
     export TRAIN_NEGATIVE_STRATEGY EVAL_NEGATIVE_STRATEGY NUM_WORKERS PATIENCE MAX_GRAD_NORM
     export GPU_ID SEED SKIP_INSTALL ALIGNED_ROOT DATA_ROOT
+    export AGE_AUGMENT_ROOT AGE_TARGET_AGES AGE_ORIGINAL_WEIGHT
     export _ROCM_SETUP_COMPLETE=1
     SELF="$(readlink -f "${BASH_SOURCE[0]}")"
     echo "  [ROCm] Restarting script with render group active..."
@@ -168,6 +175,12 @@ if [ -n "${ALIGNED_ROOT}" ] && [ ! -d "${ALIGNED_ROOT}" ]; then
     exit 1
 fi
 
+if [ -n "${AGE_AUGMENT_ROOT}" ] && [ ! -d "${AGE_AUGMENT_ROOT}" ]; then
+    echo "ERROR: AGE_AUGMENT_ROOT set to ${AGE_AUGMENT_ROOT} but directory does not exist"
+    echo "  Generate variants first with tools/sam_age_augment.py"
+    exit 1
+fi
+
 # ---------- numbered output ---------------------------------------------------
 OUTPUT_BASE="${MODEL_ROOT}/output"
 mkdir -p "${OUTPUT_BASE}"
@@ -226,6 +239,11 @@ echo "Patience:          ${PATIENCE}"
 echo "Dataset:           ${TRAIN_DATASET}"
 echo "Data root:         ${DATA_ROOT}"
 echo "Aligned root:      ${ALIGNED_ROOT:-(none — using DATA_ROOT images)}"
+echo "Age augment root:  ${AGE_AUGMENT_ROOT:-(none — no SAM age ensemble)}"
+if [ -n "${AGE_AUGMENT_ROOT}" ]; then
+echo "Age target ages:   ${AGE_TARGET_AGES}"
+echo "Age original w:    ${AGE_ORIGINAL_WEIGHT}"
+fi
 echo "Seed:              ${SEED}"
 echo "ROCm device:       ${GPU_ID}"
 echo "Python:            ${PYTHON}"
@@ -269,6 +287,13 @@ TRAIN_ARGS=(
 [ "${NO_GLOBAL_EMBEDDING}" = "1" ]     && TRAIN_ARGS+=(--no_global_embedding)
 [ "${USE_CLASSIFIER_HEAD}" = "1" ]     && TRAIN_ARGS+=(--use_classifier_head)
 [ -n "${ALIGNED_ROOT}" ]               && TRAIN_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
+if [ -n "${AGE_AUGMENT_ROOT}" ]; then
+    TRAIN_ARGS+=(
+        --age_augment_root    "${AGE_AUGMENT_ROOT}"
+        --age_target_ages     "${AGE_TARGET_AGES}"
+        --age_original_weight "${AGE_ORIGINAL_WEIGHT}"
+    )
+fi
 
 TEST_ARGS=(
     --checkpoint  "${CKPT_DIR}/best.pt"
@@ -280,6 +305,12 @@ TEST_ARGS=(
     --rocm_device "${GPU_ID}"
 )
 [ -n "${ALIGNED_ROOT}" ] && TEST_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
+if [ -n "${AGE_AUGMENT_ROOT}" ]; then
+    TEST_ARGS+=(
+        --age_augment_root "${AGE_AUGMENT_ROOT}"
+        --age_target_ages  "${AGE_TARGET_AGES}"
+    )
+fi
 
 EVAL_ARGS=(
     --checkpoint  "${CKPT_DIR}/best.pt"
@@ -293,6 +324,12 @@ EVAL_ARGS=(
     --visualize_attention
 )
 [ -n "${ALIGNED_ROOT}" ] && EVAL_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
+if [ -n "${AGE_AUGMENT_ROOT}" ]; then
+    EVAL_ARGS+=(
+        --age_augment_root "${AGE_AUGMENT_ROOT}"
+        --age_target_ages  "${AGE_TARGET_AGES}"
+    )
+fi
 
 cd "${SCRIPT_DIR}"
 

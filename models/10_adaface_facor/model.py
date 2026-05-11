@@ -168,8 +168,14 @@ class AdaFaceFaCoRKinship(nn.Module):
         freeze_backbone: bool = False,
         use_positional_embedding: bool = True,
         use_global_embedding: bool = True,
+        original_weight: float = 0.5,
     ):
         super().__init__()
+        # Weight applied to the original face in the SAM age-ensemble path.
+        # When inputs are 5D (B, V, 3, H, W) with V = 1 + N_ages variants, the
+        # original gets `original_weight` and the remaining (1 - original_weight)
+        # is split equally across the aged variants. Has no effect on 4D inputs.
+        self.original_weight = float(original_weight)
 
         # Backbone
         self.backbone = AdaFaceIR101(output_dim=self.SPATIAL_DIM)
@@ -226,9 +232,27 @@ class AdaFaceFaCoRKinship(nn.Module):
         self.embedding_dim = embedding_dim
 
     # ----- token extraction -------------------------------------------------
+    def _age_ensemble_weights(self, num_variants: int, device, dtype) -> torch.Tensor:
+        """Return (V,) weights summing to 1: [original_weight, aged...]."""
+        if num_variants <= 1:
+            return torch.ones(1, device=device, dtype=dtype)
+        w0 = self.original_weight
+        aged_each = (1.0 - w0) / (num_variants - 1)
+        w = torch.full((num_variants,), aged_each, device=device, dtype=dtype)
+        w[0] = w0
+        return w
+
     def extract_tokens(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Run the AdaFace backbone and return spatial tokens + global embedding.
+
+        Accepts either:
+        - 4D input (B, 3, H, W) — standard path.
+        - 5D input (B, V, 3, H, W) — age-ensemble path. V = 1 + N_ages, where
+          the first slice is the original face and the rest are SAM age
+          variants. Tokens and global embeddings are weighted-averaged across
+          V using `original_weight` (original) and uniform `(1-original_weight)/N_ages`
+          (each aged variant) before any further processing.
 
         Returns
         -------
@@ -239,6 +263,28 @@ class AdaFaceFaCoRKinship(nn.Module):
             token; summed into the per-face feature before projection when
             `use_global_embedding=True`.
         """
+        if x.dim() == 5:
+            B, V, C, H, W = x.shape
+            flat = x.reshape(B * V, C, H, W)
+            spatial = self.backbone.forward_spatial(flat)  # (B*V, 512, 7, 7)
+
+            weights = self._age_ensemble_weights(V, spatial.device, spatial.dtype)
+
+            tokens_flat = spatial.flatten(2).transpose(1, 2).contiguous()
+            tokens_flat = tokens_flat.reshape(B, V, self.NUM_TOKENS, self.SPATIAL_DIM)
+            tokens = (tokens_flat * weights.view(1, V, 1, 1)).sum(dim=1)
+
+            if self.pos_embed is not None:
+                tokens = tokens + self.pos_embed
+
+            if self.use_global_embedding:
+                global_flat = self.backbone.output_layer(spatial)  # (B*V, 512)
+                global_flat = global_flat.reshape(B, V, self.SPATIAL_DIM)
+                global_emb = (global_flat * weights.view(1, V, 1)).sum(dim=1)
+            else:
+                global_emb = tokens.mean(dim=1)
+            return tokens, global_emb
+
         spatial = self.backbone.forward_spatial(x)  # (B, 512, 7, 7)
         b, c, h, w = spatial.shape
         tokens = spatial.flatten(2).transpose(1, 2).contiguous()  # (B, 49, 512)
@@ -381,6 +427,7 @@ def build_adaface_facor_model(
     use_positional_embedding: bool = True,
     use_global_embedding: bool = True,
     use_classifier_head: bool = False,
+    original_weight: float = 0.5,
 ):
     """Create either the embedding model or the BCE classifier wrapper."""
     base = AdaFaceFaCoRKinship(
@@ -393,6 +440,7 @@ def build_adaface_facor_model(
         freeze_backbone=freeze_backbone,
         use_positional_embedding=use_positional_embedding,
         use_global_embedding=use_global_embedding,
+        original_weight=original_weight,
     )
     if use_classifier_head:
         return AdaFaceFaCoRClassifier(base)
@@ -413,6 +461,7 @@ def create_model(config=None) -> AdaFaceFaCoRKinship:
         use_positional_embedding=getattr(config, "use_positional_embedding", True),
         use_global_embedding=getattr(config, "use_global_embedding", True),
         use_classifier_head=getattr(config, "use_classifier_head", False),
+        original_weight=getattr(config, "original_weight", 0.5),
     )
 
 

@@ -62,9 +62,17 @@ from protocol import (  # noqa: E402
     update_checkpoint_payload,
 )
 
-# Model
+# Model + M10-specific age-augmented dataset
+# Imported AFTER the shared imports above — `age_dataset` inserts its own
+# `shared/` path entry which would shadow `shared/AMD/trainer.py` for the
+# `from trainer import ROCmTrainer` line if imported earlier.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from model import build_adaface_facor_model  # noqa: E402
+from age_dataset import (  # noqa: E402
+    AgeAugmentedKinshipPairDataset,
+    DEFAULT_TARGET_AGES,
+    parse_target_ages,
+)
 
 
 # AdaFace input convention
@@ -110,6 +118,19 @@ def parse_args() -> argparse.Namespace:
                    help="M02's tuned dropout for the FaCoR head is 0.2.")
     p.add_argument("--use_classifier_head", action="store_true",
                    help="Add BCE classifier on top of cosine embeddings.")
+
+    # SAM age-augmentation (generational invariance via young/adult/elderly variants)
+    p.add_argument("--age_augment_root", type=str, default=None,
+                   help="Directory of SAM-aged variants mirroring aligned_root "
+                        "(see tools/sam_age_augment.py). When set, every face is "
+                        "loaded with N_ages variants and the model ensembles them.")
+    p.add_argument("--age_target_ages", type=str, default="8,25,70",
+                   help="Comma-separated target ages (must match the variants "
+                        "produced by tools/sam_age_augment.py).")
+    p.add_argument("--age_original_weight", type=float, default=0.5,
+                   help="Weight applied to the original face in the age ensemble. "
+                        "Remaining (1 - w) is split equally across aged variants. "
+                        "Default 0.5: original is heaviest, three aged variants share 0.5.")
 
     # Training
     p.add_argument("--epochs", type=int, default=100)
@@ -266,35 +287,103 @@ def main() -> None:
         patience=args.patience,
     )
 
+    # Parse age-ensemble options
+    target_ages = parse_target_ages(args.age_target_ages) if args.age_augment_root else []
+    use_age_ensemble = bool(args.age_augment_root)
+    if use_age_ensemble:
+        num_variants = 1 + len(target_ages)
+        print(f"\nSAM age-ensemble ENABLED")
+        print(f"  age_augment_root: {args.age_augment_root}")
+        print(f"  target_ages:      {target_ages}")
+        print(f"  original_weight:  {args.age_original_weight:.3f}  "
+              f"(aged each: {(1 - args.age_original_weight) / max(len(target_ages), 1):.3f})")
+        print(f"  variants per face: {num_variants}  "
+              f"(backbone effectively runs {num_variants}× per sample)")
+
     # Training data
     print(f"\nLoading {args.train_dataset} dataset for training...")
-    train_loader, val_loader, _ = create_dataloaders(
-        config=train_data_config,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        dataset_type=args.train_dataset,
-        train_negative_ratio=args.negative_ratio,
-        eval_negative_ratio=args.eval_negative_ratio,
-        train_negative_sampling_strategy=args.train_negative_strategy,
-        eval_negative_sampling_strategy=args.eval_negative_strategy,
-        split_seed=args.seed,
-        aligned_root=args.aligned_root,
-    )
+    if use_age_ensemble:
+        from torch.utils.data import DataLoader
+        train_dataset = AgeAugmentedKinshipPairDataset(
+            root_dir=resolve_dataset_root(train_data_config, args.train_dataset),
+            dataset_type=args.train_dataset,
+            split="train",
+            transform=get_transforms(train_data_config, train=True),
+            split_seed=args.seed,
+            negative_ratio=args.negative_ratio,
+            negative_sampling_strategy=args.train_negative_strategy,
+            aligned_root=args.aligned_root,
+            age_augment_root=args.age_augment_root,
+            target_ages=target_ages,
+        )
+        val_dataset = AgeAugmentedKinshipPairDataset(
+            root_dir=resolve_dataset_root(train_data_config, args.train_dataset),
+            dataset_type=args.train_dataset,
+            split="val",
+            transform=get_transforms(train_data_config, train=False),
+            split_seed=args.seed,
+            negative_ratio=args.eval_negative_ratio,
+            negative_sampling_strategy=args.eval_negative_strategy,
+            aligned_root=args.aligned_root,
+            age_augment_root=args.age_augment_root,
+            target_ages=target_ages,
+        )
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=True,
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=True,
+        )
+    else:
+        train_loader, val_loader, _ = create_dataloaders(
+            config=train_data_config,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            dataset_type=args.train_dataset,
+            train_negative_ratio=args.negative_ratio,
+            eval_negative_ratio=args.eval_negative_ratio,
+            train_negative_sampling_strategy=args.train_negative_strategy,
+            eval_negative_sampling_strategy=args.eval_negative_strategy,
+            split_seed=args.seed,
+            aligned_root=args.aligned_root,
+        )
     print(f"Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
 
     # Test data
     print(f"Loading {args.test_dataset} dataset for testing...")
     from torch.utils.data import DataLoader
-    test_dataset = KinshipPairDataset(
-        root_dir=resolve_dataset_root(test_data_config, args.test_dataset),
-        dataset_type=args.test_dataset,
-        split="test",
-        transform=get_transforms(test_data_config, train=False),
-        split_seed=args.seed,
-        negative_ratio=args.eval_negative_ratio,
-        aligned_root=args.aligned_root,
-        negative_sampling_strategy=args.eval_negative_strategy,
-    )
+    if use_age_ensemble:
+        test_dataset = AgeAugmentedKinshipPairDataset(
+            root_dir=resolve_dataset_root(test_data_config, args.test_dataset),
+            dataset_type=args.test_dataset,
+            split="test",
+            transform=get_transforms(test_data_config, train=False),
+            split_seed=args.seed,
+            negative_ratio=args.eval_negative_ratio,
+            aligned_root=args.aligned_root,
+            negative_sampling_strategy=args.eval_negative_strategy,
+            age_augment_root=args.age_augment_root,
+            target_ages=target_ages,
+        )
+    else:
+        test_dataset = KinshipPairDataset(
+            root_dir=resolve_dataset_root(test_data_config, args.test_dataset),
+            dataset_type=args.test_dataset,
+            split="test",
+            transform=get_transforms(test_data_config, train=False),
+            split_seed=args.seed,
+            negative_ratio=args.eval_negative_ratio,
+            aligned_root=args.aligned_root,
+            negative_sampling_strategy=args.eval_negative_strategy,
+        )
     test_loader = DataLoader(
         test_dataset,
         batch_size=args.batch_size,
@@ -316,6 +405,7 @@ def main() -> None:
         use_positional_embedding=not args.no_positional_embedding,
         use_global_embedding=not args.no_global_embedding,
         use_classifier_head=args.use_classifier_head,
+        original_weight=args.age_original_weight,
     )
     model = optimize_for_rocm(model)
 
@@ -393,6 +483,9 @@ def main() -> None:
         "use_positional_embedding": not args.no_positional_embedding,
         "use_global_embedding": not args.no_global_embedding,
         "use_classifier_head": args.use_classifier_head,
+        "age_augment_root": args.age_augment_root,
+        "age_target_ages": target_ages,
+        "age_original_weight": args.age_original_weight,
     }
     protocol_metadata = build_protocol_metadata(
         train_dataset=args.train_dataset,

@@ -101,13 +101,80 @@ projection, acting as a CLS-token analogue.
 | Auxiliary       | Retrieval gallery + cross-attn       | None — pure FaCoR pair attention   |
 | Loss            | BCE + (optional) cosine contrastive  | Cosine contrastive (M02 recipe)    |
 
+## Generational invariance via SAM age augmentation (optional)
+
+M10 supports an optional **age-ensemble path** that lets each face contribute
+under multiple apparent ages, so cross-attention sees both the original face
+and child / young-adult / elderly variants of the same identity. The aim is
+generational invariance: a parent-child pair compared at *similar* ages
+should sit closer in embedding space than the same pair compared 30 years
+apart. The age variants are pre-generated offline with SAM
+([tools/sam_age_augment.py](../../tools/sam_age_augment.py)), so training
+stays a single forward through the backbone — just over `1 + N_ages`
+variants per face instead of one.
+
+### How it works
+
+- **Preprocessing.** `tools/sam_age_augment.py` walks `datasets/FIW_aligned`
+  and writes, for each face, sibling files `…__age_8.jpg`, `…__age_25.jpg`,
+  `…__age_70.jpg` into `datasets/FIW_aligned_aged/` (mirroring the FIDs/
+  layout). SAM (Alaluf et al., SIGGRAPH 2021) is a StyleGAN2-based age
+  manipulator pretrained on FFHQ; the three default ages cover
+  child / young-adult / elderly.
+- **Dataset.** [age_dataset.py](age_dataset.py) defines
+  `AgeAugmentedKinshipPairDataset`, a drop-in replacement for the shared
+  `KinshipPairDataset`. Per face it loads the original plus the requested
+  aged variants and stacks them, returning tensors of shape
+  `(B, 1 + N_ages, 3, H, W)`. Missing variants fall back to the original.
+- **Model.** `AdaFaceFaCoRKinship.extract_tokens` detects 5-D input and runs
+  the backbone over `B × (1 + N_ages)` images, then takes a weighted average
+  of the resulting `(49, 512)` token grids and `512`-d global embeddings
+  *before* FaCoR cross-attention. The weights are
+  `[original_weight, (1-original_weight)/N_ages, …]`, so by default
+  (`--age_original_weight 0.5`, `--age_target_ages 8,25,70`) the original
+  contributes 0.5 and each aged variant contributes ≈0.167. With 4-D input
+  (no age aug) the path is the same as before.
+- **Trainer / evaluator.** No changes — `model(img1, img2)` works for either
+  shape, and `test.py` / `evaluate.py` strip the variant axis only for
+  attention visualisation (always shows the original face).
+
+### Running with age augmentation
+
+```bash
+# 1. Generate age variants once (~27 h for full FIW on RX 6750 XT)
+python tools/sam_age_augment.py \
+    --src-root datasets/FIW_aligned \
+    --dst-root datasets/FIW_aligned_aged \
+    --ages 8,25,70 --output-size 224
+
+# 2. Train with age ensemble
+bash models/10_adaface_facor/AMD/run_pipeline.sh \
+    --age_augment_root /home/bruno/Desktop/tcc_new/datasets/FIW_aligned_aged \
+    --age_target_ages 8,25,70 \
+    --age_original_weight 0.5
+```
+
+The model_config saved in the checkpoint records `age_augment_root`,
+`age_target_ages`, and `age_original_weight`, so re-running
+`test.py` / `evaluate.py` against the same checkpoint will pick up the
+age-ensemble setting automatically (override with the same flags if you
+want a different ablation).
+
+### Cost
+
+The backbone runs once per face *per variant*, so with `N_ages = 3` you pay
+roughly **4×** the forward-pass cost. To keep VRAM stable, halve the per-step
+batch size and double `--gradient_accumulation` (e.g. `--batch_size 4
+--gradient_accumulation 8` to keep effective batch 32).
+
 ## Files
 
 ```
 10_adaface_facor/
 ├── README.md                       # This file
 ├── adaface_iresnet.py              # Vendored AdaFace IR-101 backbone
-├── model.py                        # M10 main model (FaCoR + AdaFace)
+├── model.py                        # M10 main model (FaCoR + AdaFace, age-aware)
+├── age_dataset.py                  # SAM age-augmented dataset (5-D output)
 ├── AMD/
 │   ├── train.py
 │   ├── test.py

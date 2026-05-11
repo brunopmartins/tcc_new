@@ -36,6 +36,7 @@ from torch.utils.data import DataLoader  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from model import build_adaface_facor_model, parse_model_outputs  # noqa: E402
+from age_dataset import AgeAugmentedKinshipPairDataset, parse_target_ages  # noqa: E402
 
 
 ADAFACE_MEAN = [0.5, 0.5, 0.5]
@@ -57,6 +58,11 @@ def parse_args():
     parser.add_argument("--num_visualizations", type=int, default=10)
     parser.add_argument("--rocm_device", type=int, default=0)
     parser.add_argument("--aligned_root", type=str, default=None)
+    parser.add_argument("--age_augment_root", type=str, default=None,
+                        help="SAM aged-variants directory. Required if the "
+                             "checkpoint was trained with age augmentation.")
+    parser.add_argument("--age_target_ages", type=str, default=None,
+                        help="Override ages list (defaults to the checkpoint's).")
     return parser.parse_args()
 
 
@@ -83,12 +89,16 @@ def visualize_cross_attention(model, dataloader, device, output_dir, num_samples
             attn_maps = parsed["attn_map"]
             scores = parsed["scores"]
 
+            # Use only the original face when inputs include aged variants.
+            vis_img1 = img1[:, 0] if img1.dim() == 5 else img1
+            vis_img2 = img2[:, 0] if img2.dim() == 5 else img2
+
             for i in range(min(len(labels), num_samples - sample_count)):
                 fig, axes = plt.subplots(2, 3, figsize=(15, 10))
 
                 # AdaFace normalisation: [-1, 1] -> [0, 1]
-                img1_vis = (img1[i].cpu() + 1) / 2
-                img2_vis = (img2[i].cpu() + 1) / 2
+                img1_vis = (vis_img1[i].cpu() + 1) / 2
+                img2_vis = (vis_img2[i].cpu() + 1) / 2
 
                 axes[0, 0].imshow(img1_vis.permute(1, 2, 0).clamp(0, 1))
                 axes[0, 0].set_title("Person 1")
@@ -224,6 +234,7 @@ def main():
         use_positional_embedding=model_config.get("use_positional_embedding", True),
         use_global_embedding=model_config.get("use_global_embedding", True),
         use_classifier_head=model_config.get("use_classifier_head", False),
+        original_weight=model_config.get("age_original_weight", 0.5),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
@@ -238,15 +249,37 @@ def main():
     apply_data_root_override(data_config, args.dataset, args.data_root)
     root_dir = resolve_dataset_root(data_config, args.dataset)
 
-    test_dataset = KinshipPairDataset(
-        root_dir=root_dir,
-        dataset_type=args.dataset,
-        split="test",
-        transform=get_transforms(data_config, train=False),
-        split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
-        negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
-        aligned_root=args.aligned_root,
-    )
+    ckpt_age_root = model_config.get("age_augment_root")
+    age_root = args.age_augment_root or ckpt_age_root
+    if args.age_target_ages:
+        ages = parse_target_ages(args.age_target_ages)
+    else:
+        ages = list(model_config.get("age_target_ages") or [8, 25, 70])
+
+    if age_root:
+        print(f"Age ensemble ON  root={age_root}  ages={ages}  "
+              f"w_orig={model_config.get('age_original_weight', 0.5):.3f}")
+        test_dataset = AgeAugmentedKinshipPairDataset(
+            root_dir=root_dir,
+            dataset_type=args.dataset,
+            split="test",
+            transform=get_transforms(data_config, train=False),
+            split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
+            negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
+            aligned_root=args.aligned_root,
+            age_augment_root=age_root,
+            target_ages=ages,
+        )
+    else:
+        test_dataset = KinshipPairDataset(
+            root_dir=root_dir,
+            dataset_type=args.dataset,
+            split="test",
+            transform=get_transforms(data_config, train=False),
+            split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
+            negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
+            aligned_root=args.aligned_root,
+        )
 
     test_loader = DataLoader(
         test_dataset,
