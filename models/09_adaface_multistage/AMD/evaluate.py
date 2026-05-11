@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+"""
+AMD ROCm evaluation script for Model 09 — AdaFace + Multi-Stage Cross-Attention.
+
+Same surface as M02/M10 evaluate scripts. Image size + normalisation come
+from checkpoint metadata; default AdaFace 112×112 + [-1, 1].
+"""
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, confusion_matrix, ConfusionMatrixDisplay
+from tqdm import tqdm
+
+os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "10.3.0")
+os.environ["MIOPEN_FIND_MODE"] = "FAST"
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared" / "AMD"))
+
+from rocm_utils import (  # noqa: E402
+    setup_rocm_environment,
+    get_rocm_device,
+    clear_rocm_cache,
+)
+from config import DataConfig  # noqa: E402
+from dataset import KinshipPairDataset, get_transforms  # noqa: E402
+from evaluation import KinshipMetrics, print_metrics  # noqa: E402
+from protocol import apply_data_root_override, get_checkpoint_threshold, resolve_dataset_root  # noqa: E402
+from torch.utils.data import DataLoader  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from model import build_adaface_multistage_model, parse_model_outputs  # noqa: E402
+
+
+ADAFACE_MEAN = [0.5, 0.5, 0.5]
+ADAFACE_STD = [0.5, 0.5, 0.5]
+ADAFACE_IMG_SIZE = 112
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Evaluate Model 09 (AMD ROCm)")
+    parser.add_argument("--checkpoint", type=str, required=True)
+    parser.add_argument("--dataset", type=str, default="fiw",
+                        choices=["kinface", "fiw"])
+    parser.add_argument("--data_root", type=str, default=None)
+    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--output_dir", type=str, default="evaluation_results")
+    parser.add_argument("--full_analysis", action="store_true")
+    parser.add_argument("--visualize_attention", action="store_true")
+    parser.add_argument("--num_visualizations", type=int, default=10)
+    parser.add_argument("--rocm_device", type=int, default=0)
+    parser.add_argument("--aligned_root", type=str, default=None)
+    return parser.parse_args()
+
+
+def visualize_cross_attention(model, dataloader, device, output_dir, num_samples=10):
+    """Visualise cross-attention between face pairs."""
+    model.eval()
+    output_dir = Path(output_dir) / "attention_maps"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    sample_count = 0
+    with torch.no_grad():
+        for batch in dataloader:
+            if sample_count >= num_samples:
+                break
+
+            img1 = batch["img1"].to(device, non_blocking=True)
+            img2 = batch["img2"].to(device, non_blocking=True)
+            labels = batch["label"]
+            relations = batch.get("relation", ["unknown"] * len(labels))
+
+            parsed = parse_model_outputs(model(img1, img2))
+            emb1 = parsed["emb1"]
+            emb2 = parsed["emb2"]
+            attn_maps = parsed["attn_map"]
+            scores = parsed["scores"]
+
+            for i in range(min(len(labels), num_samples - sample_count)):
+                fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+
+                # AdaFace normalisation: [-1, 1] -> [0, 1]
+                img1_vis = (img1[i].cpu() + 1) / 2
+                img2_vis = (img2[i].cpu() + 1) / 2
+
+                axes[0, 0].imshow(img1_vis.permute(1, 2, 0).clamp(0, 1))
+                axes[0, 0].set_title("Person 1")
+                axes[0, 0].axis("off")
+
+                axes[0, 1].imshow(img2_vis.permute(1, 2, 0).clamp(0, 1))
+                axes[0, 1].set_title("Person 2")
+                axes[0, 1].axis("off")
+
+                if attn_maps is not None and len(attn_maps.shape) >= 3:
+                    attn = attn_maps[i].cpu().numpy()
+                    if len(attn.shape) == 3:
+                        attn = attn.mean(axis=0)
+                    im = axes[0, 2].imshow(attn, cmap='hot', aspect='auto')
+                    axes[0, 2].set_title("Cross-Attention (49×49)")
+                    plt.colorbar(im, ax=axes[0, 2])
+
+                similarity = scores[i].item()
+                label = labels[i].item()
+                relation = relations[i]
+
+                axes[1, 0].bar(["Similarity"], [similarity], color='steelblue')
+                axes[1, 0].set_ylim(-1, 1)
+                axes[1, 0].set_title(f"Cosine Similarity: {similarity:.3f}")
+                axes[1, 0].axhline(y=0.5, color='r', linestyle='--', label='Threshold')
+
+                emb_concat = torch.cat([emb1[i], emb2[i]]).cpu().numpy()
+                axes[1, 1].bar(range(0, len(emb_concat), 10), emb_concat[::10])
+                axes[1, 1].set_title("Embedding sample (every 10th dim)")
+
+                info_text = f"Label: {'Kin' if label == 1 else 'Non-Kin'}\n"
+                info_text += f"Relation: {relation}\n"
+                info_text += f"Prediction: {'Kin' if similarity > 0.5 else 'Non-Kin'}\n"
+                info_text += f"Correct: {'Yes' if (similarity > 0.5) == bool(label) else 'No'}"
+                axes[1, 2].text(0.5, 0.5, info_text, fontsize=14,
+                                ha='center', va='center', transform=axes[1, 2].transAxes)
+                axes[1, 2].axis("off")
+
+                plt.suptitle("AdaFace Multi-Stage Cross-Attention Analysis (AMD ROCm)")
+                plt.tight_layout()
+                plt.savefig(output_dir / f"attention_sample_{sample_count}.png", dpi=150)
+                plt.close()
+
+                sample_count += 1
+
+    print(f"Saved {sample_count} attention visualisations to {output_dir}")
+
+
+def analyze_attention_patterns(model, dataloader, device, output_dir):
+    """Per-class attention intensity summary."""
+    model.eval()
+    kin_attentions, nonkin_attentions = [], []
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Analyzing attention (ROCm)"):
+            img1 = batch["img1"].to(device, non_blocking=True)
+            img2 = batch["img2"].to(device, non_blocking=True)
+            labels = batch["label"].numpy()
+
+            parsed = parse_model_outputs(model(img1, img2))
+            attn_maps = parsed["attn_map"]
+
+            if attn_maps is not None:
+                attn_flat = attn_maps.cpu().numpy()
+                while len(attn_flat.shape) > 1:
+                    attn_flat = attn_flat.mean(axis=-1)
+                for i, label in enumerate(labels):
+                    if label == 1:
+                        kin_attentions.append(float(attn_flat[i]))
+                    else:
+                        nonkin_attentions.append(float(attn_flat[i]))
+
+    if kin_attentions and nonkin_attentions:
+        kin_mean = np.mean(kin_attentions)
+        nonkin_mean = np.mean(nonkin_attentions)
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.bar(["Kin Pairs", "Non-Kin Pairs"], [kin_mean, nonkin_mean],
+               color=['forestgreen', 'coral'])
+        ax.set_ylabel("Mean Attention Intensity")
+        ax.set_title("Attention Intensity: Kin vs Non-Kin (AMD ROCm)")
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(output_dir / "attention_intensity_comparison.png", dpi=150)
+        plt.close()
+        return {"kin_mean_attention": kin_mean, "nonkin_mean_attention": nonkin_mean}
+    return {}
+
+
+def plot_roc_curve(predictions, labels, output_path):
+    fpr, tpr, _ = roc_curve(labels, predictions)
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, 'b-', linewidth=2)
+    plt.plot([0, 1], [0, 1], 'r--', linewidth=1)
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve — Model 09 (AdaFace Multi-Stage, AMD ROCm)')
+    plt.grid(True, alpha=0.3)
+    from sklearn.metrics import auc
+    roc_auc = auc(fpr, tpr)
+    plt.annotate(f'AUC = {roc_auc:.4f}', xy=(0.6, 0.2), fontsize=12)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    plt.close()
+
+
+def main():
+    args = parse_args()
+
+    print("\n" + "=" * 60)
+    print("AMD ROCm Evaluation — Model 09: AdaFace + Multi-Stage Cross-Attention")
+    print("=" * 60)
+
+    setup_rocm_environment(visible_devices=str(args.rocm_device))
+    device = get_rocm_device(args.rocm_device)
+    print(f"Using device: {device}")
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\nLoading model from {args.checkpoint}")
+    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
+
+    model_config = checkpoint.get("model_config", checkpoint.get("protocol", {}).get("model_config", {}))
+    img_size = int(model_config.get("img_size", ADAFACE_IMG_SIZE))
+
+    model = build_adaface_multistage_model(
+        adaface_weights=None,
+        embedding_dim=model_config.get("embedding_dim", 512),
+        cross_attn_stages=model_config.get("cross_attn_stages", [3, 4]),
+        num_cross_attn_layers_per_stage=model_config.get("cross_attn_layers_per_stage", 1),
+        cross_attn_heads=model_config.get("cross_attn_heads", 8),
+        dropout=model_config.get("dropout", 0.2),
+        freeze_backbone=model_config.get("freeze_backbone", False),
+        use_positional_embedding=model_config.get("use_positional_embedding", True),
+        use_global_embedding=model_config.get("use_global_embedding", True),
+        use_classifier_head=model_config.get("use_classifier_head", False),
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.to(device)
+    model.eval()
+    print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    data_config = DataConfig(
+        image_size=img_size,
+        normalize_mean=ADAFACE_MEAN,
+        normalize_std=ADAFACE_STD,
+    )
+    apply_data_root_override(data_config, args.dataset, args.data_root)
+    root_dir = resolve_dataset_root(data_config, args.dataset)
+
+    test_dataset = KinshipPairDataset(
+        root_dir=root_dir,
+        dataset_type=args.dataset,
+        split="test",
+        transform=get_transforms(data_config, train=False),
+        split_seed=checkpoint.get("protocol", {}).get("split_seed", data_config.split_seed),
+        negative_ratio=checkpoint.get("protocol", {}).get("negative_ratio", data_config.negative_ratio),
+        aligned_root=args.aligned_root,
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
+    print(f"Test samples: {len(test_dataset)}")
+
+    clear_rocm_cache()
+
+    all_preds, all_labels, all_relations = [], [], []
+
+    with torch.no_grad():
+        for batch in tqdm(test_loader, desc="Evaluating (ROCm)"):
+            img1 = batch["img1"].to(device, non_blocking=True)
+            img2 = batch["img2"].to(device, non_blocking=True)
+            labels = batch["label"]
+            relations = batch.get("relation", ["unknown"] * len(labels))
+
+            parsed = parse_model_outputs(model(img1, img2))
+            predictions = parsed["scores"]
+
+            all_preds.extend(predictions.cpu().numpy())
+            all_labels.extend(labels.numpy())
+            all_relations.extend(relations)
+
+    predictions = np.array(all_preds)
+    labels = np.array(all_labels)
+
+    threshold = get_checkpoint_threshold(checkpoint, default=0.5)
+    print(f"Using stored validation threshold: {threshold:.3f}")
+
+    metrics = KinshipMetrics(threshold=threshold)
+    metrics.all_predictions = list(predictions)
+    metrics.all_labels = list(labels)
+    metrics.all_relations = all_relations
+    results = metrics.compute()
+
+    print_metrics(results, prefix="Test ")
+
+    with open(output_dir / "metrics_rocm.json", "w") as f:
+        serializable = {k: v for k, v in results.items() if isinstance(v, (int, float, str))}
+        serializable["platform"] = "AMD ROCm"
+        serializable["threshold"] = threshold
+        json.dump(serializable, f, indent=2)
+
+    if args.full_analysis:
+        print("\nRunning full analysis...")
+
+        print("Generating ROC curve...")
+        plot_roc_curve(predictions, labels, output_dir / "roc_curve_rocm.png")
+
+        print("Generating confusion matrix...")
+        binary_preds = (predictions > threshold).astype(int)
+        cm = confusion_matrix(labels, binary_preds)
+        plt.figure(figsize=(8, 6))
+        disp = ConfusionMatrixDisplay(cm, display_labels=['Non-Kin', 'Kin'])
+        disp.plot(cmap='Blues')
+        plt.title('Confusion Matrix — Model 09 (AdaFace Multi-Stage, AMD ROCm)')
+        plt.savefig(output_dir / "confusion_matrix_rocm.png", dpi=150)
+        plt.close()
+
+        print("Analyzing attention patterns...")
+        attn_results = analyze_attention_patterns(model, test_loader, device, output_dir)
+        if attn_results:
+            with open(output_dir / "attention_analysis.json", "w") as f:
+                json.dump(attn_results, f, indent=2)
+
+    if args.visualize_attention:
+        print(f"\nVisualising attention maps ({args.num_visualizations} samples)...")
+        visualize_cross_attention(model, test_loader, device, output_dir, args.num_visualizations)
+
+    print(f"\nResults saved to {output_dir}")
+
+    print("\n" + "=" * 50)
+    print("EVALUATION SUMMARY (AMD ROCm)")
+    print("=" * 50)
+    print(f"Accuracy:  {results['accuracy']:.4f}")
+    print(f"F1 Score:  {results['f1']:.4f}")
+    print(f"ROC-AUC:   {results.get('roc_auc', 0):.4f}")
+    print(f"Precision: {results['precision']:.4f}")
+    print(f"Recall:    {results['recall']:.4f}")
+    print("=" * 50)
+
+
+if __name__ == "__main__":
+    main()
