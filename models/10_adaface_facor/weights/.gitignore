@@ -1,0 +1,9 @@
+*.pth
+*.pt
+*.onnx
+*.bin
+*.safetensors
+_hf_cache/
+.cache/
+!.gitignore
+!README.md
