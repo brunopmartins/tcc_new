@@ -9,7 +9,8 @@
 #   ALIGNED_ROOT             Path to FIW_aligned 224×224 (required)
 #   BATCH_SIZE               Batch size (default 8)
 #   GRAD_ACCUM               Gradient accumulation (default 4)
-#   FREEZE_BACKBONE          1 = freeze AdaFace (default), 0 = full FT
+#   FREEZE_BACKBONE          1 = freeze AdaFace (default), 0 = full FT (Phase 3)
+#   UNFREEZE_LAST_STAGE      1 = Phase 2 — unfreeze body[46:49] + output_layer (effective when FREEZE_BACKBONE=1)
 #   TRAIN_NEGATIVE_STRATEGY  random | relation_matched  (default random)
 #   EVAL_NEGATIVE_STRATEGY   random | relation_matched  (default random)
 #   NEGATIVE_RATIO           default 1.0
@@ -54,7 +55,8 @@ CROSS_ATTN_LAYERS="${CROSS_ATTN_LAYERS:-1}"
 GATE_HIDDEN="${GATE_HIDDEN:-128}"
 CLASSIFIER_HIDDEN="${CLASSIFIER_HIDDEN:-512}"
 DROPOUT="${DROPOUT:-0.2}"
-FREEZE_BACKBONE="${FREEZE_BACKBONE:-1}"   # Phase 1: frozen
+FREEZE_BACKBONE="${FREEZE_BACKBONE:-1}"        # Phase 1 default: frozen
+UNFREEZE_LAST_STAGE="${UNFREEZE_LAST_STAGE:-0}" # Phase 2: set to 1 to unfreeze body[46:49] + output_layer
 
 NEGATIVE_RATIO="${NEGATIVE_RATIO:-1.0}"
 EVAL_NEGATIVE_RATIO="${EVAL_NEGATIVE_RATIO:-1.0}"
@@ -111,7 +113,7 @@ echo "Run ID:              ${RUN_LABEL}"
 echo "Run dir:             ${RUN_DIR}"
 echo "Aligned root:        ${ALIGNED_ROOT}"
 echo "AdaFace weights:     ${ADAFACE_WEIGHTS}"
-echo "Backbone frozen:     ${FREEZE_BACKBONE}"
+echo "Backbone frozen:     ${FREEZE_BACKBONE} (unfreeze_last_stage=${UNFREEZE_LAST_STAGE})"
 echo "Cross-attn:          ${CROSS_ATTN_LAYERS} layer × ${CROSS_ATTN_HEADS} heads"
 echo "Dropout:             ${DROPOUT}"
 echo "Batch / grad accum:  ${BATCH_SIZE} × ${GRAD_ACCUM} (eff $((BATCH_SIZE * GRAD_ACCUM)))"
@@ -165,6 +167,9 @@ TRAIN_ARGS=(
 )
 if [ "${FREEZE_BACKBONE}" != "1" ]; then
     TRAIN_ARGS+=(--unfreeze_backbone)
+fi
+if [ "${UNFREEZE_LAST_STAGE}" = "1" ]; then
+    TRAIN_ARGS+=(--unfreeze_last_stage)
 fi
 
 TEST_ARGS=(

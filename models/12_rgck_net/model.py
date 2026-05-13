@@ -266,10 +266,12 @@ class RGCKNet(nn.Module):
         classifier_hidden: int = 512,
         dropout: float = 0.2,
         freeze_backbone: bool = True,
+        unfreeze_last_stage: bool = False,
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
         self.freeze_backbone = freeze_backbone
+        self.unfreeze_last_stage = unfreeze_last_stage
 
         # Region tokenizer (shared backbone across regions)
         self.tokenizer = FixedPartitionRegionTokenizer(
@@ -282,6 +284,17 @@ class RGCKNet(nn.Module):
         if freeze_backbone:
             for p in adaface_backbone.parameters():
                 p.requires_grad = False
+
+            if unfreeze_last_stage:
+                # Phase 2 of `proposta_rgck_net_kinship.md` §38: unfreeze the
+                # last IR-101 block. For AdaFace IR-101 the deepest stage is
+                # body[46:49] (3 BasicBlockIR units, 512-channel, 7×7 spatial)
+                # plus the output_layer (FC head producing the 512-d embedding).
+                stage4_modules = adaface_backbone.body[46:49]
+                for p in stage4_modules.parameters():
+                    p.requires_grad = True
+                for p in adaface_backbone.output_layer.parameters():
+                    p.requires_grad = True
 
         # Cross-region adapter
         self.cross_region = CrossRegionAdapter(
@@ -372,6 +385,7 @@ def build_rgck_net(
     classifier_hidden: int = 512,
     dropout: float = 0.2,
     freeze_backbone: bool = True,
+    unfreeze_last_stage: bool = False,
 ) -> RGCKNet:
     """
     Build RGCK-Net with an AdaFace IR-101 backbone (shared by all regions).
@@ -393,6 +407,7 @@ def build_rgck_net(
         classifier_hidden=classifier_hidden,
         dropout=dropout,
         freeze_backbone=freeze_backbone,
+        unfreeze_last_stage=unfreeze_last_stage,
     )
 
 

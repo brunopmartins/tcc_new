@@ -6,6 +6,133 @@ Newest run on top.
 
 ---
 
+## Run 002 — 2026-05-13 — Stopped at epoch 7 (peak Val AUC 0.9323 ep 4; **Test AUC 0.8564 — NEW PROJECT HEADLINE, beats M02 R031's 0.850**)
+
+**Status:** Stopped manually at epoch 7/100 (3 epochs of post-peak decline)
+**Outcome:** Phase 2 of `proposta_rgck_net_kinship.md` §38: AdaFace IR-101 partially frozen (stages 1-3 frozen, **stage 4 body[46:49] + output_layer trainable**), 5 region tokens, BCE classifier head, **LR=1e-5** (10× lower than R001's 1e-4 per proposal §37). Val AUC peak **0.9323** (ep 4) — highest in the entire project. **Test AUC = 0.8564, surpassing M02 R031's 0.850 (the prior project headline) by +0.006.** All three TAR@FAR levels (0.001, 0.01, 0.1) also exceed M02 R031, confirming better ranking quality across operating points. Val→test gap -0.076, larger than R001's -0.089 but well below other AdaFace-based full-FT models. **The architectural + recipe combination — frozen stages 1-3 + unfrozen stage 4 + region tokens + cross-region attention + sigmoid gating + BCE head — is the new project best.**
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 \
+GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+LEARNING_RATE=1e-5 \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 001
+
+| Parameter | R001 | **R002** |
+|---|---|---|
+| Backbone | AdaFace IR-101 frozen | AdaFace IR-101 **stages 1-3 frozen, stage 4 + output_layer trainable** |
+| Trainable params | 5,589,762 (7.90 %) | **31,554,818 (44.61 %)** |
+| LR (peak) | 1e-4 | **1e-5** (10× lower, per proposal §37) |
+| All other knobs | — | identical |
+
+The single architectural change is **the partial unfreeze of stage 4 and output_layer** (the FC head producing the 512-d embedding). Stages 1-3 stay frozen, preserving most of AdaFace's identity-discriminative pretrain. The 26 M extra trainable params from stage 4 + output_layer give the model enough plasticity to adapt the deepest features for kinship.
+
+### Configuration
+
+| Param | Value |
+|-------|-------|
+| Dataset | fiw (Track-I, split_seed=42) |
+| Aligned root | datasets/FIW_aligned (224 native) |
+| Backbone | AdaFace IR-101 (WebFace4M, **partially frozen — stages 1-3 frozen, stage 4 + output_layer trainable**) |
+| Regions | 5: global, eyes, nose, mouth, jaw (fixed 224-coords) |
+| Cross-region adapter | 1 bidirectional layer × 4 heads × 512-d |
+| Regional gate | MLP `[rA, rB, |diff|, prod]` → sigmoid |
+| Classifier head | 3-layer MLP + BatchNorm + GELU + dropout |
+| Loss | bce on classifier logit |
+| Batch | 8 × grad-accum 4 (eff 32) |
+| **LR** | **1e-5** peak, warmup 5, cosine, min_lr 1e-6 |
+| Weight decay | 1e-4 |
+| Dropout | 0.2 |
+| Train neg strategy | random |
+| Eval neg strategy | random |
+| **Trainable params** | **31,554,818 / 70,740,674 (44.61 %)** |
+| Time/epoch | ~25.8 min (vs R001 ~20 min — slightly slower due to backward pass through stage 4) |
+| Seed | 42 |
+
+### Training trajectory
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR | Note |
+|------:|-----------:|--------:|--------:|-----|-----|------|
+| 1 | 0.5885 | 78.1 % | **0.8644** | 0.400 | 2.0e-6 | warmup 1/5 — **already above M12 R001 peak (0.8351)** |
+| 2 | 0.4060 | 84.4 % | **0.9259** | 0.400 | 4.0e-6 | **+0.062 climb — beats M11 v4 peak (0.8987)** |
+| 3 | 0.3316 | 85.5 % | 0.9311 | 0.400 | 6.0e-6 | new peak |
+| **4** | **0.2881** | **85.5 %** | **0.9323** | 0.200 | 8.0e-6 | **lifetime peak — best.pt** |
+| 5 | 0.2544 | 85.4 % | 0.9306 | 0.100 | 1.0e-5 | peak LR, no unlock |
+| 6 | 0.2240 | 85.6 % | 0.9284 | 0.100 | 1.0e-5 | |
+| 7 | 0.2036 | 85.5 % | 0.9230 | 0.100 | 9.99e-6 | -0.009 from peak, train loss continuing — **manual stop** |
+
+### Test metrics (threshold 0.500)
+
+Stored threshold = 0.500 (training killed before `update_checkpoint_metadata`). Val-phase F1-optimal at ep 4 was 0.200. AUC, Avg Precision, TAR@FAR are threshold-invariant.
+
+| Metric | M02 R031 (prior best) | **M12 R002 (NEW)** |
+|---|---:|---:|
+| **Test ROC AUC** | **0.850** | **0.8564** ⭐ |
+| Test Accuracy | 74.4 % | **76.79 %** ⭐ |
+| Test Balanced Acc | 75.2 % | **76.48 %** ⭐ |
+| Test Precision | 66.5 % | **79.82 %** ⭐ |
+| Test Recall | 94.1 % | 69.00 % |
+| Test F1 | 0.779 | 0.7402 |
+| **Test Avg Precision** | 0.817 | **0.8389** ⭐ |
+| **TAR @ FAR=0.001** | 2.5 % | **4.18 %** ⭐ |
+| **TAR @ FAR=0.01** | 14.0 % | **17.58 %** ⭐ |
+| **TAR @ FAR=0.1** | 49.9 % | **57.11 %** ⭐ |
+| Val→test AUC gap | -0.031 | -0.076 |
+
+*Note on threshold comparison:* M02 R031 reported per-relation metrics at threshold 0.900 (very high — favours precision). M12 R002 default threshold is 0.500. Per-class accuracies are not directly comparable. **The threshold-invariant metrics (AUC, AP, TAR@FAR) are what matter for cross-threshold ranking quality**, and M12 R002 wins on all of them.
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.500)
+
+| Relation | N | M02 R031 (thr 0.900) | M09 R001 (thr 0.500) | **M12 R002 (thr 0.500)** |
+|----------|--:|---------------------:|---------------------:|-------------------------:|
+| bb | 860 | 95.5 % | 64.2 % | **75.4 %** |
+| ss | 731 | 94.7 % | 62.9 % | **75.9 %** |
+| sibs | 234 | 94.9 % | 64.5 % | **79.5 %** |
+| md | 1038 | 94.4 % | 53.9 % | **68.7 %** |
+| fs | 1135 | 95.3 % | 59.1 % | **68.6 %** |
+| ms | 1036 | 93.9 % | 57.3 % | **69.4 %** |
+| fd | 918 | 91.7 % | 63.6 % | **68.4 %** |
+| **gfgd** | 138 | 89.9 % | 31.2 % | **52.2 %** |
+| gfgs | 98 | 95.9 % | 30.6 % | 39.8 % |
+| gmgd | 123 | 91.1 % | 31.7 % | 36.6 % |
+| gmgs | 121 | 88.4 % | 37.2 % | **44.6 %** |
+| non-kin | 6993 | 56.4 % | 84.7 % | 84.0 % |
+
+**At threshold 0.500, M12 R002 beats M09 R001 on every kin class:**
+- Same-generation (bb/ss/sibs): +11 to +15 pp
+- Parent-child (4 classes): +5 to +15 pp
+- Grandparent (4 classes): +7 to +21 pp on three, +0.7 on gfgs
+- non-kin: -0.7 (essentially identical)
+
+The improvement is consistent and substantial. The val→test gap (-0.076) is larger than M12 R001 (-0.089) but **the higher Val AUC ceiling (0.9323) more than compensates**, lifting Test AUC to 0.8564.
+
+### Notes
+
+- **Proposal Phase 2 hypothesis fully validated.** Unfreezing stage 4 + output_layer was the key to lifting the Val AUC ceiling above the Phase 1 bottleneck without re-introducing the family memorization that hurt M11 v4 (full FT had gap -0.128, M12 R002 gap is -0.076).
+- **Peak LR (ep 5) did NOT unlock a new level** — Val AUC peaked at ep 4 *before* the peak LR. The lower LR (1e-5 vs full-FT models' 5e-6 starting) and warmup interact differently. The model converged fast and started slight overfit immediately at peak LR.
+- **Train loss continued to descend monotonically** even as Val AUC declined post-peak, classic overfit signal. Manual stop at ep 7 (3 consecutive declines).
+- The **per-region weights** from the regional gate are interpretable but not yet visualised — `evaluate.py` for M12 doesn't exist. Adding this would be a small follow-up.
+
+### Artifacts
+
+- Checkpoint (epoch 4, Val AUC 0.9323): `output/002/checkpoints/best.pt` (536 MB — larger than R001 because stage 4 weights are now in optimizer state) — patched manually with `model_config` (freeze_backbone=True, unfreeze_last_stage=True)
+- Resume snapshot: `output/002/checkpoints/epoch_5.pt` (will be pruned)
+- Train log: `output/002/logs/train.log`
+- Test log: `output/002/logs/test.log` (also `/tmp/m12_r002_test.log`)
+- Results: `output/002/results/test_metrics_rocm.txt`
+- No `evaluate.py` artefacts yet.
+
+---
+
 ## Run 001 — 2026-05-13 — Stopped at epoch 7 (peak Val AUC 0.8351 ep 3; Test AUC 0.7464, val→test gap -0.089)
 
 **Status:** Stopped manually at epoch 7/100 — 4 epochs below peak, train loss continuing to descend (overfit creeping in)

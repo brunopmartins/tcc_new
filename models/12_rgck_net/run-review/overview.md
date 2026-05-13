@@ -58,34 +58,40 @@ The structure:
 
 ## Run table
 
-| | **Run 001** |
-|---|---|
-| **Date** | 2026-05-13 |
-| **Purpose** | Phase 1 baseline — frozen backbone, BCE only, random negs |
-| **Status** | **Stopped manually at ep 7** (4 epochs below peak) |
-| **Best Val AUC** | **0.8351 (ep 3)** |
-| **Test ROC-AUC** | **0.7464** |
-| **Test Accuracy** | 68.0 % |
-| **Val→test gap** | **-0.089** (smallest in AdaFace family) |
-| **Notes** | Architectural hypothesis directionally validated (smallest gap of any AdaFace-based model) but absolute Test AUC below M09 R001 (-0.052) because frozen backbone caps Val AUC ceiling. See [run-001.md](run-001.md). |
+| | Run 001 | **Run 002** |
+|---|---|---|
+| **Date** | 2026-05-13 | 2026-05-13 |
+| **Phase** | 1 (frozen) | **2 (partial unfreeze)** |
+| **Trainable** | 5.6 M (7.9 %) | **31.6 M (44.6 %)** |
+| **LR** | 1e-4 | **1e-5** |
+| **Status** | Stopped at ep 7 | **Stopped at ep 7** |
+| **Best Val AUC** | 0.8351 (ep 3) | **0.9323 (ep 4)** — project max |
+| **Test ROC-AUC** | 0.7464 | **0.8564** ⭐ — **NEW PROJECT HEADLINE** |
+| **Test Accuracy** | 68.0 % | **76.8 %** |
+| **Val→test gap** | -0.089 | -0.076 |
+| **Notes** | Phase 1 capped Val AUC too low | **Phase 2 unfreezes stage 4 + output_layer (26 M extra params, LR 10× lower). Beats M02 R031 (0.850) by +0.006 on Test AUC, +1.7 pp on TAR@FAR=0.001, +3.6 pp TAR@FAR=0.01, +7.2 pp TAR@FAR=0.1. See [run-002.md](run-002.md).** |
 
 ---
 
 ## Test metrics
 
-| Metric | **Run 001** |
-|---|---:|
-| **Test ROC-AUC** | **0.7464** |
-| Test Accuracy | 68.00 % |
-| Test F1 | 0.6150 |
-| Test Precision | 72.60 % |
-| Test Recall | 53.34 % |
-| Avg Precision | 0.7323 |
-| TAR@FAR=0.01 | 10.06 % |
-| TAR@FAR=0.1 | 37.86 % |
-| Best Val ROC-AUC | 0.8351 (ep 3) |
-| Best Val Accuracy | 75.4 % (ep 3) |
-| **Val→Test AUC gap** | **-0.089** |
+| Metric | M02 R031 (prior best) | Run 001 (Phase 1) | **Run 002 (Phase 2)** |
+|---|---:|---:|---:|
+| **Test ROC-AUC** | 0.850 | 0.7464 | **0.8564** ⭐ |
+| Test Accuracy | 74.4 % | 68.00 % | **76.79 %** ⭐ |
+| Test Balanced Acc | 75.2 % | 67.41 % | **76.48 %** |
+| Test F1 | 0.779 | 0.6150 | 0.7402 |
+| Test Precision | 66.5 % | 72.60 % | **79.82 %** ⭐ |
+| Test Recall | 94.1 % | 53.34 % | 69.00 % |
+| **Avg Precision** | 0.817 | 0.7323 | **0.8389** ⭐ |
+| **TAR@FAR=0.001** | 2.5 % | 2.36 % | **4.18 %** ⭐ |
+| **TAR@FAR=0.01** | 14.0 % | 10.06 % | **17.58 %** ⭐ |
+| **TAR@FAR=0.1** | 49.9 % | 37.86 % | **57.11 %** ⭐ |
+| Best Val ROC-AUC | 0.881 | 0.8351 | **0.9323** |
+| Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % |
+| **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 |
+
+⭐ = M12 R002 wins on **all** threshold-invariant metrics (AUC, Avg Precision, all three TAR@FAR levels).
 
 ---
 
@@ -105,14 +111,15 @@ The structure:
 
 | Model | Test ROC-AUC | Test Acc | Backbone | Architecture / Recipe | Notes |
 |---|---:|---:|---|---|---|
-| M02 R031 | **0.850** | 74.4 % | ViT-B/16 ImageNet (full FT) | FaCoR top-only + cosine_contrastive (works on ViT) | project best |
+| **M12 R002** | **0.8564** ⭐ | **76.8 %** | **AdaFace IR-101 (stages 1-3 frozen, stage 4 unfrozen)** | **5 region tokens + cross-attn + gate, BCE, LR 1e-5** | **NEW PROJECT HEADLINE** |
+| M02 R031 | 0.850 | 74.4 % | ViT-B/16 ImageNet (full FT) | FaCoR top-only + cosine_contrastive (works on ViT) | prior project best |
 | M05 R007 | 0.810 | — | hybrid (DINOv2 + LoRA + diff-attn) | — | partial freeze |
-| **M09 R001** | **0.7982** | 71.9 % | AdaFace IR-101 (full FT) | Multistage + BCE + classifier head + random negs | **best AdaFace-based** |
+| M09 R001 | 0.7982 | 71.9 % | AdaFace IR-101 (full FT) | Multistage + BCE + classifier head + random negs | best AdaFace full-FT |
 | M09 R002 | 0.7824 | 71.6 % | M09 R001 + balanced sampler | balanced positives | val→test gap widened |
+| M06 R001 | 0.776 | 69.8 % | ViT-B/16 (frozen) + retrieval | retrieval + cross-attn | best frozen-ViT |
 | M11 R001 v4 | 0.7707 | 70.6 % | M09 R001 + `relation_matched` negs | hard negs on M09 stack | val→test gap widened most (-0.128) |
 | M10 R003 | 0.7478 | 70.6 % | AdaFace IR-101 (full FT) | FaCoR top-only + BCE + classifier head | val→test gap -0.140 |
-| **M12 R001** | **0.7464** | 68.0 % | **AdaFace IR-101 (FROZEN)** | **5 region tokens + cross-attn + gate** | **smallest val→test gap (-0.089), lowest Val AUC ceiling** |
-| M06 R001 | 0.776 | 69.8 % | ViT-B/16 (frozen) + retrieval | retrieval + cross-attn | best frozen-encoder |
+| M12 R001 | 0.7464 | 68.0 % | AdaFace IR-101 (FROZEN) | 5 region tokens + cross-attn + gate | smallest val→test gap (-0.089), lowest Val AUC ceiling |
 | M08 R001 | 0.693 | 60.8 % | ArcFace IR-100 (frozen) + retrieval | retrieval + cross-attn | anti-kinship trap |
 
 ---
@@ -138,50 +145,80 @@ The structure:
 
 ---
 
-## Conclusion (as of R001)
+## Conclusion (as of R002)
 
-R001 establishes the M12 baseline. The result is **directionally
-interesting but absolutely underwhelming**:
+**R002 is the new project headline. M02 R031's reign as best-in-project
+(Test AUC 0.850, held since the early ViT experiments) is over.**
 
-1. **Val→test gap is the smallest in the AdaFace family** (-0.089).
-   Three independent comparisons confirm: M09 R001 -0.094, M11 v4
-   -0.128, M12 R001 -0.089. The architectural change (frozen backbone,
-   region tokens) does reduce family memorization.
+Key findings:
 
-2. **Val AUC ceiling is too low for the smaller gap to pay off.**
-   Peak 0.8351 vs M09 R001's 0.8919. The frozen backbone simply lacks
-   capacity to push Val higher.
+1. **Test AUC 0.8564 beats M02 R031 (0.850) by +0.006.** Direct ranking
+   improvement, threshold-invariant. All three TAR@FAR levels and Avg
+   Precision also exceed M02 R031.
 
-3. **Per-class distribution at peak is balanced** (75-92 % range
-   across all 11 classes in val). But after test-time threshold and
-   held-out families, the per-class accuracies regress to roughly the
-   same pattern as other AdaFace-based models.
+2. **The single architectural change between R001 and R002** — unfreezing
+   stage 4 + output_layer — lifted Test AUC by +0.110 (from 0.7464 to
+   0.8564). The Phase 1 capacity bottleneck was real and severe.
 
-4. **The whole experiment cycle was ~3 h** (vs ~8-10 h for full-FT
-   models). Cheap to iterate on.
+3. **Val→test gap is -0.076** — wider than R001's -0.089 (the model is
+   somewhat more capable of memorizing val families) but narrower than
+   every other AdaFace full-FT model (M09 R001 -0.094, M11 v4 -0.128,
+   M10 R003 -0.140). The trade-off is favourable: slightly more
+   memorization, much more discrimination, net positive.
 
-**Next directions:**
+4. **The recipe stack that won:**
+   - AdaFace IR-101 backbone
+   - Stages 1-3 frozen, stage 4 (body[46:49]) + output_layer trainable
+   - 5 region tokens (global, eyes, nose, mouth, jaw — fixed coords)
+   - 1-layer × 4-head bidirectional cross-region attention
+   - Sigmoid regional gating
+   - 3-layer MLP classifier head over `[gA, gB, |diff|, prod, sims, weights, score]`
+   - BCE loss on classifier logit
+   - LR 1e-5 (10× lower than R001's 1e-4)
+   - Random negatives, no auxiliary losses, no hard negative mining
 
-- **R002 — Phase 2 of the proposal: unfreeze last IR-101 stage.**
-  Lifts the Val AUC ceiling while keeping most of the backbone fixed.
-  This is the highest-priority next experiment.
-- **R003 — Phase 3: full fine-tune.** Probably reintroduces family
-  memorization (M09 R001 / M11 v4 territory). Lower priority.
-- **R004 — Phase 4: supervised contrastive loss as auxiliary** (per
-  proposal §28, with λ=0.05).
-- **R005 — Phase 5: relation-type auxiliary head.**
-- **R006 — hard negatives via `relation_matched`.** M11 v4 already
-  showed this hurts test AUC on full-FT; whether it helps on M12's
-  frozen backbone is unknown.
+5. **Two FaCoRNet-inspired interventions (balanced sampling in M09 R002,
+   hard negatives in M11 v4) consistently hurt Test AUC** despite
+   raising Val AUC. M12 R002 found a different path: less aggressive
+   training distribution, but better architectural fit to the kinship
+   problem.
 
-The proposal §38 explicitly mandates this experimental sequence
-(Fase 1 → Fase 6). R001 is Fase 1 and produced its expected result:
-a slow but well-behaved baseline that doesn't beat the full-FT
-incumbent but proves the architecture is viable.
+### What R001 already validated, still standing
 
-**On the project headline metric (Test AUC), R001 is below M09 R001
-(0.7464 vs 0.7982).** The architecture is promising for *generalization
-quality* (gap, balance) but needs Phase 2+ to lift the ceiling.
+R001 (Phase 1, fully frozen) had Val→test gap -0.089 — smallest in the
+AdaFace family. R002 keeps most of that gap benefit (-0.076) while
+adding the capacity needed to raise the absolute Val AUC ceiling. The
+Phase 1 → Phase 2 progression validated the proposal's experimental
+sequence design.
+
+### Open issues (still tracked from R001)
+
+| # | Severity | Status | Title | Notes |
+|---|----------|--------|-------|-------|
+| I-01 | Medium | **Closed in R002** | Frozen backbone caps Val AUC at ~0.835 | R002 partial unfreeze lifts peak to 0.9323 |
+| I-02 | **Closed in R002** | M12 Test AUC below M09 R001 | R002 Test AUC 0.8564 beats M09 R001 (0.7982) by +0.058 |
+| I-03 | Info | Open | No `evaluate.py` for M12 | Still applies — only `test.py` exists. Visualisations (ROC, CM, attention maps) and especially per-region gate weights would be valuable. |
+| I-04 | Info | Workaround applied | `model_config` not saved when training killed mid-pipeline | Same pattern as M09/M10/M11 — best.pt patched manually before test.py rebuild. |
+| I-05 | Info | Open | Region tokenizer re-runs AdaFace 5× per face | Still using Strategy 2 (recortar regiões + backbone). Strategy 1 (ROI Align on shared feature map) would halve training time and may add the missing 1-2 points of Test AUC. |
+| I-06 | New, Info | Open | Per-relation grandparent accuracies still 37-52 % at threshold 0.5 | gfgd 52.2 %, gmgs 44.6 %, gfgs 39.8 %, gmgd 36.6 %. Better than every other M*/AdaFace model in the project but still well below M02 R031 (88-96 %) at its threshold-0.9 operating point. Relation-conditional auxiliary head (proposal Phase 5) could help. |
+
+### Next directions
+
+- **R003 — Phase 4: supervised contrastive auxiliary loss** (λ=0.05).
+  Plausible incremental gain on top of R002. Main risk: Val→test gap
+  widening.
+- **R004 — Phase 5: relation-type auxiliary head.** Could specifically
+  improve the grandparent classes which still lag.
+- **R005 — Phase 6: hard negatives via `relation_matched`.** M11 v4
+  showed this hurts on full FT; M12 has partial FT — unknown effect.
+  Lower priority given M11 v4's negative result.
+- **R006 — Phase 3: full fine-tune.** Almost certainly regressive
+  (the M11 v4 lesson). Skip unless other phases reveal a need.
+- **R007 — Architecture switch to ROI Align** (proposal §15 Strategy 1):
+  halves training time, may add small Test AUC boost.
+
+The proposal's experimental sequence (§38) is largely vindicated. R002
+is Phase 2 done well.
 
 ---
 

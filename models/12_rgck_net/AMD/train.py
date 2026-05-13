@@ -80,6 +80,9 @@ def parse_args() -> argparse.Namespace:
                    help="Freeze AdaFace IR-101 (Phase 1 default).")
     p.add_argument("--unfreeze_backbone", dest="freeze_backbone", action="store_false",
                    help="Allow full AdaFace fine-tune (Phase 3).")
+    p.add_argument("--unfreeze_last_stage", action="store_true", default=False,
+                   help="Phase 2: keep backbone frozen except for body[46:49] (stage 4) "
+                        "+ output_layer. Effective only when --freeze_backbone is set.")
     p.add_argument("--img_size", type=int, default=RGCK_IMG_SIZE)
 
     # RGCK-Net specifics
@@ -256,6 +259,7 @@ def main() -> None:
         classifier_hidden=args.classifier_hidden,
         dropout=args.dropout,
         freeze_backbone=args.freeze_backbone,
+        unfreeze_last_stage=args.unfreeze_last_stage,
     )
     model = optimize_for_rocm(model)
 
@@ -318,6 +322,7 @@ def main() -> None:
         "classifier_hidden": args.classifier_hidden,
         "dropout": args.dropout,
         "freeze_backbone": args.freeze_backbone,
+        "unfreeze_last_stage": args.unfreeze_last_stage,
         "regions": [name for name, _ in DEFAULT_REGIONS_224],
     }
     protocol_metadata = build_protocol_metadata(
