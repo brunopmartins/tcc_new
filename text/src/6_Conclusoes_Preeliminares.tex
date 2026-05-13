@@ -1,7 +1,7 @@
-\chapter[Conclusões Preliminares]{Conclusões Preliminares}
-\label{cap:Conclusões Preeliminares}
+\chapter[Conclusão]{Conclusão}
+\label{cap:Conclusao}
 
-Os experimentos descritos no Capítulo 4 produziram os números que este capítulo reúne. As tabelas e figuras a seguir mostram os modelos implementados, os resultados em FIW e em KinFaceW-I, o desempenho dos baselines com VLMs, a comparação por tipo de relação, e o histórico do estudo de freeze do Modelo 03.
+Os experimentos descritos no Capítulo~\ref{cap:Metodologia} produziram os números que este capítulo retoma. As tabelas e figuras a seguir resumem os modelos implementados, os resultados em FIW e em KinFaceW-I, o desempenho dos baselines com VLMs, a comparação por tipo de relação, e o histórico do estudo de freeze do Modelo 03. A última seção integra os achados num conjunto de conclusões finais e aponta limitações e desdobramentos.
 
 \section{Modelos implementados}
 
@@ -151,4 +151,12 @@ R007 & Freeze + partial unfreeze, LR conservador & 0,828 & 0,868 & LR muito baix
 \end{table}
 
 \section{Síntese}
+
+Os números reunidos neste capítulo sustentam quatro afirmações principais. A primeira é que o ViT com cross-attention bidirecional é eficaz no domínio de parentesco facial. O Modelo 02 atinge AUC de 0,861 em KinFaceW-I e 0,850 em FIW, e o resultado é robusto em validação cruzada de cinco dobras, com desvio padrão pequeno (0,012 em AUC). A segunda é que aumentar capacidade não traz ganho proporcional. O Modelo 03, híbrido ConvNeXt mais ViT com o dobro de parâmetros do Modelo 02, empata em AUC apesar de ter passado por sete runs em diferentes estratégias de freeze e unfreeze. Nenhuma das estratégias superou o treino sem congelamento da Run 002.
+
+A terceira é que adaptadores LoRA sobre um backbone self-supervised oferecem um regime competitivo de custo. O Modelo 05 alcança AUC 0,806 e a melhor combinação de TAR@FAR=0,01 (0,152) com apenas 8,5 milhões de parâmetros treináveis, cerca de dez vezes menos que o Modelo 02. O hardware AMD de 12 GB, que impediu full unfreeze do Modelo 03 sem OOM, comporta o Modelo 05 com folga. A quarta é que VLMs zero-shot ainda não substituem modelos supervisionados nesse problema. Codex e Claude Sonnet ficam em 33,1\% e 37,3\% de acurácia em classificação multiclasse das onze relações, contra 74,4\% do Modelo 02, e caem para 0\% nas relações de avós e netos exatamente onde os modelos treinados mantêm acurácia acima de 88\%. A tentativa de adaptação ao domínio por prompt no Codex piorou o resultado, o que sugere que estruturas inferenciais mais elaboradas amplificam vieses heurísticos em vez de corrigi-los.
+
+Algumas limitações são honestas e merecem registro. O Modelo 01 operou na maior parte dos runs sem o módulo SAM plenamente ativado, o que reduz a força da comparação CNN com síntese de idade. O Modelo 06, mesmo na configuração inicial mais favorável, ficou abaixo dos modelos paramétricos em AUC e mostrou gap val-teste maior que os demais. A avaliação cross-dataset entre KinFaceW-I e FIW ficou fora do escopo deste trabalho, e o viés demográfico apontado na literatura sobre reconhecimento facial não foi medido aqui. Os baselines com VLMs avaliam tarefa diferente (multiclasse de onze relações) dos modelos supervisionados (verificação binária), e a comparação entre os dois regimes é qualitativa, não métrica contra métrica.
+
+Como desdobramento natural, o trabalho aponta três frentes para investigação futura. A primeira é avaliar VLMs adicionais sob o mesmo protocolo de prompts direcionados, em particular modelos abertos como LLaVA ou Qwen-VL com possibilidade de fine-tuning leve. A segunda é uma análise sistemática de fairness por subgrupo demográfico no FIW, na linha do que estudos de reconhecimento facial vêm fazendo. A terceira é o estudo de hard negatives no Modelo 06, com o objetivo de reduzir a memorização da galeria e aproximar o retrieval-augmented dos modelos paramétricos em AUC.
 

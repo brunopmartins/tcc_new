@@ -1,31 +1,217 @@
 \chapter[Metodologia]{Metodologia}
 \label{cap:Metodologia}
 
-O objetivo deste trabalho é o desenvolvimento de um modelo de classificação de parentesco entre indivíduos usando imagens de suas faces . A metodologia proposta para alcançar tal objetivo foi composta pelas seguintes etapas:
-\newline
-\begin{enumerate}
-    \item Revisão da literatura sobre modelos de classificação.
-    \item Seleção das bases de dados.
-    \item Proposta do modelo de classificação.
-    \item Experimentos com o modelo sobre a base de dados.
-    \item Avaliação do modelo proposto quanto a seus objetivos.
-\end{enumerate}
-    
-    A primeira etapa da metodologia foi a revisão da literatura. Nesta fase, foram
-levantados os estudos que se relacionam à proposta deste trabalho. Como resultado, foram
-gerados: (1) o capítulo de Trabalhos Relacionados.
+A metodologia adotada cobre cinco modelos supervisionados treinados sobre os bancos KinFaceW-I e Families in the Wild, com um protocolo de avaliação uniforme baseado em validação cruzada de cinco dobras. Os cinco modelos compartilham ainda uma estratégia transversal de invariância geracional, em que cada face de entrada é processada por um módulo de síntese de idade e a decisão final agrega o par original com três variantes etárias. Junto com eles, dois baselines com modelos multimodais generalistas foram executados sobre o mesmo conjunto de teste, mas em tarefa diferente, e por isso aparecem em seção própria.
 
-    A segunda etapa se refere à seleção da base de dados. Nesta etapa, foram estudadas as basee de dados referentes à classificação da relação de paternidade entre dois indivíduos através de imagens da face de cada um. Desse modo foi possível identificar os conjuntos de daos relevantes, possíveis preprocessamentos das imagens das bases para melhorar a acurácia do modelo e selecionar métodos de classificação adequados para o banco de dados apresentado.
-    
-    A terceira etapa da metodologia consiste na proposta de um modelo de classificação para o problema da avaliação relação de paternidade. Nesta fase, foi realizada uma avaliação dos métodos de classificação pertinentes ao problema e levantadas técnicas que poderiam influênciar na classificação.
-    
-    Na etapa seguinte, foram realizados experimentos com o modelo de classificação proposto sobre a base de dados. Como resultado, foram gerados dados relativos à eficácia dos métodos propostos.
+\section{Desenho da pesquisa}
 
-    Emfim, na quinta e última etapa, há a avaliação dos resultados proveniente dos experimentos da fase anterior. Com essa avaliação, foi possível comparar o modelo  proposto com os modelos usados na competição "Northeastern SMILE Lab - Recognizing Faces in the Wild" do Kaggle.
+O problema de verificação de parentesco facial é tratado neste trabalho como pesquisa experimental e comparativa. Cinco modelos supervisionados são treinados e avaliados sob o mesmo protocolo, e dois baselines com modelos multimodais generalistas são executados sobre o mesmo conjunto de teste, em regime zero-shot e em adaptação por prompt. A comparação principal é feita por ROC AUC, métrica independente de threshold, complementada por acurácia, F1, average precision e TAR@FAR=0,1 e 0,01. A análise por tipo de relação acompanha as métricas globais, porque a literatura mostra que relações de segundo grau entre avós e netos comportam-se de forma muito diferente das relações de primeiro grau entre pais e filhos ou entre irmãos.
 
-    
-    
-    
-    
-    
-   
+Três dos cinco modelos servem como referência e cobrem famílias de método consolidadas. Os outros dois são exploratórios e combinam técnicas recentes ainda não validadas para parentesco facial na literatura consultada. Os baselines multimodais entram apenas como medida do que um VLM genérico consegue inferir, e não competem diretamente com os modelos treinados, porque avaliam tarefa diferente (classificação multiclasse das 11 relações, não verificação binária de parentesco).
+
+\section{Datasets}
+
+\subsection{KinFaceW-I}
+
+KinFaceW-I é um dos bancos clássicos para verificação de parentesco facial. O conjunto tem cerca de 1.066 pares de imagens distribuídos em quatro tipos de relação, sendo pai-filha, pai-filho, mãe-filha e mãe-filho. As imagens são frontais, com fundo controlado, e foram coletadas de fontes públicas com curadoria manual. Neste trabalho, KinFaceW-I serve como banco de prototipagem rápida e como base da validação cruzada de cinco dobras, com splits disjuntos por par.
+
+\subsection{Families in the Wild}
+
+Families in the Wild, ou FIW, é hoje o maior banco público de parentesco facial. A versão usada neste trabalho é a do RFIW Track-I, com cerca de 762 famílias e mais de 13 mil imagens individuais. O protocolo Track-I define um split de referência disjunto por família, com 571 famílias destinadas a treino e validação e 190 famílias reservadas para teste, produzindo cerca de 99 mil pares positivos de treino e 13 mil pares positivos de teste sobre as onze relações cobertas. As onze relações cobrem pai-filho e pai-filha (fs, fd), mãe-filho e mãe-filha (ms, md), irmão-irmão e irmã-irmã (bb, ss), irmãos de gêneros distintos (sibs), e quatro relações de avós e netos (gfgs, gfgd, gmgs, gmgd). As imagens cobrem uma variedade muito maior de condições do que KinFaceW-I, com diferenças de iluminação, pose, idade e qualidade. FIW é o benchmark principal deste trabalho, e a validação cruzada de cinco dobras é construída a partir do mesmo critério de disjunção por família que o Track-I, redistribuindo as 762 famílias em cinco grupos.
+
+\subsection{Amostragem de pares e negativos}
+
+O número de pares positivos disponíveis nos dados é finito e pequeno em comparação com o número possível de pares negativos. Por isso, o dataloader amostra pares negativos de duas formas. Na estratégia \texttt{random} sorteia-se aleatoriamente dois indivíduos sem relação de parentesco entre todos os pares possíveis. Na estratégia \texttt{relation\_matched} o par negativo é sorteado entre indivíduos da mesma classe de relação que o par positivo, o que produz negativos mais difíceis durante o treino. A razão entre negativos e positivos é 2:1 no treino com estratégia relation-matched e 1:1 na avaliação com estratégia random, para que a estimativa de desempenho não dependa do estilo de amostragem usado durante o aprendizado.
+
+\begin{table}[h]
+\centering
+\caption{Resumo dos datasets utilizados.}
+\label{tab:datasets}
+\begin{tabular}{lrrrl}
+\hline
+\textbf{Banco} & \textbf{Famílias} & \textbf{Pares} & \textbf{Relações} & \textbf{Papel no trabalho} \\
+\hline
+KinFaceW-I & --- & {\raise.17ex\hbox{$\scriptstyle\sim$}}1.066 & 4 & Prototipagem e CV de cinco dobras \\
+Families in the Wild & 762 & {\raise.17ex\hbox{$\scriptstyle\sim$}}99.000 / 13.000\footnotemark & 11 & Benchmark principal e CV por família \\
+\hline
+\end{tabular}
+\footnotetext{Pares positivos do split de referência Track-I, em famílias disjuntas treino/teste; a validação cruzada de cinco dobras redistribui as mesmas 762 famílias em cinco grupos.}
+\end{table}
+
+\section{Modelos avaliados}
+
+Cinco modelos supervisionados foram implementados e avaliados sob o mesmo protocolo. Os Modelos 01, 02 e 03 formam a coluna vertebral da comparação, cada um representando uma família de método da literatura, e os Modelos 05 e 06 são exploratórios e combinam técnicas recentes. A Tabela~\ref{tab:modelos_metodologia} resume a comparação por backbone, parâmetros treináveis e ideia central de cada modelo.
+
+\begin{table}[h]
+\centering
+\caption{Visão geral dos cinco modelos avaliados, com backbone, total de parâmetros treináveis e ideia central de cada um.}
+\label{tab:modelos_metodologia}
+\begin{tabular}{llrl}
+\hline
+\textbf{Modelo} & \textbf{Backbone} & \textbf{Params treináveis} & \textbf{Ideia central} \\
+\hline
+M01 & ResNet-18 / ArcFace + SAM      & {\raise.17ex\hbox{$\scriptstyle\sim$}}11M  & Síntese de idade antes da comparação \\
+M02 & vit\_base\_patch16\_224         & {\raise.17ex\hbox{$\scriptstyle\sim$}}86M  & Cross-attention bidirecional entre faces \\
+M03 & convnext\_base + vit\_base\_p16 & {\raise.17ex\hbox{$\scriptstyle\sim$}}176M & Fusão de features locais e globais \\
+M05 & DINOv2 ViT-B/14 + LoRA / (un)freeze & 8,5M a 95M & Backbone self-supervised com cross-attention diferencial \\
+M06 & ViT-B/16 ou DINOv2 (frozen)     & {\raise.17ex\hbox{$\scriptstyle\sim$}}8-12M & Memória não-paramétrica de pares positivos \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Modelo 01, CNN com síntese de idade}
+
+O baseline do trabalho toma como base uma rede neural convolucional pré-treinada em reconhecimento facial, ResNet-18 com pesos do ArcFace. O Modelo 01 segue o esquema de invariância geracional descrito na Seção~\ref{sec:invariancia_geracional}, com quatro pares diagonais (original mais três variantes etárias) e a agregação convexa da Equação~\ref{eq:invariancia_geracional}. Como ablação adicional, o Modelo 01 mantém a variante histórica em que as três variantes etárias por face geram nove comparações cruzadas, agregadas por um módulo de atenção aprendível que decide qual combinação é mais informativa caso a caso. O modelo tem cerca de 11 milhões de parâmetros sem o módulo SAM, que entra como pesos congelados quando ativado.
+
+O módulo SAM exige pesos pré-treinados específicos de cerca de 4,5 GB e nem todos os experimentos com o Modelo 01 puderam ativá-lo. Quando o módulo não está carregado, o modelo opera como rede siamesa convencional sobre o par original. Os resultados reportados no Capítulo 5 deixam essa condição explícita run a run.
+
+\subsection{Modelo 02, ViT com cross-attention bidirecional}
+
+O Modelo 02 substitui o backbone convolucional por um Vision Transformer, vit\_base\_patch16\_224, pré-treinado em ImageNet, e adiciona um módulo de cross-attention bidirecional inspirado no FaCoR \cite{su2023facornet}. A cross-attention permite que cada face atenda aos tokens de patch da outra, de modo que o modelo aprende quais regiões comparar entre as duas imagens, em vez de só comparar embeddings globais. O módulo tem duas camadas e oito cabeças, e é seguido por uma camada de channel attention no estilo squeeze-and-excitation. A saída passa por uma projeção linear que produz embeddings de 512 dimensões com normalização L2, e o modelo total tem cerca de 86 milhões de parâmetros.
+
+\subsection{Modelo 03, híbrido ConvNeXt e ViT}
+
+O Modelo 03 combina dois backbones distintos, ConvNeXt-B \cite{liu2022convnet} e vit\_base\_patch16\_224, sob a hipótese de que features locais convolucionais e features globais de Transformer são complementares no domínio facial. Os dois backbones operam em paralelo sobre a mesma imagem e produzem representações que são fundidas em um módulo aprendível antes da projeção final. A fusão suporta quatro modos. O padrão é a atenção, com alternativas em concatenação, gating multiplicativo e fusão bilinear. A saída final é um embedding de 512 dimensões com normalização L2. O modelo total tem cerca de 176 milhões de parâmetros, mais que o dobro do Modelo 02, o que torna o estudo de congelamento de backbones particularmente relevante para este caso.
+
+\subsection{Modelo 05, DINOv2 com LoRA e cross-attention diferencial}
+
+O Modelo 05 combina três técnicas recentes ainda não validadas para parentesco facial na literatura consultada. O backbone é o DINOv2 \cite{oquab2024dinov2} na variante vit\_base\_patch14\_dinov2, treinado de forma self-supervised em 142 milhões de imagens sem rótulos. A adaptação ao domínio é feita por adaptadores LoRA \cite{hu2021lora} injetados nas projeções qkv e proj de cada bloco do Transformer, com rank 8 e alpha 16 na configuração padrão. O módulo de cross-attention é uma variante diferencial, proposta originalmente para modelagem de linguagem em 2024, que computa a atenção como a diferença entre duas projeções softmax e suprime correspondências espúrias entre regiões irrelevantes das faces. Uma cabeça auxiliar prediz o tipo da relação a partir de um token aprendível, em paralelo com a cabeça binária de verificação.
+
+O Modelo 05 cobre quatro regimes de plasticidade do backbone, comparados no Capítulo 5. No regime de referência o backbone DINOv2 permanece congelado e o treino atinge apenas LoRA, cross-attention e cabeças, com cerca de 8,5 milhões de parâmetros treináveis, aproximadamente dez vezes menos que o Modelo 02. As outras três variantes flexibilizam o backbone em graus diferentes. Quando os quatro blocos finais do DINOv2 ganham gradiente com taxa de aprendizado reduzida por um fator de cem em relação à cabeça, o partial unfreeze chega a cerca de 30 milhões de parâmetros ativos. Liberando todo o backbone e usando pico de taxa de aprendizado no estilo do Modelo 02, o full unfreeze ativa cerca de 95 milhões de parâmetros. Já a variante hybrid abandona o ramo único do DINOv2 e usa dois encoders congelados em paralelo, DINOv2 e o vit\_base\_patch16\_224 do Modelo 02, deixando cerca de 11,6 milhões de parâmetros treináveis apenas nos módulos de fusão e atenção. Rank LoRA, dropout, escala de taxa de aprendizado e razão entre BCE e Supervised Contrastive variam por run e ficam detalhados no log de execução do modelo, resumidos no Capítulo 5.
+
+\subsection{Modelo 06, retrieval-augmented sobre galeria}
+
+O Modelo 06 adota uma abordagem de memória não-paramétrica. Em vez de forçar a decisão de parentesco numa única passagem feed-forward, o modelo mantém uma galeria de pares positivos do conjunto de treino e, em inferência, recupera os K pares mais similares ao par de consulta. Os pares recuperados, junto com seus tipos de relação, viram tokens de contexto para um módulo de cross-attention que olha da consulta para os suportes. O encoder permanece congelado, e a galeria é construída uma vez por run, com cerca de 33 mil pares positivos do split de treino do FIW. A configuração padrão usa K igual a 32 e duas camadas de cross-attention, com total treinável entre 8 e 12 milhões de parâmetros, dependendo da configuração de retrieval. A motivação é dar acesso explícito a exemplos conhecidos de parentesco que se parecem com o par de consulta, em vez de tentar absorver tudo nos pesos.
+
+\section{Invariância geracional por síntese de idade}
+\label{sec:invariancia_geracional}
+
+Comparar um pai de cinquenta anos com um filho de vinte traz um problema conhecido em parentesco facial. O sinal facial fica dominado por mudanças associadas ao envelhecimento, e parte da semelhança de parentesco entre as duas pessoas fica encoberta. Para reduzir esse efeito, os cinco modelos supervisionados deste trabalho usam uma estratégia transversal de invariância geracional. Cada face passa uma vez por um módulo de síntese de idade que produz três variantes etárias adicionais nas faixas de criança, jovem e idoso, e a comparação entre dois indivíduos passa a agregar quatro pares de imagens em vez de um só.
+
+Dado um par de consulta $(a, b)$, o módulo de síntese gera $a_{\text{cri}}, a_{\text{jov}}, a_{\text{ido}}$ e $b_{\text{cri}}, b_{\text{jov}}, b_{\text{ido}}$. A inferência roda sobre quatro pares diagonais. O par original $(a, b)$ carrega o sinal mais fiel ao indivíduo e recebe o maior peso. Os três pares etários $(a_{\text{cri}}, b_{\text{cri}})$, $(a_{\text{jov}}, b_{\text{jov}})$ e $(a_{\text{ido}}, b_{\text{ido}})$ entram como votos auxiliares que aproximam a comparação de uma mesma faixa etária e reduzem o viés introduzido pela assimetria de idade entre as faces originais. Cada par produz um escore de similaridade $s_k$ pelo mesmo modelo, e o escore final é a combinação convexa
+
+\begin{equation}
+s = w_0 \, s_0 + w_{\text{cri}} \, s_{\text{cri}} + w_{\text{jov}} \, s_{\text{jov}} + w_{\text{ido}} \, s_{\text{ido}},
+\label{eq:invariancia_geracional}
+\end{equation}
+
+com $w_0 + w_{\text{cri}} + w_{\text{jov}} + w_{\text{ido}} = 1$, $w_0 > w_{\text{cri}}, w_{\text{jov}}, w_{\text{ido}}$ e os três pesos secundários iguais entre si. Os valores padrão são $w_0 = 0{,}55$ e $w_k = 0{,}15$ para cada variante etária, e os pesos são reotimizados em validação por grid search no simplex sujeito à restrição $w_0 \ge 0{,}4$.
+
+O módulo de síntese é o SAM \cite{alaluf2022sam}, com pesos pré-treinados externos, descrito no Capítulo~\ref{cap:Fundamentação Teórica}. A síntese roda em pré-processamento, uma única vez por face do banco, e as três variantes ficam em cache em disco. Em inferência o custo extra fica em $4\times$ no número de forward passes por par, e em treino o esquema é mantido para que o modelo veja, em cada batch, as quatro variantes do par positivo e do par negativo.
+
+A ativação efetiva do SAM nos cinco modelos depende da disponibilidade dos pesos pré-treinados de cerca de 4,5 GB e do tempo de pré-processamento das três variantes etárias para o banco completo. Nesta versão da metodologia, o esquema diagonal de quatro pares é descrito como o protocolo padrão, mas só o Modelo 01 tem o SAM integrado ao pipeline de treino, e mesmo nele apenas parte dos runs operou com o módulo ativo. Para os Modelos 02, 03, 05 e 06 a ativação fica registrada no \texttt{RUN\_LOG.md} de cada run, e o Capítulo 5 indica run a run se a invariância geracional esteve ativa, se rodou só com o par original ou se usou a variante histórica de nove comparações do Modelo 01.
+
+\section{Treinamento}
+
+Todos os modelos supervisionados seguem a mesma receita de treinamento, com pequenas variações por modelo nos casos em que a literatura aponta valores diferentes. A perda padrão é a Supervised Contrastive Loss com distância de cosseno e margem 0,3, escolhida por ter sido a configuração com melhor desempenho no estudo preliminar do Modelo 02. O otimizador é o AdamW, com weight decay de 5e-5 e gradient clipping de norma máxima 1,0.
+
+A taxa de aprendizado tem warmup linear de três a oito épocas e decai por cosine annealing até 1e-7. O batch size é 16, limite imposto pela memória da GPU usada, e o treinamento usa precisão mista com FP16 quando a plataforma suporta. O dropout é 0,25 e o early stopping interrompe o treino após 25 épocas sem melhora na métrica de validação. A semente aleatória é fixada em 42 para amostragem de pares e splits, de modo que cada run seja reproduzível a partir do comando registrado. A Tabela~\ref{tab:hyperparams} resume os valores padrão.
+
+\begin{table}[h]
+\centering
+\caption{Receita padrão de hiperparâmetros de treinamento. Valores entre parênteses indicam os ajustes finos usados em runs específicas.}
+\label{tab:hyperparams}
+\begin{tabular}{ll}
+\hline
+\textbf{Parâmetro} & \textbf{Valor padrão} \\
+\hline
+Loss & Supervised Contrastive (distância cosseno, margem 0,3) \\
+Otimizador & AdamW, weight\_decay = 5e-5 \\
+Taxa de aprendizado (pico) & 2e-6 a 5e-6 (M02 R031: 5e-6; M05: 3e-4 por LoRA) \\
+Scheduler & Cosine annealing até 1e-7 \\
+Warmup & 3 a 8 épocas, linear \\
+Batch size & 16 (com gradient accumulation onde aplicável) \\
+Dropout & 0,25 \\
+Gradient clipping & max\_norm = 1,0 \\
+Mixed precision & AMP FP16 \\
+Negative ratio (treino) & 2:1, relation-matched \\
+Negative ratio (avaliação) & 1:1, random \\
+Early stopping & paciência 25 épocas \\
+Seed & 42 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Estratégias de congelamento}
+
+O Modelo 03, por ter 176 milhões de parâmetros e dois backbones grandes, oferece um caso natural para investigar como o congelamento de pesos pré-treinados afeta o desempenho final. As quatro estratégias consideradas são tratadas como variantes do mesmo modelo e comparadas no Capítulo 5.
+
+A variante mais permissiva treina todos os pesos desde o início, sem congelamento. No outro extremo, os dois backbones permanecem congelados durante todo o treino e a otimização atinge só a fusão e a cabeça, o que reduz bastante o custo computacional por época. Entre os dois extremos, uma variante começa com backbones congelados e libera todos os pesos depois de algumas épocas, treinando até saturar a métrica de validação. A última descongela apenas as camadas superiores de cada backbone, em geral os dois últimos estágios do ConvNeXt e os quatro últimos blocos do ViT, com taxa de aprendizado reduzida por um fator entre 1e-2 e 1e-3 em relação à cabeça.
+
+O Modelo 05 passa por estudo análogo de plasticidade, descrito na subseção própria. A configuração de referência mantém o backbone congelado com adaptação por LoRA, e variantes de partial unfreeze, full unfreeze e hybrid backbone são comparadas em runs separadas. O Modelo 06 mantém o encoder congelado em todas as configurações. Os Modelos 01 e 02 são treinados sem congelamento.
+
+\section{Protocolo de avaliação}
+
+A avaliação de cada modelo segue o protocolo de validação cruzada de cinco dobras, com adaptação para a unidade de partição apropriada a cada banco.
+
+Em KinFaceW-I, as cinco dobras são formadas por pares disjuntos, no padrão tradicional do benchmark. Para cada dobra $i$, o modelo é treinado sobre as outras quatro dobras, validado em uma fração da dobra de treino reservada como conjunto de validação, e testado na dobra $i$. Os hiperparâmetros são fixados antes do início da validação cruzada, e a média sobre as cinco dobras é o resultado reportado, com desvio padrão como medida de variabilidade.
+
+Em Families in the Wild, as cinco dobras são formadas por famílias disjuntas. As 762 famílias do banco são distribuídas em cinco grupos de aproximadamente 152 famílias cada, e nenhum membro de uma família aparece em mais de uma dobra. Esta garantia de disjunção por família é importante porque evita que o modelo memorize características de famílias específicas durante o treino e seja testado sobre as mesmas pessoas em pares diferentes. Para cada dobra $i$, o modelo é treinado sobre as famílias das outras quatro dobras, valida sobre uma fração reservada do treino, e testa nas famílias da dobra $i$.
+
+A seleção do threshold de decisão segue o mesmo procedimento em cada dobra. Após o treino, o modelo produz scores nos dados de validação. Um grid search no intervalo de 0,10 a 0,95 encontra o threshold $\tau^*$ que maximiza F1 na validação. O mesmo $\tau^*$ é aplicado, sem reotimização, na partição de teste da dobra, e as métricas reportadas são as do teste. Essa separação evita o data leakage que ocorreria se o threshold fosse escolhido sobre o próprio conjunto de teste. Ao final das cinco dobras, cada métrica é reportada como média mais ou menos desvio padrão.
+
+Para os modelos exploratórios M05 e M06 o mesmo protocolo se aplica. O encoder permanece congelado em ambos. A galeria do Modelo 06 é reconstruída a cada dobra a partir da partição de treino dessa dobra, sem qualquer informação do teste.
+
+\section{Métricas}
+
+As métricas reportadas dividem-se em três grupos. As métricas binárias avaliam a tarefa de verificação propriamente dita e cobrem accuracy, precision, recall, F1, ROC AUC, average precision e taxas de aceitação verdadeira em duas taxas fixas de falso positivo, TAR@FAR=0,1 e TAR@FAR=0,01.
+
+O ROC AUC é a métrica principal por ser independente do threshold escolhido. As métricas TAR@FAR são relevantes porque medem o desempenho em regime de alta precisão, mais próximo do uso prático em aplicações forenses, onde falsos positivos têm custo alto.
+
+Por relação, reporta-se accuracy e F1 condicionais ao tipo de parentesco do par. Esse recorte é importante porque a literatura mostra desempenho muito heterogêneo entre relações, com pais e filhos atingindo valores altos e avós e netos historicamente mais difíceis.
+
+Para os baselines com VLMs, descritos na próxima seção e que avaliam classificação em onze classes em vez de verificação binária, aplicam-se métricas multiclasse específicas. Para essa tarefa são reportadas accuracy, macro-precision, macro-recall, macro-F1 e matriz de confusão.
+
+\section{Baselines com modelos multimodais}
+
+Os baselines com VLMs entram como medida do que um modelo multimodal generalista consegue inferir sobre parentesco facial sem treinamento específico no domínio. Dois modelos são avaliados, sob três regimes progressivos.
+
+\subsection{Configuração comum}
+
+A tarefa é a classificação multiclasse das onze relações do FIW. A entrada é uma imagem composta lado a lado, formada por duas faces do par a ser classificado, e a saída é uma das onze relações ou uma indicação de não-parentesco. As amostras são extraídas do split de teste do FIW Track-I com seleção estratificada quase uniforme entre as classes. Os modelos não recebem qualquer treinamento sobre FIW e operam apenas a partir do prompt textual e da imagem composta. Por usarem tarefa diferente dos modelos supervisionados, os números reportados para VLMs são comparados qualitativamente, não métrica contra métrica.
+
+\subsection{Codex zero-shot}
+
+O primeiro baseline é o gpt-5.4-mini, executado via Codex CLI com \texttt{reasoning\_effort=low}. A amostra é de 750 pares positivos balanceados entre as onze classes, totalizando 1.500 imagens. O prompt é direto, descreve as onze classes possíveis, e pede a classificação da relação entre as duas faces.
+
+\subsection{Claude Sonnet zero-shot}
+
+O segundo baseline é o claude-sonnet-4-6, avaliado por visão direta sobre a mesma estrutura de prompt do Codex. Por restrições de tempo, a avaliação do Claude usa um piloto menor de 75 pares balanceados, retirados do mesmo conjunto de teste. Isso permite comparação direta com o Codex no recorte de 75 pares, e comparação só qualitativa sobre os 750 pares.
+
+\subsection{Adaptação ao domínio por prompt no Codex}
+
+Para modificar o comportamento do VLM sem fine-tuning, este regime combina três mecanismos. O few-shot in-context learning entra com sete a onze exemplos retirados do split de validação do FIW, escolhidos para cobrir as classes mais difíceis. Em torno desses exemplos, um prompt estruturado obriga o modelo a estimar, antes da resposta final, o gap geracional aparente, o gênero de cada face e qual face parece mais velha. Uma calibração leve treinada em 110 pares de validação ajusta a resposta final a partir dessas saídas auxiliares.
+
+Quatro configurações são comparadas em validação, e a melhor é avaliada nos 750 pares de teste, os mesmos do zero-shot, o que permite comparação direta entre os dois regimes. A adaptação aqui é estritamente inferencial e não envolve atualização de pesos do modelo.
+
+\subsection{Prompts direcionados por treinamento}
+
+Um terceiro regime de VLMs é considerado, baseado em curadoria iterativa de exemplos e estruturas de prompt otimizadas sobre um subconjunto de validação. A diferença em relação à adaptação por prompt é o ciclo de iteração, em que o conjunto de exemplos few-shot e a estrutura do prompt são ajustados em rodadas sucessivas a partir do desempenho observado em validação. O regime é executado apenas para o Codex, pelo custo de chamadas, e os resultados aparecem no Capítulo 5.
+
+\begin{table}[h]
+\centering
+\caption{Especificação dos baselines com modelos multimodais.}
+\label{tab:vlms_metodologia}
+\begin{tabular}{lll}
+\hline
+\textbf{Modelo} & \textbf{Regime} & \textbf{Amostra de teste} \\
+\hline
+Codex (gpt-5.4-mini) & Zero-shot                       & 750 pares balanceados \\
+Codex (gpt-5.4-mini) & Adaptação por prompt (7-shot)    & 750 pares (mesmos do zero-shot) \\
+Codex (gpt-5.4-mini) & Prompts direcionados por treino  & 750 pares (mesmos do zero-shot) \\
+Claude Sonnet 4.6   & Zero-shot direto                  & 75 pares (piloto) \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Hardware e software}
+
+Todos os experimentos foram executados em uma única máquina com GPU AMD Radeon RX 6750 XT, arquitetura RDNA2 com identificador gfx1031, 12 GB de memória GDDR6. A plataforma de software é o ROCm 5.7 com PyTorch 2.3.1 compilado para essa versão do ROCm. As variáveis de ambiente \texttt{HSA\_OVERRIDE\_GFX\_VERSION=10.3.0}, \texttt{MIOPEN\_FIND\_MODE=FAST} e \texttt{HSA\_FORCE\_FINE\_GRAIN\_PCIE=1} são definidas antes da inicialização do framework para garantir compatibilidade e desempenho razoável. O treinamento usa precisão mista, FP16 nas operações suportadas e FP32 nas demais.
+
+Este hardware impôs restrições reais nas escolhas metodológicas. O batch size máximo com backbones descongelados é 16, e qualquer treinamento que demande mais de cerca de 10 GB de memória estoura o limite. O Modelo 03 cresceu o suficiente para tornar full unfreeze inviável com batch maior. O Modelo 05 só cabe na GPU porque o backbone permanece congelado, e os adaptadores LoRA mantêm a memória ativa em níveis confortáveis. O Modelo 06 mantém a galeria principalmente em RAM da máquina, fora da GPU, para liberar VRAM para o encoder e a cross-attention de retrieval.
+
+\section{Reprodutibilidade}
+
+Cada modelo tem seu próprio diretório no repositório, com pipeline de execução em ROCm e em CUDA. Um script orquestrador, \texttt{AMD/run\_pipeline.sh}, encadeia treino, teste e avaliação, gera saídas em diretórios numerados automaticamente (\texttt{output/001/}, \texttt{output/002/} e assim por diante, sem sobrescrita) e produz, ao final de cada run, um arquivo \texttt{RUN\_LOG.md} no diretório do modelo. O \texttt{RUN\_LOG.md} registra o comando exato com todas as variáveis de ambiente, a configuração completa em formato tabular, a trajetória de treinamento epoch a epoch, e as métricas finais de teste com per-relação. Qualquer run reportado no Capítulo 5 pode ser recriada a partir desse registro.
+
+As métricas em formato JSON, as figuras de ROC e matriz de confusão, e os checkpoints de melhor desempenho ficam em \texttt{output/<id>/results/} e \texttt{output/<id>/checkpoints/} de cada modelo. As seeds para sampling de pares e splits ficam fixadas em 42, e as splits family-disjoint do FIW e as cinco dobras de CV são geradas determinística e identicamente entre execuções.

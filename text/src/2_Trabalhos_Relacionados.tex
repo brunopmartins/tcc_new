@@ -1,14 +1,14 @@
 \chapter[Trabalhos Relacionados]{Trabalhos Relacionados}
 \label{cap:Trabalhos Relacionados}
 
-A literatura de verificação de parentesco facial cresceu bastante entre 2010 e 2025, e o que começou como um problema marginal de visão computacional virou um campo com benchmark próprio, competições anuais e dezenas de modelos competindo. Este capítulo organiza os trabalhos por família de método, do primeiro classificador baseado em atributos manuais aos modelos com Vision Transformer e atenção cruzada entre faces, e termina com o lugar dos modelos multimodais como baselines.
+A literatura de verificação de parentesco facial cresceu bastante entre 2010 e 2025. O que começou como um problema marginal de visão computacional virou um campo com benchmark próprio, competições anuais e dezenas de modelos competindo, do primeiro classificador baseado em atributos manuais aos modelos com Vision Transformer e atenção cruzada entre faces. Os modelos multimodais aparecem ao final como baselines complementares.
 
 \section{Métodos clássicos e datasets fundadores}
 
-O primeiro modelo computacional de verificação visual de parentesco foi o de \citeonline{fang2010towards}, que tratou o problema como classificação binária a partir de atributos faciais extraídos com estrutura pictural \cite{felzenszwalb2005pictorial}. Os atributos cobriam cores de olhos, pele e cabelo, partes da face, distâncias entre essas partes e histogramas de gradiente, agrupados em um vetor de atributos manual. Os autores montaram um conjunto próprio de 150 pares de pais e filhos, treinaram k-NN e SVM com função de base radial, e reportaram 68,6\% de acurácia em validação cruzada.
+O primeiro modelo computacional de verificação visual de parentesco foi o de \citeonline{fang2010towards}, que tratou o problema como classificação binária a partir de atributos faciais extraídos com estrutura pictural \cite{felzenszwalb2005pictorial}. Os atributos cobriam cores de olhos, pele e cabelo, partes da face, distâncias entre essas partes e histogramas de gradiente, agrupados em um vetor de atributos manual. Os autores montaram um conjunto próprio de 150 pares de pais e filhos, treinaram k-NN e SVM com função de base radial, com 68,6\% de acurácia em validação cruzada.
 
 Em paralelo, surgiram bancos públicos que tornaram a tarefa comparável entre laboratórios. \citeonline{lu2014kinface}
-liberaram KinFaceW-I e KinFaceW-II, com cerca de mil pares por dataset e quatro tipos de relação, e ainda hoje servem para prototipagem rápida e validação cruzada de cinco dobras. Pouco depois, \citeonline{robinson2016fiw}
+liberaram KinFaceW-I e KinFaceW-II, com cerca de mil pares por dataset distribuídos em quatro tipos de relação. Ambos seguem em uso até hoje para prototipagem rápida ou validação cruzada de cinco dobras. Pouco depois, \citeonline{robinson2016fiw}
 introduziram a primeira versão do Families in the Wild, que viraria, dois anos depois, o principal benchmark da área.
 
 \section{Aprendizado profundo e redes siamesas}
@@ -23,7 +23,7 @@ CosFace \cite{wang2018cosface}
 e ArcFace \cite{deng2019arcface}
 reformulou o softmax para impor margens angulares no espaço de embeddings, e essas perdas migraram naturalmente para parentesco. Em paralelo, abordagens com triplet loss \cite{schroff2015facenet}
 e Supervised Contrastive \cite{khosla2020supervised}
-passaram a ser usadas para aproximar pares de parentes próximos no espaço de embeddings e afastar pares sem vínculo biológico.
+passaram a ser usadas para aproximar pares de parentes próximos no espaço de embeddings, afastando pares sem vínculo biológico.
 
 Trabalhos posteriores afinaram a perda para o domínio. \citeonline{lyu2023kfc}
 propuseram a Fair Contrastive Loss, que adiciona termos para mitigar viés demográfico durante o treino, e relatam cerca de 81\% de acurácia em FIW. Variantes posteriores usam o tipo da relação como sinal extra para estruturar o espaço, em vez de apenas o rótulo binário entre kin e non-kin.
@@ -49,8 +49,8 @@ Esses dois eixos não são atacados frontalmente neste trabalho, mas aparecem co
 
 \section{Modelos multimodais como baselines}
 
-Modelos multimodais generalistas, em particular VLMs treinados em grandes coleções de pares imagem-texto, ganharam tração no fim da década e abriram a pergunta sobre se essa classe consegue resolver verificação de parentesco em zero-shot, sem treino específico no domínio. O CLIP \cite{radford2021learning}
-foi um dos primeiros nesse formato, e modelos posteriores, como GPT-4V e Claude Sonnet, ampliaram o escopo para tarefas mais variadas. Avaliações sistemáticas de VLMs em parentesco facial ainda são raras na literatura, e os resultados parciais sugerem que esses modelos exploram bem pistas de idade e gênero, mas falham em distinções genealógicas mais finas como avós e netos.
+Modelos multimodais generalistas, em particular VLMs treinados em grandes coleções de pares imagem-texto, ganharam tração no fim da década, abrindo a pergunta sobre se essa classe consegue resolver verificação de parentesco em zero-shot, sem treino específico no domínio. O CLIP \cite{radford2021learning}
+foi um dos primeiros nesse formato, e modelos posteriores, como GPT-4V e Claude Sonnet, ampliaram o escopo para tarefas mais variadas. Avaliações sistemáticas de VLMs em parentesco facial ainda são raras na literatura; os resultados parciais sugerem que esses modelos exploram bem pistas de idade ou gênero, porém falham em distinções genealógicas mais finas como avós e netos.
 
 Por isso, neste trabalho, os VLMs entram apenas como baselines complementares, não como competidores dos modelos supervisionados, e são avaliados em três regimes (zero-shot, adaptação por prompt e prompts direcionados por treinamento) descritos no Capítulo 4.
 
