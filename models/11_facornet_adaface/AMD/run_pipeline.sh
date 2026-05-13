@@ -76,16 +76,20 @@ DROPOUT="${DROPOUT:-0.2}"
 FREEZE_BACKBONE="${FREEZE_BACKBONE:-0}"
 NO_POSITIONAL_EMBEDDING="${NO_POSITIONAL_EMBEDDING:-0}"
 NO_GLOBAL_EMBEDDING="${NO_GLOBAL_EMBEDDING:-0}"
-USE_CLASSIFIER_HEAD="${USE_CLASSIFIER_HEAD:-0}"
+USE_CLASSIFIER_HEAD="${USE_CLASSIFIER_HEAD:-1}"
 # M11 architecture variant
-USE_MULTISTAGE="${USE_MULTISTAGE:-0}"
+USE_MULTISTAGE="${USE_MULTISTAGE:-1}"
 CROSS_ATTN_STAGES="${CROSS_ATTN_STAGES:-3,4}"
 CROSS_ATTN_LAYERS_PER_STAGE="${CROSS_ATTN_LAYERS_PER_STAGE:-1}"
-# FaCoRNet recipe defaults differ from M10:
-#   * Loss: relation_guided (FaCoR-inspired attention-driven dynamic temperature)
-#   * Temperature: 0.07 (FaCoRNet base; vs M10 cosine_contrastive's 0.3)
-#   * Negative sampling: relation_matched on both train and eval (hard negatives)
-LOSS="${LOSS:-relation_guided}"
+# DEFAULTS POST-BUG-DISCOVERY (see discussao.md):
+#   * Loss: bce (uses labels; safe for mixed kin/non-kin batches)
+#   * Classifier head: ON (BCE on MLP head, not on raw embedding similarity)
+#   * Negative sampling: relation_matched (FaCoRNet hard negatives — the only
+#     FaCoRNet treatment that doesn't require code changes to losses.py)
+#   * Multistage: ON (M09 architecture, best AdaFace-based to date)
+# DO NOT USE LOSS=relation_guided or LOSS=cosine_contrastive without an
+# explicit classifier head — those losses ignore labels and degenerate.
+LOSS="${LOSS:-bce}"
 TEMPERATURE="${TEMPERATURE:-0.07}"
 MARGIN="${MARGIN:-0.3}"
 NEGATIVE_RATIO="${NEGATIVE_RATIO:-1.0}"

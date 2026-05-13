@@ -408,8 +408,14 @@ def main() -> None:
         print(f"  AdaFace weights:    {args.adaface_weights}")
         print(f"  Cross-attn stages:  {cross_attn_stages}")
         print(f"  Layers per stage:   {args.cross_attn_layers_per_stage}")
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "09_adaface_multistage"))
-        from model import build_adaface_multistage_model  # noqa: E402
+        # Load M09's model.py by absolute path under a unique module name to
+        # avoid colliding with M11's already-imported `model` module.
+        import importlib.util
+        m09_model_path = Path(__file__).parent.parent.parent / "09_adaface_multistage" / "model.py"
+        spec = importlib.util.spec_from_file_location("m09_model_multistage", m09_model_path)
+        m09_model_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m09_model_mod)
+        build_adaface_multistage_model = m09_model_mod.build_adaface_multistage_model
         model = build_adaface_multistage_model(
             adaface_weights=args.adaface_weights,
             embedding_dim=args.embedding_dim,

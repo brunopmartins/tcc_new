@@ -1,65 +1,87 @@
-# Model 11 — AdaFace IR-101 + FaCoRNet Recipe (full)
+# Model 11 — AdaFace IR-101 + FaCoRNet treatments (label-aware)
 
-## Motivation
+## Important context (2026-05-13)
 
-M10 and M02 already implement the **FaCoR cross-attention module**
-(bidirectional Q1·K2 / Q2·K1 with shared FFN) on top of their respective
-backbones. But the FaCoRNet paper bundles that module with a *specific
-training recipe* — a contrastive loss whose temperature is dynamically
-modulated by the cross-attention map, plus hard-negative mining via
-relation-matched sampling, plus a face-discriminative backbone (AdaFace
-IR-101).
+The initial "FaCoRNet recipe" framing assumed the project's existing
+`relation_guided` and `cosine_contrastive` losses were usable for our
+mixed kin/non-kin batches. **They are not.** A pre-run audit
+([discussao.md](discussao.md)) showed that both losses ignore the
+batch labels — they treat every `(emb1_i, emb2_i)` correspondence as a
+positive pair in the InfoNCE numerator, regardless of whether the dataset
+labelled it kin (1) or non-kin (0). Combined with `relation_matched`
+hard negatives, this trained the model to *pull non-kin pairs closer*,
+producing `predict-all-kin` degenerate behaviour (Val Acc 50 %,
+per-relation 1.000 uniform).
 
-M11 isolates **the rest of the FaCoRNet recipe** on top of M10's
-architecture, so we can attribute future Test-AUC differences to the
-loss + sampling stack rather than to the cross-attention module itself.
+This is documented in:
 
-The hypothesis being tested:
+- `models/shared/losses.py:74` — comment "Optional labels (not used in
+  standard InfoNCE)" inside `CosineContrastiveLoss.forward`
+- `models/shared/losses.py:258` — `RelationGuidedContrastiveLoss.forward`
+  signature accepts only `emb1, emb2, attention_map` (no labels)
 
-> **Does the full FaCoRNet recipe (relation-guided loss + relation-matched
-> negatives) on M10's architecture produce a different val→test
-> generalisation profile than M10 R003's BCE classifier head?**
+The original FaCoRNet paper (Su et al., ICCV Workshops 2023) constructs
+its batches differently: positives come from the correspondence index;
+negatives are *implicit* via cross-pair terms in the InfoNCE denominator
+(`(x_i, x_j)` and `(x_i, y_j)`). Our project's dataset emits *explicit*
+`label ∈ {0,1}` pairs, so the losses need to be label-aware to use them.
 
-M10 R003 used a BCE classifier head and got Val AUC 0.8875 / Test AUC
-0.7478 (-0.140 gap). M11 R001 is set up to answer whether the
-attention-driven contrastive loss + hard negatives close that gap.
+**M11 has been re-scoped accordingly.** See "Current scope" below.
 
-## Recipe (what changes vs M10)
+## Current scope (post bug discovery)
 
-| Component                    | M10 R003                | **M11 R001**                                      |
+M11 tests the **single FaCoRNet treatment that can be applied to our
+existing pipeline without breaking the loss semantics**: `relation_matched`
+hard negative sampling. The architecture and loss stack stay aligned with
+M09 R001 (multi-stage cross-attention + BCE classifier head, the
+combination that achieved Test AUC 0.7982).
+
+> **Does adding `relation_matched` hard negatives (FaCoRNet's negative
+> sampling strategy) to the M09 R001 stack improve over M09 R001's random
+> negatives?**
+
+If this works, it isolates the value of hard-negative mining. A future
+**M11 R002** can implement a faithful, label-aware Rel-Guide loss (Caminho A
+or Caminho B from `discussao.md`) and test the loss-side of the FaCoRNet
+recipe separately.
+
+## Recipe (post bug discovery)
+
+M11 R001 isolates the single FaCoRNet-inspired knob that works with our
+existing dataset/loss contract:
+
+| Component                    | M09 R001                | **M11 R001 (current)**                            |
 |------------------------------|-------------------------|---------------------------------------------------|
 | Backbone                     | AdaFace IR-101 full FT  | **Same**                                          |
-| Cross-attention              | FaCoR, top-only, 2L×8H  | **Same**                                          |
-| Positional embedding         | Learnable 49 tokens     | **Same**                                          |
+| Cross-attention              | Multi-stage (3+4) FaCoR | **Same**                                          |
+| Positional embedding         | Learnable per-stage     | **Same**                                          |
 | Global embedding             | AdaFace pool            | **Same**                                          |
-| **Loss**                     | bce (classifier head)   | **`relation_guided`** (attention-driven contrastive) |
-| **Base temperature**         | 0.3                     | **0.07** (FaCoRNet base)                          |
+| Classifier head              | enabled (MLP on diff/prod) | **Same**                                       |
+| Loss                         | bce on classifier output | **Same (bce)**                                   |
 | **Train neg. sampling**      | random                  | **`relation_matched`** (hard negatives)           |
 | **Eval neg. sampling**       | random                  | **`relation_matched`**                            |
-| Classifier head              | enabled (MLP on diff/prod) | **disabled** (embeddings consumed directly)    |
-| LR (peak)                    | 5e-6                    | Same                                              |
-| Warmup                       | 5 epochs                | Same                                              |
-| Dropout                      | 0.2                     | Same                                              |
-| Batch                        | 8 × grad-accum 4 (32)   | Same                                              |
+| LR (peak), warmup, dropout   | 5e-6, 5, 0.2            | Same                                              |
+| Batch                        | 4 × grad-accum 8 (32)   | Same                                              |
 
-### What `relation_guided` loss does
+The only knob changed from M09 R001 to M11 R001 is the negative
+sampling strategy. Everything else is identical.
 
-`RelationGuidedContrastiveLoss` is implemented in
-`models/shared/losses.py`. Given:
+### What the failed FaCoRNet-recipe attempts revealed
 
-- L2-normalised embeddings `(emb1, emb2)` for each pair,
-- The cross-attention map `attn_map` of shape `(B, heads, T, T)`,
+Three M11 R001 attempts were killed early (each at ep 1-2) before the
+bug was diagnosed:
 
-it computes a supervised contrastive loss where the temperature for each
-sample is `base_temperature × (1 + α × attn_intensity)`, with
-`attn_intensity = attn_map.mean(dim=[heads, T_q, T_k])`.
+| Attempt | Config                                  | Outcome                                       |
+|---------|-----------------------------------------|-----------------------------------------------|
+| v1      | `relation_guided`, temp 0.07, multistage | Train loss collapsed 0.80→0.02 in 1 epoch; per-rel uniform 1.000; Val Acc 50 % |
+| v2      | `relation_guided`, temp 0.3, multistage  | Slower collapse but same degenerate state     |
+| v3      | `cosine_contrastive`, temp 0.3, multistage | Same degenerate state                       |
 
-In effect, **high-attention pairs (the model "focused" on something) use
-a higher temperature** → smoother gradients, less aggressive pulling
-together of positives. **Low-attention pairs use a lower temperature** →
-sharper, more aggressive separation when the model "didn't engage". This
-echoes FaCoRNet's claim that attention-driven dynamic temperature helps
-the model calibrate its confidence per-pair.
+Common signature: `predict-all-kin` regime, Val Acc stuck at 50 %, Val
+AUC 0.60-0.69 (barely above random). Root cause: both losses ignore the
+batch labels and treat every (emb1_i, emb2_i) correspondence as a
+positive in the InfoNCE numerator. The dataset's `label=0` pairs were
+trained to be pulled together along with the `label=1` pairs.
 
 ### What `relation_matched` negative sampling does
 
@@ -75,50 +97,39 @@ This is implemented in `models/shared/dataset.py` via
 
 ## Differences from M09
 
-M09 also uses AdaFace IR-101, but **modifies the architecture** by
-injecting cross-attention after stages 3 and 4 of the backbone (SAI-style
-inside-the-backbone interaction). M11 leaves the architecture alone (top-
-only) and **modifies the training recipe** instead. They test orthogonal
-hypotheses and together with M10 R003 form a three-way comparison:
+| Model       | Architecture                | Recipe                                                  |
+|-------------|-----------------------------|---------------------------------------------------------|
+| M10 R003    | FaCoR top-only              | BCE + classifier head + **random** negatives            |
+| M09 R001    | Multi-stage (stages 3+4)    | BCE + classifier head + **random** negatives            |
+| **M11 R001**| Multi-stage (stages 3+4)    | BCE + classifier head + **`relation_matched`** negatives|
+| M11 R002 (planned) | Multi-stage          | label-aware Rel-Guide (faithful port) + `relation_matched` |
 
-| Model       | Architecture                | Training recipe          |
-|-------------|-----------------------------|--------------------------|
-| M10 R003    | FaCoR top-only              | BCE + random negatives   |
-| M09 R001    | **Multi-stage cross-attn**  | BCE + random negatives   |
-| **M11 R001**| FaCoR top-only              | **FaCoRNet (relation_guided + relation_matched)** |
+## Launch
 
-## Two run variants planned
-
-M11 supports **two architecture variants** sharing the FaCoRNet recipe.
-The variant is selected at launch time via `USE_MULTISTAGE`; the
-checkpoint records the choice so `test.py` / `evaluate.py` rebuild the
-right model automatically.
-
-### R001 — top-only (default, M10 architecture)
-
-```bash
-SKIP_INSTALL=1 \
-ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
-BATCH_SIZE=8 GRAD_ACCUM=4 \
-NUM_WORKERS=4 SEED=42 \
-bash models/11_facornet_adaface/AMD/run_pipeline.sh
-```
-
-Isolates **the recipe** (loss + sampling + temperature) on top of M10's
-architecture. Direct ablation against M10 R003.
-
-### R002 — multi-stage (M09 architecture)
+### R001 — multi-stage + BCE classifier head + relation_matched negatives (current)
 
 ```bash
 SKIP_INSTALL=1 \
 ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
 BATCH_SIZE=4 GRAD_ACCUM=8 \
 USE_MULTISTAGE=1 \
+USE_CLASSIFIER_HEAD=1 \
+LOSS=bce \
 NUM_WORKERS=4 SEED=42 \
 bash models/11_facornet_adaface/AMD/run_pipeline.sh
 ```
 
-Combines M09's inside-the-backbone interaction with the FaCoRNet recipe.
+(Defaults TRAIN_NEGATIVE_STRATEGY and EVAL_NEGATIVE_STRATEGY are both
+`relation_matched` in the pipeline script — pass them explicitly if you
+want random for a control run.)
+
+### R002 (planned) — label-aware Rel-Guide
+
+R002 will exercise Caminho B from [discussao.md](discussao.md):
+implement a label-aware version of the FaCoR-style attention-driven
+contrastive loss (using the dataset's `label` to choose pull vs push per
+pair) and run with multistage + relation_matched negatives. This is
+where the "FaCoR loss" angle of the recipe actually gets tested.
 Direct ablation against M09 R001. M11/AMD/train.py imports
 `build_adaface_multistage_model` from `models/09_adaface_multistage/`
 when this flag is set — no code duplication.
@@ -141,37 +152,48 @@ LOSS=cosine_contrastive \
 
 ## 2×2 comparison the project will produce
 
-| Architecture \ Recipe       | BCE / classifier head (no recipe) | FaCoRNet recipe (relation_guided + relation_matched) |
-|-----------------------------|-----------------------------------|------------------------------------------------------|
-| FaCoR top-only              | **M10 R003** (Test AUC 0.7478)    | **M11 R001**                                         |
-| Multi-stage (stages 3 + 4)  | **M09 R001** (Test AUC 0.7982)    | **M11 R002**                                         |
+| Configuration               | BCE + classifier head (M09 stack) | label-aware Rel-Guide (planned)     |
+|-----------------------------|-----------------------------------|--------------------------------------|
+| random negatives            | **M09 R001** (Test AUC 0.7982)    | not planned                          |
+| **`relation_matched` negs** | **M11 R001** (current run)        | **M11 R002 (planned)**               |
 
-Differences M11 R001 → M11 R002 isolate the architecture given the
-FaCoRNet recipe is held constant. Differences M10/M09 → M11 R001/R002
-isolate the recipe given the architecture is held constant. Together
-they give a clean 2×2 ablation.
+M11 R001 vs M09 R001 isolates the `relation_matched` negative sampling
+contribution. M11 R002 vs M11 R001 would isolate the loss-side
+contribution (faithful FaCoR Rel-Guide vs BCE).
 
 ## Reference
 
-The FaCoRNet recipe in this model is inspired by published kinship
-verification work using AdaFace + FaCoR-style attention + dynamic
-temperature contrastive losses. The exact `RelationGuidedContrastiveLoss`
-implementation in `models/shared/losses.py` is a project-specific
-formulation derived from the published descriptions, not a verbatim port.
+- Su et al., *Kinship Representation Learning with Face Componential Relation*, ICCV Workshops 2023 — the FaCoRNet paper this model is inspired by.
+- Official code: `wtnthu/FaCoR` — particularly `losses.py` and `train_p.py`.
+- [discussao.md](discussao.md) — local audit identifying the
+  label-vs-loss contract bug in our `RelationGuidedContrastiveLoss` and
+  `CosineContrastiveLoss` implementations.
+
+The project's `RelationGuidedContrastiveLoss` (in `models/shared/losses.py`)
+is *inspired* by FaCoR's Rel-Guide concept (attention-driven dynamic
+temperature) but is not a faithful port. Differences:
+
+- Paper: `psi = M(beta) / s` with `M = global sum pool`, `s = 500`
+- Local: `temperature = base_temperature * (1 + alpha * mean(attention_map))`
+
+The paper's formulation gives a much wider temperature range. Ours
+collapses to ~constant `base_temperature` because `mean(softmaxed_attention)`
+is approximately a constant.
 
 ## Files
 
 ```
 11_facornet_adaface/
 ├── README.md                # This file
+├── discussao.md             # Bug audit + path forward
 ├── model.py                 # Same `AdaFaceFaCoR*` classes as M10 (no changes)
 ├── adaface_iresnet.py       # AdaFace IR-101 backbone (copied from M10)
-├── age_dataset.py           # Inert — SAM age augmentation not used by FaCoRNet
+├── age_dataset.py           # Inert — SAM age augmentation not used
 ├── AMD/
-│   ├── train.py
+│   ├── train.py             # Supports --use_multistage flag (imports M09's build via importlib.util)
 │   ├── test.py
 │   ├── evaluate.py
-│   └── run_pipeline.sh      # Defaults: LOSS=relation_guided, TEMP=0.07, neg=relation_matched
+│   └── run_pipeline.sh      # Defaults: USE_MULTISTAGE=0, LOSS=relation_guided (DO NOT USE w/o head); pass USE_CLASSIFIER_HEAD=1 LOSS=bce for the safe R001 recipe
 ├── weights/                 # Symlinked to M10's AdaFace .pth
 ├── data/                    # (gitignored)
 └── run-review/              # Per-run analyses (manual)

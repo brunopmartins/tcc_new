@@ -140,8 +140,12 @@ def main():
 
     # Build model — top-only or multistage based on checkpoint metadata
     if model_config.get("use_multistage"):
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "09_adaface_multistage"))
-        from model import build_adaface_multistage_model  # noqa: E402
+        import importlib.util
+        m09_model_path = Path(__file__).parent.parent.parent / "09_adaface_multistage" / "model.py"
+        spec = importlib.util.spec_from_file_location("m09_model_multistage", m09_model_path)
+        m09_model_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m09_model_mod)
+        build_adaface_multistage_model = m09_model_mod.build_adaface_multistage_model
         print(f"  [M11] Rebuilding as multistage (stages "
               f"{model_config.get('cross_attn_stages', [3, 4])})")
         model = build_adaface_multistage_model(
