@@ -273,6 +273,15 @@ class ROCmTrainer:
                 f"Time: {elapsed:.1f}s"
             )
 
+            per_rel = val_metrics.get("per_relation")
+            if per_rel:
+                rel_summary = " ".join(
+                    f"{rel}={metrics_dict.get('accuracy', 0.0):.3f}"
+                    for rel, metrics_dict in sorted(per_rel.items())
+                    if rel != "non-kin"
+                )
+                print(f"  per-rel | {rel_summary}")
+
             if current_metric > self.best_metric + self.config.min_delta:
                 self.best_metric = current_metric
                 self.best_epoch = epoch + 1

@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
-AMD ROCm training for Model 09 — AdaFace + Multi-Stage Cross-Attention
-(SAI-inspired, after stage 3 and stage 4 of the IR-101 body).
+AMD ROCm training for Model 11 — AdaFace + FaCoR Cross-Attention.
 
-Same recipe as M10 (M02-tuned: cosine_contrastive m=0.3, warmup=5, lr=5e-6,
-dropout=0.2). The architectural change is where cross-attention happens:
-M09 injects it twice INSIDE the backbone instead of only at the top.
+Mirrors M02's training recipe (best result so far on FIW: Test ROC AUC =
+0.850 with full ViT fine-tune, cosine_contrastive m=0.3, warmup=5, lr=5e-6,
+dropout=0.2). Only the backbone changes: AdaFace IR-101 (WebFace4M pretrain)
+instead of timm ViT-B/16.
 
-Input is 112×112 (AdaFace native), [-1, 1] norm. Gradient accumulation
-default 4 → effective batch 32.
+Notable platform-specific changes vs. M02's train.py:
+- Input is 112×112 (AdaFace native) — DataConfig overrides image_size.
+- Normalization is AdaFace's ([-1, 1] via mean=std=[0.5, 0.5, 0.5]).
+- No `--vit_model` / `--freeze_vit` / `--unfreeze_last_vit_blocks` flags;
+  replaced by `--adaface_weights` / `--freeze_backbone`.
+- Gradient accumulation is supported for VRAM headroom (default 4 → eff batch 32).
 """
 from __future__ import annotations
 
@@ -58,9 +62,17 @@ from protocol import (  # noqa: E402
     update_checkpoint_payload,
 )
 
-# Model
+# Model + M10-specific age-augmented dataset
+# Imported AFTER the shared imports above — `age_dataset` inserts its own
+# `shared/` path entry which would shadow `shared/AMD/trainer.py` for the
+# `from trainer import ROCmTrainer` line if imported earlier.
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from model import build_adaface_multistage_model  # noqa: E402
+from model import build_adaface_facor_model  # noqa: E402
+from age_dataset import (  # noqa: E402
+    AgeAugmentedKinshipPairDataset,
+    DEFAULT_TARGET_AGES,
+    parse_target_ages,
+)
 
 
 # AdaFace input convention
@@ -70,7 +82,7 @@ ADAFACE_IMG_SIZE = 112
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Train Model 09 — AdaFace + Multi-Stage Cross-Attention (AMD ROCm)")
+    p = argparse.ArgumentParser(description="Train Model 11 — AdaFace + FaCoR (AMD ROCm)")
 
     # Dataset
     p.add_argument("--train_dataset", type=str, default="fiw",
@@ -94,25 +106,40 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--img_size", type=int, default=ADAFACE_IMG_SIZE,
                    help="Input image size — AdaFace native is 112.")
 
-    # Multi-stage cross-attention
+    # FaCoR cross-attention
     p.add_argument("--embedding_dim", type=int, default=512)
-    p.add_argument("--cross_attn_stages", type=str, default="3,4",
-                   help="Comma-separated IR-101 stages where cross-attention "
-                        "is injected. Valid stages: 1=56×56×64, 2=28×28×128, "
-                        "3=14×14×256, 4=7×7×512. Default '3,4' covers the two "
-                        "deepest stages (manageable VRAM); '4' alone is the "
-                        "M10 baseline (top-only cross-attention).")
-    p.add_argument("--cross_attn_layers_per_stage", type=int, default=1,
-                   help="Number of FaCoR cross-attn blocks per tapped stage.")
+    p.add_argument("--cross_attn_layers", type=int, default=2)
     p.add_argument("--cross_attn_heads", type=int, default=8)
     p.add_argument("--no_positional_embedding", action="store_true",
-                   help="Disable the per-stage learnable positional embedding.")
+                   help="Disable learnable 49-token positional embedding.")
     p.add_argument("--no_global_embedding", action="store_true",
                    help="Skip AdaFace's pooled embedding (use only attended tokens).")
     p.add_argument("--dropout", type=float, default=0.2,
                    help="M02's tuned dropout for the FaCoR head is 0.2.")
     p.add_argument("--use_classifier_head", action="store_true",
                    help="Add BCE classifier on top of cosine embeddings.")
+
+    # M11 architecture variant: top-only (default, M10-style) vs multistage (M09-style)
+    p.add_argument("--use_multistage", action="store_true",
+                   help="Build multi-stage cross-attention model (SAI-inspired, "
+                        "stages 3 and 4 of IR-101 like M09). Default: FaCoR top-only.")
+    p.add_argument("--cross_attn_stages", type=str, default="3,4",
+                   help="Comma-separated stages where to inject cross-attn (multistage only).")
+    p.add_argument("--cross_attn_layers_per_stage", type=int, default=1,
+                   help="Layers per cross-attn block (multistage only).")
+
+    # SAM age-augmentation (generational invariance via young/adult/elderly variants)
+    p.add_argument("--age_augment_root", type=str, default=None,
+                   help="Directory of SAM-aged variants mirroring aligned_root "
+                        "(see tools/sam_age_augment.py). When set, every face is "
+                        "loaded with N_ages variants and the model ensembles them.")
+    p.add_argument("--age_target_ages", type=str, default="8,25,70",
+                   help="Comma-separated target ages (must match the variants "
+                        "produced by tools/sam_age_augment.py).")
+    p.add_argument("--age_original_weight", type=float, default=0.5,
+                   help="Weight applied to the original face in the age ensemble. "
+                        "Remaining (1 - w) is split equally across aged variants. "
+                        "Default 0.5: original is heaviest, three aged variants share 0.5.")
 
     # Training
     p.add_argument("--epochs", type=int, default=100)
@@ -137,10 +164,6 @@ def parse_args() -> argparse.Namespace:
                    choices=["random", "relation_matched"])
     p.add_argument("--eval_negative_strategy", type=str, default="random",
                    choices=["random", "relation_matched"])
-    p.add_argument("--use_balanced_sampler", action="store_true",
-                   help="Replace shuffle with WeightedRandomSampler that "
-                        "equalises relation class frequencies among positives "
-                        "(rare classes oversampled). Negatives keep target ratio.")
 
     # Loss
     p.add_argument("--loss", type=str, default="cosine_contrastive",
@@ -164,7 +187,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-class AdaFaceMultiStageLoss(nn.Module):
+class AdaFaceFaCoRLoss(nn.Module):
     """Loss wrapper mirroring M02's `ViTFaCoRLoss` exactly."""
 
     def __init__(self, loss_type: str = "cosine_contrastive",
@@ -194,8 +217,8 @@ class AdaFaceMultiStageLoss(nn.Module):
             return self.loss_fn(emb1, emb2, labels)
 
 
-class AdaFaceMultiStageROCmTrainer(ROCmTrainer):
-    """ROCm trainer for M09 — output parsing + gradient accumulation."""
+class AdaFaceFaCoRROCmTrainer(ROCmTrainer):
+    """ROCm trainer for M10 — output parsing + gradient accumulation."""
 
     def __init__(self, *args, gradient_accumulation: int = 1, **kwargs):
         self.gradient_accumulation = max(1, int(gradient_accumulation))
@@ -219,7 +242,7 @@ def main() -> None:
     args = parse_args()
 
     print("\n" + "=" * 60)
-    print("AMD ROCm Training — Model 09: AdaFace + Multi-Stage Cross-Attention")
+    print("AMD ROCm Training — Model 11: AdaFace + FaCoR Cross-Attention")
     print("=" * 60)
 
     setup_rocm_environment(
@@ -273,83 +296,103 @@ def main() -> None:
         patience=args.patience,
     )
 
-    cross_attn_stages = [int(s.strip()) for s in args.cross_attn_stages.split(",") if s.strip()]
+    # Parse age-ensemble options
+    target_ages = parse_target_ages(args.age_target_ages) if args.age_augment_root else []
+    use_age_ensemble = bool(args.age_augment_root)
+    if use_age_ensemble:
+        num_variants = 1 + len(target_ages)
+        print(f"\nSAM age-ensemble ENABLED")
+        print(f"  age_augment_root: {args.age_augment_root}")
+        print(f"  target_ages:      {target_ages}")
+        print(f"  original_weight:  {args.age_original_weight:.3f}  "
+              f"(aged each: {(1 - args.age_original_weight) / max(len(target_ages), 1):.3f})")
+        print(f"  variants per face: {num_variants}  "
+              f"(backbone effectively runs {num_variants}× per sample)")
 
     # Training data
     print(f"\nLoading {args.train_dataset} dataset for training...")
-    train_loader, val_loader, _ = create_dataloaders(
-        config=train_data_config,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        dataset_type=args.train_dataset,
-        train_negative_ratio=args.negative_ratio,
-        eval_negative_ratio=args.eval_negative_ratio,
-        train_negative_sampling_strategy=args.train_negative_strategy,
-        eval_negative_sampling_strategy=args.eval_negative_strategy,
-        split_seed=args.seed,
-        aligned_root=args.aligned_root,
-    )
-    print(f"Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
-
-    if args.use_balanced_sampler:
-        from collections import Counter
-        from torch.utils.data import DataLoader, WeightedRandomSampler
-
-        train_ds = train_loader.dataset
-        rel_counter: Counter = Counter()
-        neg_count = 0
-        for (_, _, rel), lbl in zip(train_ds.pairs, train_ds.labels):
-            if lbl == 1:
-                rel_counter[rel] += 1
-            else:
-                neg_count += 1
-
-        n_pos_classes = max(len(rel_counter), 1)
-        target_neg_total_weight = n_pos_classes * args.negative_ratio
-        per_neg_weight = (
-            target_neg_total_weight / neg_count if neg_count > 0 else 0.0
+    if use_age_ensemble:
+        from torch.utils.data import DataLoader
+        train_dataset = AgeAugmentedKinshipPairDataset(
+            root_dir=resolve_dataset_root(train_data_config, args.train_dataset),
+            dataset_type=args.train_dataset,
+            split="train",
+            transform=get_transforms(train_data_config, train=True),
+            split_seed=args.seed,
+            negative_ratio=args.negative_ratio,
+            negative_sampling_strategy=args.train_negative_strategy,
+            aligned_root=args.aligned_root,
+            age_augment_root=args.age_augment_root,
+            target_ages=target_ages,
         )
-        sample_weights = []
-        for (_, _, rel), lbl in zip(train_ds.pairs, train_ds.labels):
-            if lbl == 1:
-                sample_weights.append(1.0 / rel_counter[rel])
-            else:
-                sample_weights.append(per_neg_weight)
-
-        sampler = WeightedRandomSampler(
-            sample_weights,
-            num_samples=len(sample_weights),
-            replacement=True,
+        val_dataset = AgeAugmentedKinshipPairDataset(
+            root_dir=resolve_dataset_root(train_data_config, args.train_dataset),
+            dataset_type=args.train_dataset,
+            split="val",
+            transform=get_transforms(train_data_config, train=False),
+            split_seed=args.seed,
+            negative_ratio=args.eval_negative_ratio,
+            negative_sampling_strategy=args.eval_negative_strategy,
+            aligned_root=args.aligned_root,
+            age_augment_root=args.age_augment_root,
+            target_ages=target_ages,
         )
         train_loader = DataLoader(
-            train_ds,
+            train_dataset,
             batch_size=args.batch_size,
-            sampler=sampler,
+            shuffle=True,
             num_workers=args.num_workers,
             pin_memory=True,
-            drop_last=True,
         )
-        print(
-            f"Balanced sampler ON  |  pos classes={n_pos_classes}, "
-            f"per-class weight=1/N  |  neg count={neg_count}, "
-            f"per-neg weight={per_neg_weight:.2e}  |  effective neg ratio "
-            f"≈ {args.negative_ratio:.2f}"
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=True,
         )
-        print(f"  Relation counts: {dict(rel_counter)}")
+    else:
+        train_loader, val_loader, _ = create_dataloaders(
+            config=train_data_config,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            dataset_type=args.train_dataset,
+            train_negative_ratio=args.negative_ratio,
+            eval_negative_ratio=args.eval_negative_ratio,
+            train_negative_sampling_strategy=args.train_negative_strategy,
+            eval_negative_sampling_strategy=args.eval_negative_strategy,
+            split_seed=args.seed,
+            aligned_root=args.aligned_root,
+        )
+    print(f"Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
 
     # Test data
     print(f"Loading {args.test_dataset} dataset for testing...")
     from torch.utils.data import DataLoader
-    test_dataset = KinshipPairDataset(
-        root_dir=resolve_dataset_root(test_data_config, args.test_dataset),
-        dataset_type=args.test_dataset,
-        split="test",
-        transform=get_transforms(test_data_config, train=False),
-        split_seed=args.seed,
-        negative_ratio=args.eval_negative_ratio,
-        aligned_root=args.aligned_root,
-        negative_sampling_strategy=args.eval_negative_strategy,
-    )
+    if use_age_ensemble:
+        test_dataset = AgeAugmentedKinshipPairDataset(
+            root_dir=resolve_dataset_root(test_data_config, args.test_dataset),
+            dataset_type=args.test_dataset,
+            split="test",
+            transform=get_transforms(test_data_config, train=False),
+            split_seed=args.seed,
+            negative_ratio=args.eval_negative_ratio,
+            aligned_root=args.aligned_root,
+            negative_sampling_strategy=args.eval_negative_strategy,
+            age_augment_root=args.age_augment_root,
+            target_ages=target_ages,
+        )
+    else:
+        test_dataset = KinshipPairDataset(
+            root_dir=resolve_dataset_root(test_data_config, args.test_dataset),
+            dataset_type=args.test_dataset,
+            split="test",
+            transform=get_transforms(test_data_config, train=False),
+            split_seed=args.seed,
+            negative_ratio=args.eval_negative_ratio,
+            aligned_root=args.aligned_root,
+            negative_sampling_strategy=args.eval_negative_strategy,
+        )
     test_loader = DataLoader(
         test_dataset,
         batch_size=args.batch_size,
@@ -359,22 +402,41 @@ def main() -> None:
     print(f"Test: {len(test_dataset)}")
 
     # Model
-    print("\nCreating AdaFace + Multi-Stage Cross-Attention model...")
-    print(f"  AdaFace weights:    {args.adaface_weights}")
-    print(f"  Cross-attn stages:  {cross_attn_stages}")
-    print(f"  Layers per stage:   {args.cross_attn_layers_per_stage}")
-    model = build_adaface_multistage_model(
-        adaface_weights=args.adaface_weights,
-        embedding_dim=args.embedding_dim,
-        cross_attn_stages=cross_attn_stages,
-        num_cross_attn_layers_per_stage=args.cross_attn_layers_per_stage,
-        cross_attn_heads=args.cross_attn_heads,
-        dropout=args.dropout,
-        freeze_backbone=args.freeze_backbone,
-        use_positional_embedding=not args.no_positional_embedding,
-        use_global_embedding=not args.no_global_embedding,
-        use_classifier_head=args.use_classifier_head,
-    )
+    if args.use_multistage:
+        cross_attn_stages = sorted({int(s) for s in args.cross_attn_stages.split(",")})
+        print("\nCreating AdaFace + Multi-Stage Cross-Attention model (M09 architecture)...")
+        print(f"  AdaFace weights:    {args.adaface_weights}")
+        print(f"  Cross-attn stages:  {cross_attn_stages}")
+        print(f"  Layers per stage:   {args.cross_attn_layers_per_stage}")
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "09_adaface_multistage"))
+        from model import build_adaface_multistage_model  # noqa: E402
+        model = build_adaface_multistage_model(
+            adaface_weights=args.adaface_weights,
+            embedding_dim=args.embedding_dim,
+            cross_attn_stages=cross_attn_stages,
+            num_cross_attn_layers_per_stage=args.cross_attn_layers_per_stage,
+            cross_attn_heads=args.cross_attn_heads,
+            dropout=args.dropout,
+            freeze_backbone=args.freeze_backbone,
+            use_positional_embedding=not args.no_positional_embedding,
+            use_global_embedding=not args.no_global_embedding,
+            use_classifier_head=args.use_classifier_head,
+        )
+    else:
+        print("\nCreating AdaFace-FaCoR model (top-only, M10 architecture)...")
+        print(f"  AdaFace weights: {args.adaface_weights}")
+        model = build_adaface_facor_model(
+            adaface_weights=args.adaface_weights,
+            embedding_dim=args.embedding_dim,
+            num_cross_attn_layers=args.cross_attn_layers,
+            cross_attn_heads=args.cross_attn_heads,
+            dropout=args.dropout,
+            freeze_backbone=args.freeze_backbone,
+            use_positional_embedding=not args.no_positional_embedding,
+            use_global_embedding=not args.no_global_embedding,
+            use_classifier_head=args.use_classifier_head,
+            original_weight=args.age_original_weight,
+        )
     model = optimize_for_rocm(model)
 
     total = sum(p.numel() for p in model.parameters())
@@ -383,9 +445,9 @@ def main() -> None:
     print(f"  Trainable parameters: {trainable:,} ({100*trainable/total:.2f}%)")
 
     # Loss + trainer
-    loss_fn = AdaFaceMultiStageLoss(args.loss, args.temperature, args.margin)
+    loss_fn = AdaFaceFaCoRLoss(args.loss, args.temperature, args.margin)
 
-    trainer = AdaFaceMultiStageROCmTrainer(
+    trainer = AdaFaceFaCoRROCmTrainer(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
@@ -444,14 +506,25 @@ def main() -> None:
         "adaface_weights": args.adaface_weights,
         "img_size": args.img_size,
         "embedding_dim": args.embedding_dim,
-        "cross_attn_stages": cross_attn_stages,
-        "cross_attn_layers_per_stage": args.cross_attn_layers_per_stage,
+        "cross_attn_layers": args.cross_attn_layers,
         "cross_attn_heads": args.cross_attn_heads,
         "dropout": args.dropout,
         "freeze_backbone": args.freeze_backbone,
         "use_positional_embedding": not args.no_positional_embedding,
         "use_global_embedding": not args.no_global_embedding,
         "use_classifier_head": args.use_classifier_head,
+        "age_augment_root": args.age_augment_root,
+        "age_target_ages": target_ages,
+        "age_original_weight": args.age_original_weight,
+        # M11 architecture flag — picked up by test.py / evaluate.py to rebuild
+        "use_multistage": args.use_multistage,
+        "cross_attn_stages": (
+            sorted({int(s) for s in args.cross_attn_stages.split(",")})
+            if args.use_multistage else None
+        ),
+        "cross_attn_layers_per_stage": (
+            args.cross_attn_layers_per_stage if args.use_multistage else None
+        ),
     }
     protocol_metadata = build_protocol_metadata(
         train_dataset=args.train_dataset,
@@ -477,7 +550,7 @@ def main() -> None:
 
     results_path = Path(args.checkpoint_dir) / "test_results_rocm.txt"
     with open(results_path, "w") as f:
-        f.write("AMD ROCm Training Results — Model 09 (AdaFace + Multi-Stage Cross-Attention)\n")
+        f.write("AMD ROCm Training Results — Model 11 (AdaFace-FaCoR)\n")
         f.write("=" * 50 + "\n")
         f.write(f"Threshold: {threshold:.4f}\n")
         for key, value in test_metrics.items():

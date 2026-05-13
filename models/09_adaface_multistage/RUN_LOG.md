@@ -6,6 +6,133 @@ Newest run on top.
 
 ---
 
+## Run 002 — 2026-05-12 — Stopped at epoch 13 (Val AUC 0.8894 peak ep 11; Test AUC 0.7824, val→test gap -0.107)
+
+**Status:** Stopped manually at end of epoch 13 (user request — pause for review before next run)
+**Outcome:** Balanced sampler + per-relation train metrics. Val AUC peak 0.8894 close to R001 (0.8919). **Test AUC = 0.7824 — worse than R001 (0.7982) by -0.0158**. Val→test gap **widened to -0.107** (R001 was -0.094). Per-relation test: only `gfgd` improved substantially (+19.5 pp); all majority classes (bb, fs, ms, md, sibs, ss, fd) regressed by 1.3 to 6.1 pp. Hypothesis "balanced sampler closes the val→test gap by exposing rare classes" was NOT confirmed — gap widened.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=4 \
+GRAD_ACCUM=8 \
+USE_CLASSIFIER_HEAD=1 \
+LOSS=bce \
+CROSS_ATTN_STAGES=3,4 \
+CROSS_ATTN_LAYERS_PER_STAGE=1 \
+USE_BALANCED_SAMPLER=1 \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/09_adaface_multistage/AMD/run_pipeline.sh
+```
+
+### Configuration
+
+| Param | Value |
+|-------|-------|
+| Dataset | fiw (Track-I, split_seed=42) |
+| Aligned root | datasets/FIW_aligned (224 → 112 at load) |
+| Backbone | AdaFace IR-101 (WebFace4M, **full fine-tune**) |
+| Cross-attn placement | After stage 3 (196×256-d) AND stage 4 (49×512-d) |
+| Cross-attn layers per stage | 1 |
+| Cross-attn heads | 8 |
+| Positional embedding | learnable per-stage |
+| Global embedding | enabled (AdaFace pool) |
+| Head | `AdaFaceMultiStageKinshipClassifier` MLP on `[emb1, emb2, diff, product]` → logit |
+| Loss | **bce** (same as R001) |
+| **Training sampler** | **`WeightedRandomSampler`** — equalises relation classes among positives, maintains 2:1 effective neg ratio (R001 used `shuffle=True`) |
+| **Per-relation val metrics** | **enabled per-epoch** in trainer log line (new in R002) |
+| Batch size | 4 (eff. 32 with grad_accum=8) |
+| Grad accum | 8 |
+| LR | 5e-6 peak, warmup 5, cosine, min_lr=1e-7 |
+| Weight decay | 1e-5 |
+| Dropout | 0.2 |
+| Embedding dim | 512 |
+| Patience | 50 |
+| Trainable params | 70,876,353 (100%) |
+| Time/epoch | ~40 min |
+| Seed | 42 |
+
+### Training trajectory
+
+- Best Val AUC: **0.8894** at epoch 11 (best.pt)
+- Stopped manually at end of epoch 13 by user request
+- Time per epoch: ~40 min (identical to R001 within ±1 %)
+- Train loss saturation rate slightly different from R001: R002 0.252 at ep 13 vs R001 0.279 at ep 13 (R002 slightly more saturated; both well above the 0.1 of M10 R003 by ep 18)
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR | Note |
+|------:|-----------:|--------:|--------:|----:|-----|------|
+| 1 | 0.6442 | 65.7 % | 0.7083 | 0.400 | 1.0e-6 | warmup 1/5; per-rel grandparent already 90-95 % |
+| 2 | 0.5863 | 66.3 % | 0.7219 | 0.350 |       |      |
+| 3 | 0.5429 | 62.2 % | 0.6903 | 0.100 |       | warmup dip |
+| 4 | 0.5068 | 64.7 % | 0.6913 | 0.100 |       |      |
+| 5 | 0.4957 | 74.2 % | 0.7870 | 0.100 | 5.0e-6 | **unlock +0.096 at peak LR** |
+| 6 | 0.4906 | 77.7 % | 0.8482 | 0.100 |       | climb |
+| 7 | 0.4412 | 78.7 % | 0.8633 | 0.100 |       | new best.pt |
+| 8 | 0.4102 | 81.2 % | 0.8850 | 0.100 |       | new best.pt |
+| 9 | 0.3759 | 80.5 % | 0.8793 | 0.100 |       | dip |
+| 10 | 0.3423 | 79.0 % | 0.8863 | 0.100 |       | new best.pt |
+| 11 | 0.3043 | 80.3 % | **0.8894** | 0.100 |    | **lifetime best.pt** |
+| 12 | 0.2774 | 79.7 % | 0.8825 | 0.100 |       | dip |
+| 13 | 0.2521 | 79.1 % | 0.8888 | 0.100 |       | bounce, -0.0006 from peak — **manual stop** |
+
+### Test metrics (threshold 0.500)
+
+Stored threshold on best.pt defaulted to 0.500 because training was killed before `update_checkpoint_metadata`. Val-phase F1-optimal at ep 11 was 0.100. AUC/AP threshold-invariant.
+
+| Metric | Value |
+|--------|-------|
+| **Test ROC AUC** | **0.7824** |
+| Test Accuracy | 71.55 % |
+| Test Balanced Acc | 70.91 % |
+| Test Precision | 78.78 % |
+| Test Recall | 55.58 % |
+| Test F1 | 0.6518 |
+| Test Avg Precision | 0.7645 |
+| TAR @ FAR=0.001 | 1.32 % |
+| TAR @ FAR=0.01 | 7.76 % |
+| TAR @ FAR=0.1 | 45.68 % |
+| Threshold (used) | 0.500 |
+| **Val→test AUC gap** | **-0.107** (vs R001 -0.094 — gap widened) |
+
+### Per-relation accuracy (FIW Track-I test)
+
+| Relation | N | M09 R001 | **M09 R002** | Δ R002 vs R001 | M02 R031 |
+|----------|--:|---------:|-------------:|---------------:|---------:|
+| bb       | 860  | 64.2 % | **58.1 %** | **-6.1 pp** ⚠ | 95.5 % |
+| ss       | 731  | 62.9 % | 59.9 %     | -3.0           | 94.7 % |
+| sibs     | 234  | 64.5 % | 59.8 %     | -4.7           | 94.9 % |
+| md       | 1038 | 53.9 % | 52.6 %     | -1.3           | 94.4 % |
+| fs       | 1135 | 59.1 % | 56.7 %     | -2.4           | 95.3 % |
+| ms       | 1036 | 57.3 % | 55.5 %     | -1.8           | 93.9 % |
+| fd       | 918  | 63.6 % | 59.3 %     | -4.3           | 91.7 % |
+| **gfgd** | 138  | 31.2 % | **50.7 %** | **+19.5 pp** 🎯 | 89.9 % |
+| gfgs     | 98   | 30.6 % | 33.7 %     | +3.1           | 95.9 % |
+| gmgd     | 123  | 31.7 % | 33.3 %     | +1.6           | 91.1 % |
+| gmgs     | 121  | 37.2 % | 37.2 %     | =              | 88.4 % |
+| non-kin  | 6993 | 84.7 % | 86.2 %     | +1.5           | (n/a)  |
+
+### Notes
+
+- **Balanced sampler hypothesis NOT confirmed.** Only `gfgd` improved meaningfully (+19.5 pp); the other 3 grandparent classes stayed within ±3 pp of R001. All 7 majority classes regressed by 1-6 pp. Net Test AUC was -0.0158 worse than R001.
+- **Val→test gap widened** from -0.094 (R001) to -0.107 (R002). Direct evidence that oversampling rare positives can *increase* family memorization on the over-sampled families, not decrease it.
+- **Per-relation training metrics worked correctly** — new feature in trainer log line. Allowed real-time diagnosis: classes oscillated heavily epoch-to-epoch (sibs swung 13.5 pp between ep 1-2), particularly grandparent classes with N<150 in val.
+- Best.pt at ep 11 (not ep 8 or ep 15 like R001); R002 had its peak in a different epoch with different absolute value.
+- **Per-rel during training was much higher than per-rel at test** — same pattern as R001. Val per-rel (at threshold 0.100) doesn't predict test per-rel (at threshold 0.500).
+
+### Artifacts
+
+- Checkpoint (epoch 11, best Val AUC = 0.8894): `output/002/checkpoints/best.pt` (852 MB) — patched with `model_config`
+- Resume snapshots (ep 5, ep 10): `output/002/checkpoints/epoch_5.pt`, `epoch_10.pt` — to be pruned after commit
+- Train log: `output/002/logs/train.log`
+- Test log: `output/002/logs/test.log`
+- Evaluate log: `output/002/logs/evaluate.log`
+- Results: `output/002/results/{test_metrics_rocm.txt, metrics_rocm.json, roc_curve_rocm.png, confusion_matrix_rocm.png, attention_intensity_comparison.png, attention_analysis.json, attention_maps/}`
+
+---
+
 ## Run 001 — 2026-05-12 — Stopped at epoch 19 (Val AUC 0.8919 peak ep 9; Test AUC 0.7982, val→test gap -0.094)
 
 **Status:** Stopped manually at iter 0/epoch 20 after 4-epoch plateau confirmed below ep-9 peak
