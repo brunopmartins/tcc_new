@@ -58,40 +58,42 @@ The structure:
 
 ## Run table
 
-| | Run 001 | **Run 002** | Run 003 |
-|---|---|---|---|
-| **Date** | 2026-05-13 | 2026-05-13 | 2026-05-14 |
-| **Phase** | 1 (frozen) | **2 (partial unfreeze)** | 4 (R002 + SupCon λ=0.05) |
-| **Trainable** | 5.6 M (7.9 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) |
-| **LR** | 1e-4 | 1e-5 | 1e-5 |
-| **Status** | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 7 |
-| **Best Val AUC** | 0.8351 (ep 3) | **0.9323 (ep 4)** — project max | 0.9306 (ep 4) |
-| **Test ROC-AUC** | 0.7464 | **0.8564** ⭐ **PROJECT HEADLINE** | 0.8510 |
-| **Test Accuracy** | 68.0 % | 76.8 % | 76.4 % |
-| **Val→test gap** | -0.089 | -0.076 | -0.080 |
-| **Notes** | Phase 1 frozen capped ceiling | **Phase 2 partial unfreeze beats M02 R031**. [run-002.md](run-002.md) | SupCon aux REJECTED — improves siblings but regresses grandparent, net Test AUC -0.005. [run-003.md](run-003.md) |
+| | Run 001 | **Run 002** | Run 003 | Run 004 |
+|---|---|---|---|---|
+| **Date** | 2026-05-13 | 2026-05-13 | 2026-05-14 | 2026-05-14 |
+| **Phase** | 1 (frozen) | **2 (partial unfreeze)** | 4 (R002 + SupCon) | 6 (R002 + hard negs) |
+| **Trainable** | 5.6 M (7.9 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) |
+| **LR** | 1e-4 | 1e-5 | 1e-5 | 1e-5 |
+| **Loss** | BCE | BCE | BCE + 0.05 × SupCon | BCE |
+| **Neg strategy** | random | random | random | **`relation_matched`** |
+| **Status** | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 8 |
+| **Best Val AUC** | 0.8351 (ep 3) | 0.9323 (ep 4) | 0.9306 (ep 4) | **0.9354 (ep 4)** — project max |
+| **Test ROC-AUC** | 0.7464 | **0.8564** ⭐ **HEADLINE** | 0.8510 | 0.8473 |
+| **Test Accuracy** | 68.0 % | 76.8 % | 76.4 % | 75.8 % |
+| **Val→test gap** | -0.089 | -0.076 | -0.080 | -0.088 |
+| **Notes** | Phase 1 capped ceiling | **Phase 2 partial unfreeze beats M02 R031.** [run-002.md](run-002.md) | SupCon aux REJECTED. [run-003.md](run-003.md) | Hard negs REJECTED — Val AUC project max but Test -0.009 vs R002, gap widens. Same M11 v4 pattern. [run-004.md](run-004.md) |
 
 ---
 
 ## Test metrics
 
-| Metric | M02 R031 (prior best) | Run 001 (Phase 1) | **Run 002 (Phase 2)** | Run 003 (+SupCon) |
-|---|---:|---:|---:|---:|
-| **Test ROC-AUC** | 0.850 | 0.7464 | **0.8564** ⭐ | 0.8510 |
-| Test Accuracy | 74.4 % | 68.00 % | **76.79 %** ⭐ | 76.37 % |
-| Test Balanced Acc | 75.2 % | 67.41 % | **76.48 %** | 76.09 % |
-| Test F1 | 0.779 | 0.6150 | 0.7402 | 0.7373 |
-| Test Precision | 66.5 % | 72.60 % | **79.82 %** ⭐ | 78.88 % |
-| Test Recall | 94.1 % | 53.34 % | 69.00 % | 69.22 % |
-| **Avg Precision** | 0.817 | 0.7323 | **0.8389** ⭐ | 0.8305 |
-| **TAR@FAR=0.001** | 2.5 % | 2.36 % | **4.18 %** ⭐ | 2.67 % |
-| **TAR@FAR=0.01** | 14.0 % | 10.06 % | **17.58 %** ⭐ | 16.57 % |
-| **TAR@FAR=0.1** | 49.9 % | 37.86 % | **57.11 %** ⭐ | 55.43 % |
-| Best Val ROC-AUC | 0.881 | 0.8351 | **0.9323** | 0.9306 |
-| Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % | 85.7 % |
-| **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 | -0.080 |
+| Metric | M02 R031 (prior best) | Run 001 (Phase 1) | **Run 002 (Phase 2)** | Run 003 (+SupCon) | Run 004 (+hard negs) |
+|---|---:|---:|---:|---:|---:|
+| **Test ROC-AUC** | 0.850 | 0.7464 | **0.8564** ⭐ | 0.8510 | 0.8473 |
+| Test Accuracy | 74.4 % | 68.00 % | **76.79 %** ⭐ | 76.37 % | 75.75 % |
+| Test Balanced Acc | 75.2 % | 67.41 % | **76.48 %** | 76.09 % | 75.33 % |
+| Test F1 | 0.779 | 0.6150 | 0.7402 | 0.7373 | 0.7211 |
+| Test Precision | 66.5 % | 72.60 % | 79.82 % | 78.88 % | **80.29 %** ⭐ |
+| Test Recall | 94.1 % | 53.34 % | 69.00 % | 69.22 % | 65.44 % |
+| **Avg Precision** | 0.817 | 0.7323 | **0.8389** ⭐ | 0.8305 | 0.8287 |
+| **TAR@FAR=0.001** | 2.5 % | 2.36 % | **4.18 %** ⭐ | 2.67 % | 2.01 % |
+| **TAR@FAR=0.01** | 14.0 % | 10.06 % | **17.58 %** ⭐ | 16.57 % | 14.71 % |
+| **TAR@FAR=0.1** | 49.9 % | 37.86 % | **57.11 %** ⭐ | 55.43 % | 56.06 % |
+| Best Val ROC-AUC | 0.881 | 0.8351 | 0.9323 | 0.9306 | **0.9354** ⭐ (project max) |
+| Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % | 85.7 % | 86.2 % |
+| **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 | -0.080 | -0.088 |
 
-⭐ = Run 002 wins on every threshold-invariant metric — remains the **project headline**.
+⭐ = R002 wins on every threshold-invariant Test metric — remains the **project headline**. R004 has the project-wide max Val AUC but it doesn't transfer.
 
 ⭐ = M12 R002 wins on **all** threshold-invariant metrics (AUC, Avg Precision, all three TAR@FAR levels).
 
@@ -147,28 +149,38 @@ The structure:
 
 ---
 
-## Conclusion (as of R002)
+## Conclusion (as of R004)
 
-**R002 is the new project headline. M02 R031's reign as best-in-project
-(Test AUC 0.850, held since the early ViT experiments) is over.**
+**R002 (Test AUC 0.8564) remains the project headline.** M02 R031's
+reign as best-in-project (0.850) is over and stays over. R003 and R004
+both attempted to improve on R002 via proposal Phase 4-6 interventions
+and both failed.
 
-Key findings:
+Key findings (cumulative across R001-R004):
 
-1. **Test AUC 0.8564 beats M02 R031 (0.850) by +0.006.** Direct ranking
-   improvement, threshold-invariant. All three TAR@FAR levels and Avg
-   Precision also exceed M02 R031.
+1. **R002 — partial unfreeze of stage 4 + output_layer is the winning
+   architectural recipe.** Single change vs R001 (frozen) lifted Test
+   AUC by +0.110 (from 0.7464 to 0.8564). The Phase 1 capacity
+   bottleneck was real and severe.
 
-2. **The single architectural change between R001 and R002** — unfreezing
-   stage 4 + output_layer — lifted Test AUC by +0.110 (from 0.7464 to
-   0.8564). The Phase 1 capacity bottleneck was real and severe.
+2. **R002's val→test gap of -0.076 is the best among AdaFace-based
+   models with non-trivial training**. R001 (-0.089) had a tighter gap
+   but a much lower Val ceiling. The R002 trade-off (slightly more
+   memorisation than R001 but much higher Val ceiling) is favourable.
 
-3. **Val→test gap is -0.076** — wider than R001's -0.089 (the model is
-   somewhat more capable of memorizing val families) but narrower than
-   every other AdaFace full-FT model (M09 R001 -0.094, M11 v4 -0.128,
-   M10 R003 -0.140). The trade-off is favourable: slightly more
-   memorization, much more discrimination, net positive.
+3. **R003 (SupCon λ=0.05 aux loss) — REJECTED.** Net Test AUC -0.005,
+   sibling classes improved (+1-3 pp) but grandparent classes regressed.
+   Proposal §28 warning ("contrastive forte demais força aproximações
+   artificiais") confirmed even at the conservative λ=0.05.
 
-4. **The recipe stack that won:**
+4. **R004 (hard negatives via `relation_matched`) — REJECTED.** Val AUC
+   reached the project-wide max (0.9354), but Test AUC -0.009 vs R002.
+   Gap widened to -0.088. **This is the SECOND independent confirmation
+   of the "hard negs raise Val, drop Test" pattern** — M11 R001 v4 had
+   shown it on full-FT, M12 R004 reproduces it on partial-FT. The
+   mechanism is robust across architectural configurations.
+
+5. **The recipe stack that won (R002):**
    - AdaFace IR-101 backbone
    - Stages 1-3 frozen, stage 4 (body[46:49]) + output_layer trainable
    - 5 region tokens (global, eyes, nose, mouth, jaw — fixed coords)
@@ -177,13 +189,15 @@ Key findings:
    - 3-layer MLP classifier head over `[gA, gB, |diff|, prod, sims, weights, score]`
    - BCE loss on classifier logit
    - LR 1e-5 (10× lower than R001's 1e-4)
-   - Random negatives, no auxiliary losses, no hard negative mining
+   - **Random negatives, no auxiliary losses** (both confirmed via
+     ablation in R003 and R004)
 
-5. **Two FaCoRNet-inspired interventions (balanced sampling in M09 R002,
-   hard negatives in M11 v4) consistently hurt Test AUC** despite
-   raising Val AUC. M12 R002 found a different path: less aggressive
-   training distribution, but better architectural fit to the kinship
-   problem.
+6. **Three consecutive negative results** (M09 R002 balanced sampling,
+   M11 v4 hard negs, M12 R004 hard negs again, M12 R003 SupCon) all
+   show: sophisticating the training distribution on top of M09 R001
+   or M12 R002 baselines consistently raises Val AUC but hurts Test
+   AUC. The "harder train = better generalisation" intuition is wrong
+   for this dataset's val→test family split structure.
 
 ### What R001 already validated, still standing
 
@@ -197,30 +211,47 @@ sequence design.
 
 | # | Severity | Status | Title | Notes |
 |---|----------|--------|-------|-------|
-| I-01 | Medium | **Closed in R002** | Frozen backbone caps Val AUC at ~0.835 | R002 partial unfreeze lifts peak to 0.9323 |
-| I-02 | **Closed in R002** | M12 Test AUC below M09 R001 | R002 Test AUC 0.8564 beats M09 R001 (0.7982) by +0.058 |
-| I-03 | Info | Open | No `evaluate.py` for M12 | Still applies — only `test.py` exists. Visualisations (ROC, CM, attention maps) and especially per-region gate weights would be valuable. |
+| I-01 | Medium | Closed in R002 | Frozen backbone caps Val AUC at ~0.835 | R002 partial unfreeze lifts peak to 0.9323 |
+| I-02 | Closed in R002 | M12 Test AUC below M09 R001 | R002 Test AUC 0.8564 beats M09 R001 (0.7982) by +0.058 |
+| I-03 | Info | Open | No `evaluate.py` for M12 | Still applies — only `test.py` exists. Visualisations (ROC, CM, attention maps) and per-region gate weights would be valuable. |
 | I-04 | Info | Workaround applied | `model_config` not saved when training killed mid-pipeline | Same pattern as M09/M10/M11 — best.pt patched manually before test.py rebuild. |
-| I-05 | Info | Open | Region tokenizer re-runs AdaFace 5× per face | Still using Strategy 2 (recortar regiões + backbone). Strategy 1 (ROI Align on shared feature map) would halve training time and may add the missing 1-2 points of Test AUC. |
-| I-06 | New, Info | Open | Per-relation grandparent accuracies still 37-52 % at threshold 0.5 | gfgd 52.2 %, gmgs 44.6 %, gfgs 39.8 %, gmgd 36.6 %. Better than every other M*/AdaFace model in the project but still well below M02 R031 (88-96 %) at its threshold-0.9 operating point. Relation-conditional auxiliary head (proposal Phase 5) could help. |
+| I-05 | Info | Open | Region tokenizer re-runs AdaFace 5× per face | Still using Strategy 2. Strategy 1 (ROI Align on shared feature map) would halve training time and may add small Test AUC. |
+| I-06 | Info | Open | Per-relation grandparent accuracies still 37-52 % at threshold 0.5 | Relation-conditional aux head (proposal Phase 5) still untried. |
+| I-07 | High | **Closed in R004** | Phase 6 hard negatives (`relation_matched`) cross-experiment robustness check | Two independent experiments (M11 v4 full-FT, M12 R004 partial-FT) reproduce the "Val up, Test down" pattern. Hard negs are a closed direction. |
+| I-08 | High | **Closed in R003** | Phase 4 SupCon λ=0.05 auxiliary loss | R003 showed -0.005 Test AUC, regressed grandparent classes. Closed direction at this λ. Possible lower λ untested. |
 
 ### Next directions
 
-- **R003 — Phase 4: supervised contrastive auxiliary loss** (λ=0.05).
-  Plausible incremental gain on top of R002. Main risk: Val→test gap
-  widening.
-- **R004 — Phase 5: relation-type auxiliary head.** Could specifically
-  improve the grandparent classes which still lag.
-- **R005 — Phase 6: hard negatives via `relation_matched`.** M11 v4
-  showed this hurts on full FT; M12 has partial FT — unknown effect.
-  Lower priority given M11 v4's negative result.
-- **R006 — Phase 3: full fine-tune.** Almost certainly regressive
-  (the M11 v4 lesson). Skip unless other phases reveal a need.
-- **R007 — Architecture switch to ROI Align** (proposal §15 Strategy 1):
-  halves training time, may add small Test AUC boost.
+Closed by experimental evidence so far:
+- ~~Phase 4 (SupCon aux at λ=0.05) — REJECTED in R003.~~
+- ~~Phase 6 (hard negatives via `relation_matched`) — REJECTED in R004.~~
 
-The proposal's experimental sequence (§38) is largely vindicated. R002
-is Phase 2 done well.
+Still untried:
+- **Phase 5: relation-type auxiliary head.** Predict the relation
+  category (11 kin classes + 1 non-kin) as an auxiliary task. Could
+  specifically help the grandparent classes. Requires dataset
+  modification to pass relation int labels to the loss (~moderate code
+  change). **Most promising untried proposal direction.**
+- **Architecture switch to ROI Align tokenizer** (proposal §15 Strategy 1):
+  one feature-map forward + ROI pool instead of 5 separate AdaFace
+  forwards per face. Halves training time. May add 1-2 points of Test
+  AUC because the regions then come from coherent feature-space context
+  instead of independent crops. **Highest-EV architectural change.**
+- **Lower SupCon λ** (0.01 or 0.02) — if R003's regression scales with
+  λ, lowering it might give net-zero or slightly positive effect. Low
+  EV.
+- **Hyperparameter sweep around R002**: vary LR, dropout, classifier
+  hidden dim. Low EV.
+
+Likely terminal directions (skip unless other gains exhausted):
+- ~~Phase 3 full fine-tune — almost certainly regressive (the M11 v4
+  lesson).~~
+- ~~Variations of hard-negative strategies — closed direction.~~
+
+The proposal's experimental sequence (§38) is **partially vindicated**.
+Phase 2 (R002) is the clear winner. Phase 4 and Phase 6 didn't add
+value on this dataset; only Phase 5 remains untested in the proposal
+sequence.
 
 ---
 

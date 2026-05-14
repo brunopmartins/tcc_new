@@ -6,6 +6,149 @@ Newest run on top.
 
 ---
 
+## Run 004 — 2026-05-14 — Stopped at epoch 8 (peak Val AUC 0.9354 ep 4 — project max; Test AUC 0.8473, hard negatives REJECTED)
+
+**Status:** Stopped manually at epoch 8 (Val AUC -0.010 from peak, train loss still descending, grandparent classes collapsing in val)
+**Outcome:** Phase 6 of `proposta_rgck_net_kinship.md` §38 — same stack as R002 (Phase 2 partial unfreeze + classifier head + BCE) + **`relation_matched` hard negatives** on both train and eval. Val AUC peaked at **0.9354** (ep 4) — highest in the entire project, +0.003 over R002. **But Test AUC = 0.8473 — -0.009 below R002's 0.8564 (current project headline).** All TAR@FAR levels regressed (FAR=0.001: -2.2 pp). Val→test gap widened to -0.088 (vs R002's -0.076). All 11 kin classes regressed; non-kin slightly improved.
+
+**Cross-experiment finding:** the "hard negatives raise Val but hurt Test" pattern is now confirmed in **two independent regimes** — M11 R001 v4 (full-FT AdaFace) and M12 R004 (partial-FT AdaFace). The mechanism is robust across architectural configurations, not specific to one. `relation_matched` is consistently a net-negative intervention on this dataset.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 \
+GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+LEARNING_RATE=1e-5 \
+TRAIN_NEGATIVE_STRATEGY=relation_matched \
+EVAL_NEGATIVE_STRATEGY=relation_matched \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 002
+
+| Parameter | R002 | **R004** |
+|---|---|---|
+| `TRAIN_NEGATIVE_STRATEGY` | random | **`relation_matched`** |
+| `EVAL_NEGATIVE_STRATEGY` | random | **`relation_matched`** |
+| All other knobs | — | identical |
+
+Single-knob change: negative sampling. `relation_matched` constructs
+negatives by drawing the partner of a positive `fs` pair from another
+`fs` pair (different family but same role). This produces visually
+plausible hard negatives that force the model to discriminate on
+kinship-specific cues rather than role cues.
+
+### Configuration
+
+Same as R002:
+
+| Param | Value |
+|-------|-------|
+| Backbone | AdaFace IR-101 (stages 1-3 frozen, stage 4 + output_layer trainable) |
+| Trainable params | 31,554,818 / 70,740,674 (44.61%) |
+| Loss | BCE on classifier logit (no SupCon) |
+| Batch | 8 × grad-accum 4 (eff. 32) |
+| LR | 1e-5 peak, warmup 5, cosine, min_lr 1e-6 |
+| Weight decay | 1e-4 |
+| Dropout | 0.2 |
+| **Negative strategy** | **`relation_matched`** both train and eval |
+| Time/epoch | ~25.8 min |
+
+### Training trajectory
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR | R002 same ep | Δ R004-R002 |
+|------:|-----------:|--------:|--------:|----:|-----|------:|------:|
+| 1 | 0.5855 | 78.1 % | 0.8676 | 0.450 | 2.0e-6 | 0.8644 | +0.003 |
+| 2 | 0.4043 | 84.0 % | 0.9274 | 0.350 | 4.0e-6 | 0.9259 | +0.001 |
+| 3 | 0.3287 | 85.8 % | 0.9333 | 0.350 | 6.0e-6 | 0.9311 | +0.002 |
+| **4** | **0.2855** | **86.2 %** | **0.9354 (peak)** | 0.150 | 8.0e-6 | 0.9323 | **+0.003 (project max)** |
+| 5 | 0.2514 | 86.4 % | 0.9326 | 0.250 | 1.0e-5 | 0.9306 | +0.002 |
+| 6 | 0.2253 | 86.2 % | 0.9350 | 0.150 | 1.0e-5 | 0.9284 | +0.007 |
+| 7 | 0.1999 | 85.9 % | 0.9313 | 0.100 | 9.99e-6 | 0.9230 | +0.008 |
+| 8 | 0.1798 | 85.4 % | 0.9259 | 0.100 | 9.98e-6 | (n/a) | — |
+
+R004 stayed above R002 in every epoch (+0.001 to +0.008). Val AUC at
+the peak (ep 4) was the highest the project has ever produced: **0.9354**.
+But the train→val gap widened in later epochs as overfitting set in
+faster than in R002.
+
+### Test metrics (threshold 0.500)
+
+| Metric | M12 R002 (HEADLINE) | **M12 R004** | Δ |
+|---|---:|---:|---:|
+| **Test ROC AUC** | **0.8564** | **0.8473** | **-0.009** |
+| Test Accuracy | 76.79 % | 75.75 % | -1.0 pp |
+| Test Balanced Acc | 76.48 % | 75.33 % | -1.2 pp |
+| Test F1 | 0.7402 | 0.7211 | -0.019 |
+| Test Precision | 79.82 % | 80.29 % | +0.5 pp |
+| Test Recall | 69.00 % | 65.44 % | -3.6 pp |
+| Test Avg Precision | 0.8389 | 0.8287 | -0.010 |
+| TAR @ FAR=0.001 | 4.18 % | 2.01 % | -2.2 pp |
+| TAR @ FAR=0.01 | 17.58 % | 14.71 % | -2.9 pp |
+| TAR @ FAR=0.1 | 57.11 % | 56.06 % | -1.0 pp |
+| **Val→test AUC gap** | **-0.076** | **-0.088** | gap widened |
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.500)
+
+| Relation | N | M12 R002 | **M12 R004** | Δ |
+|----------|--:|---------:|-------------:|---:|
+| bb | 860 | 75.4 % | 72.4 % | -3.0 pp |
+| ss | 731 | 75.9 % | 72.5 % | -3.4 pp |
+| sibs | 234 | 79.5 % | 76.9 % | -2.6 pp |
+| md | 1038 | 68.7 % | 64.8 % | -3.9 pp |
+| fs | 1135 | 68.6 % | 64.4 % | -4.2 pp |
+| ms | 1036 | 69.4 % | 66.1 % | -3.3 pp |
+| fd | 918 | 68.4 % | 65.6 % | -2.8 pp |
+| **gfgd** | 138 | 52.2 % | **46.4 %** | **-5.8 pp** |
+| gfgs | 98 | 39.8 % | 38.8 % | -1.0 pp |
+| gmgd | 123 | 36.6 % | 34.2 % | -2.4 pp |
+| **gmgs** | 121 | 44.6 % | **33.9 %** | **-10.7 pp** ⚠ |
+| **non-kin** | 6993 | 84.0 % | **85.2 %** | **+1.2 pp** |
+
+**All 11 kin classes regressed by 1-11 pp.** Non-kin specificity went
+up by 1.2 pp — the model became *more conservative* about predicting
+kin. Grandmother-grandson (`gmgs`) had the largest drop (-10.7 pp).
+
+The directionality is consistent: hard negatives push the kin/non-kin
+decision boundary *toward* non-kin (the model needs to be more certain
+to call something kin because hard negatives look kinship-like).
+
+### Notes
+
+- **Phase 6 (`relation_matched` hard negatives) is REJECTED** as an
+  improvement over R002. Net Test AUC -0.009, gap widens by +0.012.
+- **Cross-experiment robustness check confirmed:** M11 R001 v4 already
+  showed this pattern on **full-FT AdaFace**. M12 R004 reproduces it on
+  **partial-FT AdaFace** with a completely different architecture
+  (region tokens, gating, etc.). The "hard negs raise Val and hurt Test"
+  effect is **not specific to a single configuration** — it's a general
+  property of this dataset's val-pool / test-pool decomposition.
+- **Two consecutive R&D attempts** (R003 = SupCon aux; R004 = hard
+  negatives) have now failed to improve over R002. The proposal's
+  Phase 4-6 sequence didn't yield gains in our setup. R002 remains the
+  local optimum found through architectural changes (region tokens +
+  partial unfreeze), not through training-distribution sophistication.
+- The Val AUC peak of **0.9354** is now the **project-wide maximum**
+  validation score, beating R002's 0.9323. But this doesn't translate
+  to a higher Test AUC — confirming that val-pool performance isn't a
+  reliable proxy for held-out generalisation when hard negatives are
+  used.
+
+### Artifacts
+
+- Checkpoint (epoch 4, Val AUC 0.9354): `output/004/checkpoints/best.pt` (536 MB) — patched manually with `model_config` (freeze=True, unfreeze_last_stage=True, supcon_weight=0)
+- Resume snapshot: `output/004/checkpoints/epoch_5.pt` (will be pruned)
+- Train log: `output/004/logs/train.log`
+- Test log: `output/004/logs/test.log` (also `/tmp/m12_r004_test.log`)
+- Results: `output/004/results/test_metrics_rocm.txt`
+
+---
+
 ## Run 003 — 2026-05-14 — Stopped at epoch 7 (peak Val AUC 0.9306 ep 4; Test AUC 0.8510, SupCon aux did NOT help)
 
 **Status:** Stopped manually at epoch 7 (3 consecutive declines below peak)
