@@ -6,12 +6,37 @@ Newest run on top.
 
 ---
 
-## Run 004 — 2026-05-14 — Stopped at epoch 8 (peak Val AUC 0.9354 ep 4 — project max; Test AUC 0.8473, hard negatives REJECTED)
+## Run 004 — 2026-05-14 — Stopped at epoch 8 (peak Val AUC 0.9354 ep 4 — project max; Test AUC 0.8473. Intended hard-negs test — Errata: hypothesis NOT actually tested)
 
 **Status:** Stopped manually at epoch 8 (Val AUC -0.010 from peak, train loss still descending, grandparent classes collapsing in val)
-**Outcome:** Phase 6 of `proposta_rgck_net_kinship.md` §38 — same stack as R002 (Phase 2 partial unfreeze + classifier head + BCE) + **`relation_matched` hard negatives** on both train and eval. Val AUC peaked at **0.9354** (ep 4) — highest in the entire project, +0.003 over R002. **But Test AUC = 0.8473 — -0.009 below R002's 0.8564 (current project headline).** All TAR@FAR levels regressed (FAR=0.001: -2.2 pp). Val→test gap widened to -0.088 (vs R002's -0.076). All 11 kin classes regressed; non-kin slightly improved.
 
-**Cross-experiment finding:** the "hard negatives raise Val but hurt Test" pattern is now confirmed in **two independent regimes** — M11 R001 v4 (full-FT AdaFace) and M12 R004 (partial-FT AdaFace). The mechanism is robust across architectural configurations, not specific to one. `relation_matched` is consistently a net-negative intervention on this dataset.
+> ⚠ **Errata (post-run, 2026-05-14):** the `relation_matched` sampler at
+> [models/shared/dataset.py:433](../shared/dataset.py#L433) does NOT preserve relation/role —
+> line 464 picks a relation but line 465 hardcodes `"non-kin"`, so
+> the algorithm is identical to the random sampler at
+> [models/shared/dataset.py:512](../shared/dataset.py#L512) up to seed offset (270 vs 200).
+> Measured: 0.09 % overlap on train negatives, 100 % on test (test
+> pairs come from RFIW Track-I lists, not the sampler). R004 actually
+> tested **negative-sampler reseed variance** with all else identical
+> to R002 — not hard negatives. The original "hard negs rejected" /
+> "cross-experiment confirmation with M11 v4" narrative below is
+> withdrawn; both rest on the same broken sampler. The numerical
+> results are valid; the causal interpretation is not. See
+> [run-review/run-004.md](run-review/run-004.md) Errata.
+
+**Outcome (original framing, kept for the record):** Phase 6 of
+`proposta_rgck_net_kinship.md` §38 — same stack as R002 (Phase 2
+partial unfreeze + classifier head + BCE) + `relation_matched` ~~hard
+negatives~~ negatives-with-reseed on both train and eval. Val AUC
+peaked at **0.9354** (ep 4) — highest in the project, +0.003 over
+R002. Test AUC = 0.8473 — -0.009 below R002's 0.8564. All TAR@FAR
+levels regressed. Val→test gap -0.088 vs R002 -0.076. All 11 kin
+classes regressed; non-kin +1.2 pp.
+
+**Corrected interpretation:** the R004 → R002 deltas measure
+sensitivity of partial-FT to the specific draw of training negatives.
+This sets a noise floor of roughly ±0.01 Test AUC for any future
+single-knob comparison that doesn't control the negative-sampler seed.
 
 ### Launch command
 
@@ -118,26 +143,28 @@ The directionality is consistent: hard negatives push the kin/non-kin
 decision boundary *toward* non-kin (the model needs to be more certain
 to call something kin because hard negatives look kinship-like).
 
-### Notes
+### Notes (revised after Errata, 2026-05-14)
 
-- **Phase 6 (`relation_matched` hard negatives) is REJECTED** as an
-  improvement over R002. Net Test AUC -0.009, gap widens by +0.012.
-- **Cross-experiment robustness check confirmed:** M11 R001 v4 already
-  showed this pattern on **full-FT AdaFace**. M12 R004 reproduces it on
-  **partial-FT AdaFace** with a completely different architecture
-  (region tokens, gating, etc.). The "hard negs raise Val and hurt Test"
-  effect is **not specific to a single configuration** — it's a general
-  property of this dataset's val-pool / test-pool decomposition.
-- **Two consecutive R&D attempts** (R003 = SupCon aux; R004 = hard
-  negatives) have now failed to improve over R002. The proposal's
-  Phase 4-6 sequence didn't yield gains in our setup. R002 remains the
-  local optimum found through architectural changes (region tokens +
-  partial unfreeze), not through training-distribution sophistication.
-- The Val AUC peak of **0.9354** is now the **project-wide maximum**
-  validation score, beating R002's 0.9323. But this doesn't translate
-  to a higher Test AUC — confirming that val-pool performance isn't a
-  reliable proxy for held-out generalisation when hard negatives are
-  used.
+- ~~**Phase 6 (`relation_matched` hard negatives) is REJECTED**~~ —
+  withdrawn. The sampler does not produce hard negatives; R004 was
+  effectively R002 with a different seed for negative sampling.
+  Phase 6 hypothesis is **untested**.
+- ~~**Cross-experiment robustness check confirmed**~~ — withdrawn.
+  M11 v4 and M12 R004 both used the same broken sampler. The
+  "hard negs hurt Test" pattern attributed to them is unverified
+  until the sampler is fixed.
+- **R003 (SupCon aux) is still REJECTED** on the basis of R003's own
+  evidence (cross-generation classes regressed, not just a magnitude
+  question). That conclusion is independent of the sampler bug.
+- The Val AUC peak of **0.9354** is the project-wide maximum
+  validation score, but it doesn't transfer — likely a combination
+  of the same overfit dynamics R002 already shows + sampler-seed
+  variance in this particular draw.
+- **Noise floor under partial-FT:** R002 → R004 differs only in the
+  negative-sampler seed (200 → 270), and Test AUC swung by ~0.009
+  (and per-class by 1-11 pp). Future improvements smaller than this
+  cannot be cleanly attributed to the intervention unless the seed
+  is controlled.
 
 ### Artifacts
 

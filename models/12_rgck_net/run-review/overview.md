@@ -61,17 +61,17 @@ The structure:
 | | Run 001 | **Run 002** | Run 003 | Run 004 |
 |---|---|---|---|---|
 | **Date** | 2026-05-13 | 2026-05-13 | 2026-05-14 | 2026-05-14 |
-| **Phase** | 1 (frozen) | **2 (partial unfreeze)** | 4 (R002 + SupCon) | 6 (R002 + hard negs) |
+| **Phase** | 1 (frozen) | **2 (partial unfreeze)** | 4 (R002 + SupCon) | 6 (R002 + hard negs — *intended; not tested*) |
 | **Trainable** | 5.6 M (7.9 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) |
 | **LR** | 1e-4 | 1e-5 | 1e-5 | 1e-5 |
 | **Loss** | BCE | BCE | BCE + 0.05 × SupCon | BCE |
-| **Neg strategy** | random | random | random | **`relation_matched`** |
+| **Neg strategy** | random | random | random | `relation_matched` *(no-op: misnamed sampler, see R004 Errata)* |
 | **Status** | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 8 |
 | **Best Val AUC** | 0.8351 (ep 3) | 0.9323 (ep 4) | 0.9306 (ep 4) | **0.9354 (ep 4)** — project max |
 | **Test ROC-AUC** | 0.7464 | **0.8564** ⭐ **HEADLINE** | 0.8510 | 0.8473 |
 | **Test Accuracy** | 68.0 % | 76.8 % | 76.4 % | 75.8 % |
 | **Val→test gap** | -0.089 | -0.076 | -0.080 | -0.088 |
-| **Notes** | Phase 1 capped ceiling | **Phase 2 partial unfreeze beats M02 R031.** [run-002.md](run-002.md) | SupCon aux REJECTED. [run-003.md](run-003.md) | Hard negs REJECTED — Val AUC project max but Test -0.009 vs R002, gap widens. Same M11 v4 pattern. [run-004.md](run-004.md) |
+| **Notes** | Phase 1 capped ceiling | **Phase 2 partial unfreeze beats M02 R031.** [run-002.md](run-002.md) | SupCon aux REJECTED. [run-003.md](run-003.md) | Intended hard-negs test — actually tested negative-sampler reseed because `relation_matched` sampler does the same thing as `random` (different seed only). Phase 6 hypothesis remains UNTESTED. [run-004.md](run-004.md) |
 
 ---
 
@@ -93,7 +93,7 @@ The structure:
 | Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % | 85.7 % | 86.2 % |
 | **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 | -0.080 | -0.088 |
 
-⭐ = R002 wins on every threshold-invariant Test metric — remains the **project headline**. R004 has the project-wide max Val AUC but it doesn't transfer.
+⭐ = R002 wins on every threshold-invariant Test metric — remains the **project headline**. R004 has the project-wide max Val AUC but it doesn't transfer (note: R004's `relation_matched` sampler is misnamed — it does not produce hard negatives; see [run-004.md](run-004.md) Errata).
 
 ⭐ = M12 R002 wins on **all** threshold-invariant metrics (AUC, Avg Precision, all three TAR@FAR levels).
 
@@ -173,12 +173,21 @@ Key findings (cumulative across R001-R004):
    Proposal §28 warning ("contrastive forte demais força aproximações
    artificiais") confirmed even at the conservative λ=0.05.
 
-4. **R004 (hard negatives via `relation_matched`) — REJECTED.** Val AUC
-   reached the project-wide max (0.9354), but Test AUC -0.009 vs R002.
-   Gap widened to -0.088. **This is the SECOND independent confirmation
-   of the "hard negs raise Val, drop Test" pattern** — M11 R001 v4 had
-   shown it on full-FT, M12 R004 reproduces it on partial-FT. The
-   mechanism is robust across architectural configurations.
+4. **R004 (intended Phase 6 / hard negatives via `relation_matched`) —
+   hypothesis NOT actually tested.** Post-run audit found the
+   `_sample_fiw_rfiw_relation_matched_negatives` function does not
+   preserve relation/role; it samples two random images from two
+   different families and labels `"non-kin"`, identical to the
+   `random` sampler except for the seed offset (270 vs 200). Measured
+   overlap: 0.09 % on training negatives, 100 % on test (the test
+   pairs come from RFIW Track-I lists, not the sampler). What R004
+   actually measured was negative-sampler reseed variance with all
+   else identical to R002: Val AUC +0.003 (project max 0.9354),
+   Test AUC -0.009, gap widened by 0.012. **This sets a noise floor:
+   any future improvement smaller than ~0.01 Test AUC is
+   indistinguishable from sampler-seed variance unless we control
+   the seed.** The earlier "M11 v4 confirms hard negs hurt" claim
+   rests on the same broken sampler and is also withdrawn.
 
 5. **The recipe stack that won (R002):**
    - AdaFace IR-101 backbone
@@ -189,15 +198,20 @@ Key findings (cumulative across R001-R004):
    - 3-layer MLP classifier head over `[gA, gB, |diff|, prod, sims, weights, score]`
    - BCE loss on classifier logit
    - LR 1e-5 (10× lower than R001's 1e-4)
-   - **Random negatives, no auxiliary losses** (both confirmed via
-     ablation in R003 and R004)
+   - Random negatives (default sampler), no auxiliary losses. R003
+     directly tested SupCon λ=0.05 and rejected it. R004 *intended*
+     to test hard negs but actually only tested another draw of the
+     same random-negatives distribution (see point 4); the hard-negs
+     hypothesis remains untested.
 
-6. **Three consecutive negative results** (M09 R002 balanced sampling,
-   M11 v4 hard negs, M12 R004 hard negs again, M12 R003 SupCon) all
-   show: sophisticating the training distribution on top of M09 R001
-   or M12 R002 baselines consistently raises Val AUC but hurts Test
-   AUC. The "harder train = better generalisation" intuition is wrong
-   for this dataset's val→test family split structure.
+6. **"Sophisticated training distribution hurts" — partially supported,
+   partially untested.** Confirmed for: M09 R002 balanced sampling,
+   M12 R003 SupCon. *Not* confirmed for hard negatives: both M11 v4
+   and M12 R004 used the broken `relation_matched` sampler that does
+   not actually generate hard negatives. The "harder train hurts"
+   intuition is correct for the auxiliary-loss and class-balancing
+   variants tested, but the hard-negative variant remains open until
+   the sampler is fixed.
 
 ### What R001 already validated, still standing
 
@@ -217,41 +231,65 @@ sequence design.
 | I-04 | Info | Workaround applied | `model_config` not saved when training killed mid-pipeline | Same pattern as M09/M10/M11 — best.pt patched manually before test.py rebuild. |
 | I-05 | Info | Open | Region tokenizer re-runs AdaFace 5× per face | Still using Strategy 2. Strategy 1 (ROI Align on shared feature map) would halve training time and may add small Test AUC. |
 | I-06 | Info | Open | Per-relation grandparent accuracies still 37-52 % at threshold 0.5 | Relation-conditional aux head (proposal Phase 5) still untried. |
-| I-07 | High | **Closed in R004** | Phase 6 hard negatives (`relation_matched`) cross-experiment robustness check | Two independent experiments (M11 v4 full-FT, M12 R004 partial-FT) reproduce the "Val up, Test down" pattern. Hard negs are a closed direction. |
+| I-07 | High | **Reopened (Errata 2026-05-14)** | Phase 6 hard negatives via `relation_matched` | Originally closed citing M11 v4 + M12 R004. Both rely on `_sample_fiw_rfiw_relation_matched_negatives` which does NOT preserve relation/role — it samples uniformly across families like `random` does, only with a different seed. Phase 6 hypothesis is therefore untested. Requires sampler fix before re-running. |
 | I-08 | High | **Closed in R003** | Phase 4 SupCon λ=0.05 auxiliary loss | R003 showed -0.005 Test AUC, regressed grandparent classes. Closed direction at this λ. Possible lower λ untested. |
+| I-09 | High | **Open (Errata 2026-05-14)** | `relation_matched` sampler is misnamed | [models/shared/dataset.py:433](../../shared/dataset.py#L433): line 464 picks a relation but line 465 hardcodes `"non-kin"` — the chosen relation is discarded. Algorithm is identical to [models/shared/dataset.py:512](../../shared/dataset.py#L512) up to seed offset. Either rename the function to clarify it's a reseed, or implement actual role-matched sampling so Phase 6 can be tested. |
+| I-10 | Info | **Open (Errata 2026-05-14)** | Noise floor under partial-FT ≈ ±0.01 Test AUC from negative-sampler reseed | R002 vs R004 differ only in negative-sampler seed (200 vs 270) and produced Test AUC 0.8564 vs 0.8473 — a ~0.009 swing. Any future "improvement" of smaller magnitude is indistinguishable from sampler variance. Control the seed for definitive comparisons. |
 
-### Next directions
+### Next directions (re-prioritised after the Errata, 2026-05-14)
 
 Closed by experimental evidence so far:
 - ~~Phase 4 (SupCon aux at λ=0.05) — REJECTED in R003.~~
-- ~~Phase 6 (hard negatives via `relation_matched`) — REJECTED in R004.~~
 
-Still untried:
-- **Phase 5: relation-type auxiliary head.** Predict the relation
-  category (11 kin classes + 1 non-kin) as an auxiliary task. Could
-  specifically help the grandparent classes. Requires dataset
-  modification to pass relation int labels to the loss (~moderate code
-  change). **Most promising untried proposal direction.**
-- **Architecture switch to ROI Align tokenizer** (proposal §15 Strategy 1):
-  one feature-map forward + ROI pool instead of 5 separate AdaFace
-  forwards per face. Halves training time. May add 1-2 points of Test
-  AUC because the regions then come from coherent feature-space context
-  instead of independent crops. **Highest-EV architectural change.**
-- **Lower SupCon λ** (0.01 or 0.02) — if R003's regression scales with
-  λ, lowering it might give net-zero or slightly positive effect. Low
-  EV.
-- **Hyperparameter sweep around R002**: vary LR, dropout, classifier
-  hidden dim. Low EV.
+Reopened by the Errata:
+- **Phase 6 (real hard negatives)** — requires implementing actual
+  role-matched negative sampling first. Lower priority than the
+  untried directions below; revisit only after Phase 5 / diff-LR /
+  L2-SP plateau.
 
-Likely terminal directions (skip unless other gains exhausted):
+Still untried (priority order, user direction):
+
+1. **Phase 5: relation-type auxiliary head.** CE over the 11 kin
+   relations on positive pairs only, class-balanced, low λ
+   (0.03 / 0.05 / 0.1). Targets the weakest classes
+   (gfgs/gmgd/gmgs) without forcing cross-generation embeddings to
+   converge as SupCon did. **Best next bet.** Requires dataset
+   modification to pass relation int labels through the loader.
+
+2. **Differential LR across the trainable stack.** Today, stage 4 +
+   output_layer + cross-attn + gate + classifier all share 1e-5.
+   Split: stage 4 → 2-5e-6, output_layer → 5e-6, cross-attn / gate /
+   classifier → 1-2e-5. Lets the head adapt while the backbone melts
+   less. Cheap structural change on top of R002.
+
+3. **L2-SP regularisation on the unfrozen backbone.** Penalise
+   `‖θ_stage4 - θ_AdaFace_original‖²` (and likewise for output_layer)
+   in the loss. More surgical than raising dropout or lowering LR for
+   shrinking the Val→Test gap.
+
+4. **Comparison-only fusion ablation.** Drop `gA, gB` from the
+   classifier input at [model.py:373](../model.py#L373); keep
+   `|diff|, prod, sims, weights, score`. Removes identity-as-feature
+   signal that may be feeding val-pool memorisation. Likely lowers
+   Val AUC; may close the gap and raise Test.
+
+5. **Architecture switch to ROI Align tokenizer** (proposal §15
+   Strategy 1): single feature-map forward + ROI pool instead of 5
+   AdaFace passes. Halves training time. Larger code change; defer
+   until 1-4 above are exhausted.
+
+6. **Fix sampler + re-test Phase 6.** Only after 1-5 plateau.
+
+Likely terminal directions:
 - ~~Phase 3 full fine-tune — almost certainly regressive (the M11 v4
-  lesson).~~
-- ~~Variations of hard-negative strategies — closed direction.~~
+  lesson, intuitively still expected even with corrected sampler).~~
+- **Lower SupCon λ** (0.01 or 0.02) — SupCon's failure signature in
+  R003 (hurts cross-generation classes) is a wrong-direction signal,
+  not just a magnitude issue. Skip.
 
 The proposal's experimental sequence (§38) is **partially vindicated**.
-Phase 2 (R002) is the clear winner. Phase 4 and Phase 6 didn't add
-value on this dataset; only Phase 5 remains untested in the proposal
-sequence.
+Phase 2 (R002) is the clear winner. Phase 4 was rejected; Phase 6
+remains genuinely untested; Phase 5 is next.
 
 ---
 
