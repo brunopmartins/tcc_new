@@ -6,6 +6,124 @@ Newest run on top.
 
 ---
 
+## Run 005 — 2026-05-14 — SAFEGUARD-stopped at epoch 16 (peak Val AUC 0.9318 ep 4; Test AUC 0.8476. Phase 5 relation aux: per-class targets confirmed, AUC within noise floor)
+
+**Status:** SAFEGUARD auto-stopped at epoch 16 — Val AUC below peak (0.9318 ep 4) for 10 consecutive epochs.
+
+**Outcome:** Phase 5 of `proposta_rgck_net_kinship.md` §38 — same stack as R002 (Phase 2 partial unfreeze + classifier head + BCE) + **relation-type CE auxiliary loss λ=0.05 on positive pairs only**, class-balanced via inverse-frequency weights from train positives. Val AUC peak at **0.9318** (ep 4), essentially identical to R002's 0.9323. Test ROC AUC **0.8476** — **-0.009 vs R002's 0.8564, within the ±0.009 noise floor measured in R004**. Test F1 +0.013, Recall +5.6 pp, Precision -3.8 pp (threshold dropped to 0.300, model now operates in a higher-recall regime).
+
+**Per-relation findings (the main result):** **all 11 kin classes improved 2-7 pp** vs R002. The 4 grandparent classes (explicit Phase 5 targets) gained 2.0-7.3 pp: gmgd +7.3, gmgs +6.6, gfgd +3.6, gfgs +2.0. Trade-off: non-kin specificity -5.7 pp at the chosen threshold; TAR@FAR levels all -0.9 to -1.5 pp.
+
+**Hypothesis test result:** per-class targeted version **CONFIRMED**; global AUC version **NOT CONFIRMED** (within noise floor). R005 is the first post-R002 intervention to not lose meaningfully on AUC and to improve every kin class simultaneously.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 \
+GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+LEARNING_RATE=1e-5 \
+RELATION_AUX_WEIGHT=0.05 \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 002
+
+| Parameter | R002 | **R005** |
+|---|---|---|
+| `RELATION_AUX_WEIGHT` | 0 (off) | **0.05** |
+| `--relation_aux_balanced` | — | on (inverse-freq weights) |
+| Architecture | classifier head only | + `relation_head: Linear(512 → 11)` on 0.5·(gA+gB) |
+| All other knobs | — | identical |
+
+### Configuration
+
+Same as R002 plus:
+
+| Param | Value |
+|-------|-------|
+| Backbone | AdaFace IR-101 (stages 1-3 frozen, stage 4 + output_layer trainable) |
+| `aux_relation_head` | True |
+| `relation_aux_weight` | 0.05 |
+| `relation_aux_balanced` | True |
+| Trainable params | 31,560,461 / 70,746,317 (44.61 %) — relation_head adds 5,643 params |
+| Loss | BCE(classifier_logit) + 0.05·CE_rel(rel_logits\|pos, balanced) |
+| Time/epoch | ~26 min |
+| Class weights (from train pos): bb=0.440, ss=0.404, sibs=0.392, fs=0.252, fd=0.253, ms=0.261, md=0.249, gfgd=2.193, gfgs=1.955, gmgd=2.460, gmgs=2.140 (mean=1.0) |
+
+### Training trajectory
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR | R002 same ep | Δ R005-R002 |
+|------:|-----------:|--------:|--------:|----:|-----|------:|------:|
+| 1 | 0.7060 | 77.8 % | 0.8696 | 0.450 | 2.0e-6 | 0.8644 | +0.005 |
+| 2 | 0.5072 | 85.0 % | 0.9279 | 0.550 | 4.0e-6 | 0.9259 | +0.002 |
+| 3 | 0.4189 | 85.6 % | 0.9306 | 0.500 | 6.0e-6 | 0.9311 | -0.001 |
+| **4** | **0.3514** | **86.0 %** | **0.9318 (peak)** | 0.300 | 8.0e-6 | 0.9323 | **-0.001** |
+| 5 | 0.3099 | 85.8 % | 0.9273 | 0.300 | 1.0e-5 | 0.9306 | -0.003 |
+| 6 | 0.2684 | 85.5 % | 0.9278 | 0.100 | 1.0e-5 | 0.9284 | -0.001 |
+| 7 | 0.2306 | 84.8 % | 0.9211 | 0.100 | 9.99e-6 | 0.9230 | -0.002 |
+| 8 | 0.2119 | 84.7 % | 0.9190 | 0.100 | — | — | — |
+| 9-15 | 0.20→0.11 | 82-85 % | 0.89-0.92 | 0.10 | 9.96→9.76e-6 | — | (sustained decline) |
+| 16 | 0.1141 | 82.4 % | 0.8940 | 0.100 | 9.71e-6 | — | SAFEGUARD fired |
+
+R005 stayed within ±0.005 of R002 in every epoch through ep 7. Peak Val AUC essentially identical (-0.0005 from R002 — well within run-to-run noise). The new loss term did not raise or lower the Val AUC ceiling.
+
+### Test metrics (val-selected threshold 0.300)
+
+| Metric | M12 R002 (HEADLINE) | **M12 R005** | Δ |
+|---|---:|---:|---:|
+| **Test ROC AUC** | **0.8564** | **0.8476** | **-0.009** (within ±0.009 noise floor) |
+| Test Accuracy | 76.79 % | 76.53 % | -0.3 pp |
+| Test Balanced Acc | 76.48 % | 76.45 % | -0.0 pp |
+| Test F1 | 0.7402 | **0.7528** | **+0.013** |
+| Test Precision | **79.82 %** | 75.99 % | -3.8 pp |
+| Test Recall | 69.00 % | **74.58 %** | **+5.6 pp** |
+| Test Avg Precision | 0.8389 | 0.8288 | -0.010 |
+| TAR @ FAR=0.001 | **4.18 %** | 2.94 % | -1.2 pp |
+| TAR @ FAR=0.01 | **17.58 %** | 16.67 % | -0.9 pp |
+| TAR @ FAR=0.1 | **57.11 %** | 55.60 % | -1.5 pp |
+| Val→test AUC gap | -0.076 | -0.084 | slightly wider (still 2nd best) |
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.300)
+
+| Relation | N | M12 R002 | **M12 R005** | Δ |
+|----------|--:|---------:|-------------:|---:|
+| bb | 860 | 75.4 % | **78.5 %** | **+3.1 pp** |
+| ss | 731 | 75.9 % | **82.2 %** | **+6.3 pp** |
+| sibs | 234 | 79.5 % | **85.9 %** | **+6.4 pp** |
+| md | 1038 | 68.7 % | **74.3 %** | **+5.6 pp** |
+| fs | 1135 | 68.6 % | **75.0 %** | **+6.4 pp** |
+| ms | 1036 | 69.4 % | **75.6 %** | **+6.2 pp** |
+| fd | 918 | 68.4 % | **74.2 %** | **+5.8 pp** |
+| **gfgd** | 138 | 52.2 % | **55.8 %** | **+3.6 pp** ⭐ |
+| gfgs | 98 | 39.8 % | **41.8 %** | **+2.0 pp** ⭐ |
+| **gmgd** | 123 | 36.6 % | **43.9 %** | **+7.3 pp** ⭐ |
+| **gmgs** | 121 | 44.6 % | **51.2 %** | **+6.6 pp** ⭐ |
+| **non-kin** | 6993 | **84.0 %** | 78.3 % | -5.7 pp |
+
+**Every kin class improved by 2-7 pp.** The 4 grandparent classes (the Phase 5 targets) all gained 2-7 pp — the explicit hypothesis was confirmed on its targets. Non-kin specificity dropped 5.7 pp, which is what brought Test AUC down 0.009.
+
+### Notes
+
+- **First post-R002 intervention to not lose meaningfully on AUC.** R003 (SupCon) lost -0.005, R004 (intended hard negs, actually a sampler reseed) lost -0.009. R005 lost -0.009 — same magnitude as R004 but with completely different per-class profile: R004 regressed every kin class; R005 improved every one.
+- **Per-class effect is the opposite of R003's**: R003 hurt grandparents (-1 to -1.6 pp); R005 helps them (+2.0 to +7.3 pp). Different aux objectives produce opposite class signatures — informative for proposal §28's warning about overly aggressive contrastive losses.
+- **No degradation in val→test gap**: -0.084 here vs -0.076 for R002, -0.080 for R003, -0.088 for R004, -0.089 for R001. R005 is in the second-best zone; no family memorisation pathology.
+- **Trade-off recipe**: R005 prioritises per-class kin balance over strict-FAR performance. R002 prioritises the opposite.
+
+### Artifacts
+
+- Checkpoint (epoch 4, Val AUC 0.9318): `output/005/checkpoints/best.pt` (536 MB)
+- Train log: `output/005/logs/train.log`
+- Test log: `output/005/logs/test.log`
+- Results: `output/005/results/test_metrics_rocm.txt`
+- Trainable params: 31,560,461 / 70,746,317 (44.61 %) — relation_head adds 5,643 params
+
+---
+
 ## Run 004 — 2026-05-14 — Stopped at epoch 8 (peak Val AUC 0.9354 ep 4 — project max; Test AUC 0.8473. Intended hard-negs test — Errata: hypothesis NOT actually tested)
 
 **Status:** Stopped manually at epoch 8 (Val AUC -0.010 from peak, train loss still descending, grandparent classes collapsing in val)

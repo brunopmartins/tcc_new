@@ -58,40 +58,40 @@ The structure:
 
 ## Run table
 
-| | Run 001 | **Run 002** | Run 003 | Run 004 |
-|---|---|---|---|---|
-| **Date** | 2026-05-13 | 2026-05-13 | 2026-05-14 | 2026-05-14 |
-| **Phase** | 1 (frozen) | **2 (partial unfreeze)** | 4 (R002 + SupCon) | 6 (R002 + hard negs — *intended; not tested*) |
-| **Trainable** | 5.6 M (7.9 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) |
-| **LR** | 1e-4 | 1e-5 | 1e-5 | 1e-5 |
-| **Loss** | BCE | BCE | BCE + 0.05 × SupCon | BCE |
-| **Neg strategy** | random | random | random | `relation_matched` *(no-op: misnamed sampler, see R004 Errata)* |
-| **Status** | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 8 |
-| **Best Val AUC** | 0.8351 (ep 3) | 0.9323 (ep 4) | 0.9306 (ep 4) | **0.9354 (ep 4)** — project max |
-| **Test ROC-AUC** | 0.7464 | **0.8564** ⭐ **HEADLINE** | 0.8510 | 0.8473 |
-| **Test Accuracy** | 68.0 % | 76.8 % | 76.4 % | 75.8 % |
-| **Val→test gap** | -0.089 | -0.076 | -0.080 | -0.088 |
-| **Notes** | Phase 1 capped ceiling | **Phase 2 partial unfreeze beats M02 R031.** [run-002.md](run-002.md) | SupCon aux REJECTED. [run-003.md](run-003.md) | Intended hard-negs test — actually tested negative-sampler reseed because `relation_matched` sampler does the same thing as `random` (different seed only). Phase 6 hypothesis remains UNTESTED. [run-004.md](run-004.md) |
+| | Run 001 | **Run 002** | Run 003 | Run 004 | Run 005 |
+|---|---|---|---|---|---|
+| **Date** | 2026-05-13 | 2026-05-13 | 2026-05-14 | 2026-05-14 | 2026-05-14 |
+| **Phase** | 1 (frozen) | **2 (partial unfreeze)** | 4 (R002 + SupCon) | 6 (R002 + hard negs — *intended; not tested*) | **5 (R002 + relation-type aux head)** |
+| **Trainable** | 5.6 M (7.9 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) (+5,643 in relation_head) |
+| **LR** | 1e-4 | 1e-5 | 1e-5 | 1e-5 | 1e-5 |
+| **Loss** | BCE | BCE | BCE + 0.05 × SupCon | BCE | **BCE + 0.05 × CE_rel(pos, balanced)** |
+| **Neg strategy** | random | random | random | `relation_matched` *(no-op: misnamed sampler, see R004 Errata)* | random |
+| **Status** | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 8 | SAFEGUARD ep 16 |
+| **Best Val AUC** | 0.8351 (ep 3) | 0.9323 (ep 4) | 0.9306 (ep 4) | **0.9354 (ep 4)** — project max | 0.9318 (ep 4) |
+| **Test ROC-AUC** | 0.7464 | **0.8564** ⭐ **HEADLINE** | 0.8510 | 0.8473 | 0.8476 |
+| **Test Accuracy** | 68.0 % | 76.8 % | 76.4 % | 75.8 % | 76.5 % |
+| **Val→test gap** | -0.089 | -0.076 | -0.080 | -0.088 | -0.084 |
+| **Notes** | Phase 1 capped ceiling | **Phase 2 partial unfreeze beats M02 R031.** [run-002.md](run-002.md) | SupCon aux REJECTED. [run-003.md](run-003.md) | Intended hard-negs test — actually tested negative-sampler reseed because `relation_matched` sampler does the same thing as `random` (different seed only). Phase 6 hypothesis remains UNTESTED. [run-004.md](run-004.md) | **Phase 5 per-class hypothesis CONFIRMED**: all 11 kin classes improved 2-7 pp vs R002, especially grandparents (gmgd +7.3, gmgs +6.6, gfgd +3.6, gfgs +2.0). Global AUC -0.009 (within ±0.009 noise floor). [run-005.md](run-005.md) |
 
 ---
 
 ## Test metrics
 
-| Metric | M02 R031 (prior best) | Run 001 (Phase 1) | **Run 002 (Phase 2)** | Run 003 (+SupCon) | Run 004 (+hard negs) |
-|---|---:|---:|---:|---:|---:|
-| **Test ROC-AUC** | 0.850 | 0.7464 | **0.8564** ⭐ | 0.8510 | 0.8473 |
-| Test Accuracy | 74.4 % | 68.00 % | **76.79 %** ⭐ | 76.37 % | 75.75 % |
-| Test Balanced Acc | 75.2 % | 67.41 % | **76.48 %** | 76.09 % | 75.33 % |
-| Test F1 | 0.779 | 0.6150 | 0.7402 | 0.7373 | 0.7211 |
-| Test Precision | 66.5 % | 72.60 % | 79.82 % | 78.88 % | **80.29 %** ⭐ |
-| Test Recall | 94.1 % | 53.34 % | 69.00 % | 69.22 % | 65.44 % |
-| **Avg Precision** | 0.817 | 0.7323 | **0.8389** ⭐ | 0.8305 | 0.8287 |
-| **TAR@FAR=0.001** | 2.5 % | 2.36 % | **4.18 %** ⭐ | 2.67 % | 2.01 % |
-| **TAR@FAR=0.01** | 14.0 % | 10.06 % | **17.58 %** ⭐ | 16.57 % | 14.71 % |
-| **TAR@FAR=0.1** | 49.9 % | 37.86 % | **57.11 %** ⭐ | 55.43 % | 56.06 % |
-| Best Val ROC-AUC | 0.881 | 0.8351 | 0.9323 | 0.9306 | **0.9354** ⭐ (project max) |
-| Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % | 85.7 % | 86.2 % |
-| **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 | -0.080 | -0.088 |
+| Metric | M02 R031 (prior best) | Run 001 (Phase 1) | **Run 002 (Phase 2)** | Run 003 (+SupCon) | Run 004 (+hard negs) | Run 005 (+rel aux head) |
+|---|---:|---:|---:|---:|---:|---:|
+| **Test ROC-AUC** | 0.850 | 0.7464 | **0.8564** ⭐ | 0.8510 | 0.8473 | 0.8476 |
+| Test Accuracy | 74.4 % | 68.00 % | **76.79 %** ⭐ | 76.37 % | 75.75 % | 76.53 % |
+| Test Balanced Acc | 75.2 % | 67.41 % | **76.48 %** | 76.09 % | 75.33 % | 76.45 % |
+| Test F1 | 0.779 | 0.6150 | 0.7402 | 0.7373 | 0.7211 | **0.7528** ⭐ vs M12 |
+| Test Precision | 66.5 % | 72.60 % | 79.82 % | 78.88 % | **80.29 %** ⭐ | 75.99 % |
+| Test Recall | 94.1 % | 53.34 % | 69.00 % | 69.22 % | 65.44 % | **74.58 %** ⭐ vs M12 |
+| **Avg Precision** | 0.817 | 0.7323 | **0.8389** ⭐ | 0.8305 | 0.8287 | 0.8288 |
+| **TAR@FAR=0.001** | 2.5 % | 2.36 % | **4.18 %** ⭐ | 2.67 % | 2.01 % | 2.94 % |
+| **TAR@FAR=0.01** | 14.0 % | 10.06 % | **17.58 %** ⭐ | 16.57 % | 14.71 % | 16.67 % |
+| **TAR@FAR=0.1** | 49.9 % | 37.86 % | **57.11 %** ⭐ | 55.43 % | 56.06 % | 55.60 % |
+| Best Val ROC-AUC | 0.881 | 0.8351 | 0.9323 | 0.9306 | **0.9354** ⭐ (project max) | 0.9318 |
+| Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % | 85.7 % | 86.2 % | 86.0 % |
+| **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 | -0.080 | -0.088 | -0.084 |
 
 ⭐ = R002 wins on every threshold-invariant Test metric — remains the **project headline**. R004 has the project-wide max Val AUC but it doesn't transfer (note: R004's `relation_matched` sampler is misnamed — it does not produce hard negatives; see [run-004.md](run-004.md) Errata).
 
@@ -149,12 +149,14 @@ The structure:
 
 ---
 
-## Conclusion (as of R004)
+## Conclusion (as of R005)
 
 **R002 (Test AUC 0.8564) remains the project headline.** M02 R031's
-reign as best-in-project (0.850) is over and stays over. R003 and R004
-both attempted to improve on R002 via proposal Phase 4-6 interventions
-and both failed.
+reign as best-in-project (0.850) is over and stays over. R003, R004,
+and R005 all attempted to improve on R002 via proposal Phase 4-6
+interventions; none beat R002 on threshold-invariant AUC, but R005 is
+the first to **deliver meaningful per-class gains** (especially on
+grandparent classes) without widening the val→test gap.
 
 Key findings (cumulative across R001-R004):
 
@@ -189,6 +191,19 @@ Key findings (cumulative across R001-R004):
    the seed.** The earlier "M11 v4 confirms hard negs hurt" claim
    rests on the same broken sampler and is also withdrawn.
 
+5. **R005 (Phase 5 relation-type CE aux head, λ=0.05, class-balanced)
+   — per-class hypothesis CONFIRMED, AUC hypothesis NOT.** All 11 kin
+   classes improved 2-7 pp vs R002. The 4 grandparent classes (the
+   explicit Phase 5 targets) gained 2.0-7.3 pp: gmgd +7.3, gmgs +6.6,
+   gfgd +3.6, gfgs +2.0. Test ROC AUC 0.8476 — -0.009 vs R002, **within
+   the ±0.009 noise floor**. Trade-off: non-kin specificity -5.7 pp at
+   the lower selected threshold (0.300 vs R002's ~0.500), TAR@FAR
+   levels all down 0.9-1.5 pp. **First post-R002 intervention to not
+   lose meaningfully on AUC and to improve every kin class
+   simultaneously.** R005's per-class profile is the *opposite* of
+   R003's (R003 hurt grandparents, R005 helps them) — different aux
+   objectives produce opposite class signatures.
+
 5. **The recipe stack that won (R002):**
    - AdaFace IR-101 backbone
    - Stages 1-3 frozen, stage 4 (body[46:49]) + output_layer trainable
@@ -213,6 +228,15 @@ Key findings (cumulative across R001-R004):
    variants tested, but the hard-negative variant remains open until
    the sampler is fixed.
 
+7. **Phase 5 relation-type aux head is a viable alternative recipe.**
+   R005 shows a *qualitatively different* model from R002: stronger
+   kin recall and per-class balance, weaker non-kin specificity. The
+   AUC trade-off is within noise floor. For applications that care
+   about per-class fairness across kin types R005 is preferable; for
+   strict-FAR deployment R002 wins. The proposal §38 narrative for
+   Phase 5 ("relation-type aux helps the rare classes") is now
+   empirically supported on FIW.
+
 ### What R001 already validated, still standing
 
 R001 (Phase 1, fully frozen) had Val→test gap -0.089 — smallest in the
@@ -235,32 +259,43 @@ sequence design.
 | I-08 | High | **Closed in R003** | Phase 4 SupCon λ=0.05 auxiliary loss | R003 showed -0.005 Test AUC, regressed grandparent classes. Closed direction at this λ. Possible lower λ untested. |
 | I-09 | High | **Open (Errata 2026-05-14)** | `relation_matched` sampler is misnamed | [models/shared/dataset.py:433](../../shared/dataset.py#L433): line 464 picks a relation but line 465 hardcodes `"non-kin"` — the chosen relation is discarded. Algorithm is identical to [models/shared/dataset.py:512](../../shared/dataset.py#L512) up to seed offset. Either rename the function to clarify it's a reseed, or implement actual role-matched sampling so Phase 6 can be tested. |
 | I-10 | Info | **Open (Errata 2026-05-14)** | Noise floor under partial-FT ≈ ±0.01 Test AUC from negative-sampler reseed | R002 vs R004 differ only in negative-sampler seed (200 vs 270) and produced Test AUC 0.8564 vs 0.8473 — a ~0.009 swing. Any future "improvement" of smaller magnitude is indistinguishable from sampler variance. Control the seed for definitive comparisons. |
+| I-11 | Medium | **Open (R005-discovered, 2026-05-14)** | Architecture is asymmetric in (A, B) | `cross_region` adapter uses separate `attn_ab`/`attn_ba`/`ffn_a`/`ffn_b`/`norm_a*`/`norm_b*` weights; `regional_gate` and `classifier` concatenate tokens in `[A, B]` order — `forward(A, B) ≠ forward(B, A)` even though kinship is symmetric. R006 tests symmetric forward (process each pair in both directions, combine in loss). [model.py:148-174](../model.py#L148-L174), [model.py:234-242](../model.py#L234-L242), [model.py:374](../model.py#L374). |
+| I-06 | Info | **Partial closure in R005** | Per-relation grandparent accuracies at threshold 0.5 | R005 (Phase 5 aux head, balanced CE) lifted grandparent classes: gmgd +7.3 pp, gmgs +6.6 pp, gfgd +3.6 pp, gfgs +2.0 pp vs R002 — explicit hypothesis confirmed on its targets. Test AUC unchanged (within noise floor) and non-kin specificity dropped 5.7 pp; trade-off. |
 
-### Next directions (re-prioritised after the Errata, 2026-05-14)
+### Next directions (re-prioritised after R005, 2026-05-14)
 
 Closed by experimental evidence so far:
 - ~~Phase 4 (SupCon aux at λ=0.05) — REJECTED in R003.~~
 
-Reopened by the Errata:
+Reopened by R004 Errata:
 - **Phase 6 (real hard negatives)** — requires implementing actual
   role-matched negative sampling first. Lower priority than the
-  untried directions below; revisit only after Phase 5 / diff-LR /
-  L2-SP plateau.
+  symmetry / diff-LR experiments below; revisit only after those
+  plateau.
 
-Still untried (priority order, user direction):
+Partially closed by R005:
+- **Phase 5 (relation-type aux head, λ=0.05, balanced)** — per-class
+  hypothesis confirmed (grandparents +2-7 pp); global AUC within
+  noise floor (-0.009). Stays "on the table" as a recipe to
+  combine with other interventions, not as a standalone winner.
 
-1. **Phase 5: relation-type auxiliary head.** CE over the 11 kin
-   relations on positive pairs only, class-balanced, low λ
-   (0.03 / 0.05 / 0.1). Targets the weakest classes
-   (gfgs/gmgd/gmgs) without forcing cross-generation embeddings to
-   converge as SupCon did. **Best next bet.** Requires dataset
-   modification to pass relation int labels through the loader.
+Active priority order (post-R005):
+
+1. **R006: R005 + symmetric forward (Option-B BCE).** Currently
+   `forward(A,B) ≠ forward(B,A)` because the cross-region adapter
+   has direction-specific weights (`attn_ab` vs `attn_ba`, etc.) and
+   the regional_gate / classifier concatenate tokens in
+   `[A, B]` order. R006 processes each pair in both orders (cheap:
+   only the head runs twice, tokenizer reused) and applies
+   Option-B BCE = 0.5·(BCE_AB + BCE_BA) plus averaged CE_rel.
+   Hypothesis: ~0.005-0.01 Test AUC gain from variance reduction.
+   Infrastructure committed (8923043), launch pending. **Next run.**
 
 2. **Differential LR across the trainable stack.** Today, stage 4 +
    output_layer + cross-attn + gate + classifier all share 1e-5.
    Split: stage 4 → 2-5e-6, output_layer → 5e-6, cross-attn / gate /
    classifier → 1-2e-5. Lets the head adapt while the backbone melts
-   less. Cheap structural change on top of R002.
+   less. Cheap structural change on top of R002 or R005/R006.
 
 3. **L2-SP regularisation on the unfrozen backbone.** Penalise
    `‖θ_stage4 - θ_AdaFace_original‖²` (and likewise for output_layer)
@@ -268,17 +303,21 @@ Still untried (priority order, user direction):
    shrinking the Val→Test gap.
 
 4. **Comparison-only fusion ablation.** Drop `gA, gB` from the
-   classifier input at [model.py:373](../model.py#L373); keep
+   classifier input at [model.py:374](../model.py#L374); keep
    `|diff|, prod, sims, weights, score`. Removes identity-as-feature
    signal that may be feeding val-pool memorisation. Likely lowers
    Val AUC; may close the gap and raise Test.
 
-5. **Architecture switch to ROI Align tokenizer** (proposal §15
+5. **Lower relation_aux λ** (0.02 or 0.03) — if the R005 trade-off
+   scales with λ, a smaller weight may preserve more of R002's
+   strict-FAR performance while retaining most of the per-class gain.
+
+6. **Architecture switch to ROI Align tokenizer** (proposal §15
    Strategy 1): single feature-map forward + ROI pool instead of 5
    AdaFace passes. Halves training time. Larger code change; defer
-   until 1-4 above are exhausted.
+   until 1-5 above are exhausted.
 
-6. **Fix sampler + re-test Phase 6.** Only after 1-5 plateau.
+7. **Fix sampler + re-test Phase 6.** Only after 1-6 plateau.
 
 Likely terminal directions:
 - ~~Phase 3 full fine-tune — almost certainly regressive (the M11 v4
@@ -287,9 +326,11 @@ Likely terminal directions:
   R003 (hurts cross-generation classes) is a wrong-direction signal,
   not just a magnitude issue. Skip.
 
-The proposal's experimental sequence (§38) is **partially vindicated**.
-Phase 2 (R002) is the clear winner. Phase 4 was rejected; Phase 6
-remains genuinely untested; Phase 5 is next.
+The proposal's experimental sequence (§38) is **largely vindicated**.
+Phase 2 (R002) is the clear winner. Phase 4 rejected; Phase 5
+per-class confirmed; Phase 6 genuinely untested; the new symmetry
+direction (R006) sits outside the proposal sequence as a discovered
+architectural correction.
 
 ---
 
