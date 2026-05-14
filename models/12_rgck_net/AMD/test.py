@@ -109,7 +109,8 @@ def main():
             labels = batch["label"]
             relations = batch.get("relation", [None] * len(labels))
 
-            logit, _, _ = model(img1, img2)
+            outputs = model(img1, img2)
+            logit = outputs[0]
             probs = torch.sigmoid(logit).cpu().numpy().flatten()
 
             all_preds.extend(probs.tolist())

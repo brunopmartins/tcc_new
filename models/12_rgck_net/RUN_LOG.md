@@ -6,6 +6,138 @@ Newest run on top.
 
 ---
 
+## Run 003 — 2026-05-14 — Stopped at epoch 7 (peak Val AUC 0.9306 ep 4; Test AUC 0.8510, SupCon aux did NOT help)
+
+**Status:** Stopped manually at epoch 7 (3 consecutive declines below peak)
+**Outcome:** Phase 4 of `proposta_rgck_net_kinship.md` §28 — same stack as R002 (Phase 2 partial unfreeze + classifier head) + **supervised-contrastive auxiliary loss with λ=0.05** over the L2-normalised contextualised global tokens `(gA, gB)`. Hypothesis: aux contrastive organises the embedding space and lifts Val/Test AUC. **Rejected by experimental evidence:** Test AUC = **0.8510**, -0.005 below R002 (0.8564, current project headline). All three TAR@FAR levels also regressed. Tiny improvements in `sibs` (+3.4 pp) and `bb` (+1.7 pp), but regressions in `gmgs`, `gfgs`, non-kin, and lower precision overall. Net negative.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 \
+GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+LEARNING_RATE=1e-5 \
+SUPCON_WEIGHT=0.05 \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 002
+
+| Parameter | R002 | **R003** |
+|---|---|---|
+| `SUPCON_WEIGHT` | 0.0 (off) | **0.05** |
+| `SUPCON_MARGIN` | — | 0.3 (default) |
+| All other knobs | — | identical |
+
+The SupCon term is a margin-style label-aware contrastive on the cosine
+similarity of the contextualised global tokens (after the cross-region
+adapter, L2-normalised):
+
+- For label=1 pairs: pull `cos(gA, gB)` toward 1 via `(1 - cos)²`
+- For label=0 pairs: push `cos(gA, gB)` below `1 - margin = 0.7` via `max(0, cos - 0.7)²`
+
+`L_total = L_bce(classifier_logit, label) + 0.05 × L_supcon(gA, gB, label, margin=0.3)`
+
+### Configuration
+
+Same as R002, plus:
+
+| Param | Value |
+|-------|-------|
+| **Loss** | **BCE + 0.05 × SupCon** (margin 0.3) |
+| Trainable params | 31,554,818 / 70,740,674 (44.61%) — identical to R002 |
+| Time/epoch | ~26 min (similar to R002, supcon term is cheap) |
+
+### Training trajectory
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR | R002 same ep | Δ R003-R002 |
+|------:|-----------:|--------:|--------:|----:|-----|------:|------:|
+| 1 | 0.6020 | 77.7 % | 0.8626 | 0.400 | 2.0e-6 | 0.8644 | -0.002 |
+| 2 | 0.4164 | 84.2 % | 0.9246 | 0.400 | 4.0e-6 | 0.9259 | -0.001 |
+| 3 | 0.3446 | 85.2 % | 0.9305 | 0.350 | 6.0e-6 | 0.9311 | -0.001 |
+| **4** | **0.3021** | **85.7 %** | **0.9306** | 0.300 | 8.0e-6 | 0.9323 | -0.002 (peak) |
+| 5 | 0.2714 | 85.6 % | 0.9285 | 0.150 | 1.0e-5 | 0.9306 | -0.002 |
+| 6 | 0.2397 | 85.6 % | 0.9295 | 0.200 | 1.0e-5 | 0.9284 | +0.001 (R003 ahead — only positive Δ) |
+| 7 | 0.2197 | 85.3 % | 0.9203 | 0.100 | 9.99e-6 | 0.9230 | -0.003 (decline confirmed) |
+
+R003 trajectory tracks R002 with a small offset of ~-0.001 to -0.002
+throughout. The single positive Δ (ep 6) was within noise. Train loss is
+consistently ~0.013 higher than R002 (the supcon contribution).
+
+### Test metrics (threshold 0.500)
+
+| Metric | M12 R002 (project headline) | **M12 R003** | Δ |
+|---|---:|---:|---:|
+| **Test ROC AUC** | **0.8564** | **0.8510** | **-0.005** |
+| Test Accuracy | 76.79 % | 76.37 % | -0.4 pp |
+| Test Balanced Acc | 76.48 % | 76.09 % | -0.4 pp |
+| Test F1 | 0.7402 | 0.7373 | -0.003 |
+| Test Precision | 79.82 % | 78.88 % | -0.9 pp |
+| Test Recall | 69.00 % | 69.22 % | +0.2 pp |
+| Test Avg Precision | 0.8389 | 0.8305 | -0.008 |
+| TAR @ FAR=0.001 | 4.18 % | 2.67 % | -1.5 pp |
+| TAR @ FAR=0.01 | 17.58 % | 16.57 % | -1.0 pp |
+| TAR @ FAR=0.1 | 57.11 % | 55.43 % | -1.7 pp |
+| Val→test AUC gap | -0.076 | -0.080 | wider |
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.500)
+
+| Relation | N | M12 R002 | **M12 R003** | Δ |
+|----------|--:|---------:|-------------:|---:|
+| **sibs** | 234 | 79.5 % | **82.9 %** | **+3.4** |
+| **bb** | 860 | 75.4 % | **77.1 %** | **+1.7** |
+| ss | 731 | 75.9 % | 75.9 % | = |
+| gfgd | 138 | 52.2 % | 52.9 % | +0.7 |
+| md | 1038 | 68.7 % | 68.6 % | -0.1 |
+| fs | 1135 | 68.6 % | 68.4 % | -0.2 |
+| ms | 1036 | 69.4 % | 69.1 % | -0.3 |
+| fd | 918 | 68.4 % | 68.4 % | = |
+| gfgs | 98 | 39.8 % | 38.8 % | -1.0 |
+| non-kin | 6993 | 84.0 % | 83.0 % | -1.0 |
+| gmgs | 121 | 44.6 % | 43.0 % | -1.6 |
+| gmgd | 123 | 36.6 % | 36.6 % | = |
+
+R003 improves on the **same-generation classes** (sibs, bb — both with
+high N) but slightly regresses on the **rare grandparent classes**
+(gmgs, gfgs) and non-kin. The supcon term pulls positive pairs together
+in embedding space, which helps siblings (visually similar within a
+batch) but hurts the more conceptually distant grandparent pairs.
+
+### Notes
+
+- **SupCon λ=0.05 hypothesis rejected.** The proposal §28 caveat — "if
+  contrastive loss is too strong, can force artificial closeness" — was
+  prescient. λ=0.05 was already at the conservative end suggested by the
+  proposal and still produced net regression.
+- The siblings improvement (sibs +3.4, bb +1.7) is consistent with the
+  supcon term's behaviour: it pulls positive pairs together, which works
+  for classes where positives are visually similar.
+- Grandparent classes regressed because their positives are
+  cross-generational (large age gap = visually different), so forcing
+  them closer in embedding space distorts the learned representation.
+- This is a **second negative result** for sophistication on top of the
+  M12 R002 stack — earlier, M09 R002 (balanced sampling) and M11 v4
+  (relation_matched negatives) also lowered Test AUC relative to their
+  no-aux M09 R001 baseline. The pattern: any auxiliary that constrains
+  the embedding space tends to over-fit val-pool patterns at the cost
+  of test generalisation.
+- **M12 R002 (Test AUC 0.8564) remains the project headline.**
+
+### Artifacts
+
+- Checkpoint (epoch 4, Val AUC 0.9306): `output/003/checkpoints/best.pt` (536 MB) — patched manually with `model_config` (supcon_weight=0.05, supcon_margin=0.3)
+- Resume snapshot: `output/003/checkpoints/epoch_5.pt` (will be pruned)
+- Train log: `output/003/logs/train.log`
+- Test log: `output/003/logs/test.log` (also `/tmp/m12_r003_test.log`)
+- Results: `output/003/results/test_metrics_rocm.txt`
+
+---
+
 ## Run 002 — 2026-05-13 — Stopped at epoch 7 (peak Val AUC 0.9323 ep 4; **Test AUC 0.8564 — NEW PROJECT HEADLINE, beats M02 R031's 0.850**)
 
 **Status:** Stopped manually at epoch 7/100 (3 epochs of post-peak decline)

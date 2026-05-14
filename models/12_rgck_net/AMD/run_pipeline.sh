@@ -57,6 +57,8 @@ CLASSIFIER_HIDDEN="${CLASSIFIER_HIDDEN:-512}"
 DROPOUT="${DROPOUT:-0.2}"
 FREEZE_BACKBONE="${FREEZE_BACKBONE:-1}"        # Phase 1 default: frozen
 UNFREEZE_LAST_STAGE="${UNFREEZE_LAST_STAGE:-0}" # Phase 2: set to 1 to unfreeze body[46:49] + output_layer
+SUPCON_WEIGHT="${SUPCON_WEIGHT:-0.0}"             # Phase 4: weight λ for supervised-contrastive aux (0.0 = disabled)
+SUPCON_MARGIN="${SUPCON_MARGIN:-0.3}"             # margin for negative pairs in supcon term
 
 NEGATIVE_RATIO="${NEGATIVE_RATIO:-1.0}"
 EVAL_NEGATIVE_RATIO="${EVAL_NEGATIVE_RATIO:-1.0}"
@@ -161,6 +163,8 @@ TRAIN_ARGS=(
     --num_workers             "${NUM_WORKERS}"
     --patience                "${PATIENCE}"
     --max_grad_norm           "${MAX_GRAD_NORM}"
+    --supcon_weight           "${SUPCON_WEIGHT}"
+    --supcon_margin           "${SUPCON_MARGIN}"
     --seed                    "${SEED}"
     --rocm_device             "${GPU_ID}"
     --checkpoint_dir          "${CKPT_DIR}"

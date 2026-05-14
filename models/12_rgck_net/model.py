@@ -341,6 +341,8 @@ class RGCKNet(nn.Module):
             kinship_logit: (B,) raw logit (apply sigmoid for probability)
             region_weights: (B, K) sigmoid gating weights per region
             attn_map: (B, num_heads, K, K) last-layer A→B cross-attention
+            gA_norm: (B, embedding_dim) L2-normalised contextualised global token A
+            gB_norm: (B, embedding_dim) L2-normalised contextualised global token B
         """
         # Region tokens (B, K, 512), backbone may be frozen
         tokens_a = self.tokenizer(img_a)
@@ -372,7 +374,11 @@ class RGCKNet(nn.Module):
         fusion = torch.cat([gA, gB, diff_abs, prod, sims, weights, regional_score], dim=-1)
         logit = self.classifier(fusion).squeeze(-1)  # (B,)
 
-        return logit, weights, attn_map
+        # L2-normalised global tokens for auxiliary supervised-contrastive loss
+        gA_norm = ctx_a_n[:, self._global_index()]
+        gB_norm = ctx_b_n[:, self._global_index()]
+
+        return logit, weights, attn_map, gA_norm, gB_norm
 
 
 def build_rgck_net(

@@ -106,6 +106,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--min_lr", type=float, default=1e-6)
     p.add_argument("--max_grad_norm", type=float, default=1.0)
 
+    # Phase 4 of proposta_rgck_net_kinship.md §28: supervised contrastive auxiliary
+    p.add_argument("--supcon_weight", type=float, default=0.0,
+                   help="Weight λ for the supervised-contrastive auxiliary loss. "
+                        "0.0 = pure BCE (R001/R002 baseline). 0.05 = proposal Phase 4 default.")
+    p.add_argument("--supcon_margin", type=float, default=0.3,
+                   help="Margin for negative pairs in supcon term — cos sim above (1-margin) is penalised.")
+
     # Negative sampling
     p.add_argument("--negative_ratio", type=float, default=1.0)
     p.add_argument("--eval_negative_ratio", type=float, default=1.0)
@@ -129,28 +136,60 @@ def parse_args() -> argparse.Namespace:
 
 
 class RGCKBCELoss(nn.Module):
-    """BCE-with-logits over the classifier head logit."""
+    """
+    BCE-with-logits over classifier head + optional supervised-contrastive
+    auxiliary over the (gA_norm, gB_norm) L2-normalised global tokens.
 
-    def __init__(self):
+    Phase 4 of `proposta_rgck_net_kinship.md` §28:
+      L_total = L_bce + supcon_weight * L_supcon
+
+    SupCon term is a margin-style label-aware contrastive on cosine similarity:
+      pos pairs (label=1): pull cos toward 1 → (1 - cos)^2
+      neg pairs (label=0): push cos below margin → max(0, cos - (1-margin))^2
+
+    Reduces to pure BCE when supcon_weight=0 (the default — matches R001/R002).
+    """
+
+    def __init__(self, supcon_weight: float = 0.0, supcon_margin: float = 0.3):
         super().__init__()
         self.loss_type = "bce"
         self.bce = nn.BCEWithLogitsLoss()
+        self.supcon_weight = float(supcon_weight)
+        self.supcon_margin = float(supcon_margin)
 
-    def forward(self, logit: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        return self.bce(logit.squeeze(-1).float(), labels.float())
+    @staticmethod
+    def _supcon_term(gA: torch.Tensor, gB: torch.Tensor, labels: torch.Tensor, margin: float) -> torch.Tensor:
+        # gA, gB are already L2-normalised in M12 model.forward
+        cos_sim = (gA * gB).sum(dim=1)  # (B,)
+        label_f = labels.float()
+        pos_loss = (1.0 - cos_sim) ** 2
+        neg_loss = torch.clamp(cos_sim - (1.0 - margin), min=0.0) ** 2
+        loss = label_f * pos_loss + (1.0 - label_f) * neg_loss
+        return loss.mean()
+
+    def forward(self, outputs, labels: torch.Tensor) -> torch.Tensor:
+        # outputs may be a tuple (logit, weights, attn, gA, gB) from M12.forward
+        if isinstance(outputs, tuple):
+            logit = outputs[0]
+            bce_loss = self.bce(logit.squeeze(-1).float(), labels.float())
+            if self.supcon_weight > 0.0 and len(outputs) >= 5:
+                gA = outputs[3]
+                gB = outputs[4]
+                supcon = self._supcon_term(gA, gB, labels, self.supcon_margin)
+                return bce_loss + self.supcon_weight * supcon
+            return bce_loss
+        return self.bce(outputs.squeeze(-1).float(), labels.float())
 
 
 class RGCKROCmTrainer(ROCmTrainer):
-    """ROCm trainer for M12 — handles (logit, weights, attn) output tuple."""
+    """ROCm trainer for M12 — passes full output tuple to RGCKBCELoss."""
 
     def __init__(self, *args, gradient_accumulation: int = 1, **kwargs):
         self.gradient_accumulation = max(1, int(gradient_accumulation))
         super().__init__(*args, **kwargs)
 
     def _compute_loss(self, outputs, labels):
-        if isinstance(outputs, tuple) and len(outputs) >= 1:
-            logit = outputs[0]
-            return self.loss_fn(logit, labels)
+        # RGCKBCELoss handles the tuple unpacking itself so it can access gA, gB
         return self.loss_fn(outputs, labels)
 
 
@@ -268,7 +307,12 @@ def main() -> None:
     print(f"  Total params:        {total:,}")
     print(f"  Trainable params:    {trainable:,} ({100*trainable/total:.2f}%)")
 
-    loss_fn = RGCKBCELoss()
+    loss_fn = RGCKBCELoss(
+        supcon_weight=args.supcon_weight,
+        supcon_margin=args.supcon_margin,
+    )
+    if args.supcon_weight > 0:
+        print(f"  Loss: BCE + {args.supcon_weight:.3f} × SupCon (margin={args.supcon_margin})")
 
     trainer = RGCKROCmTrainer(
         model=model,
@@ -323,6 +367,8 @@ def main() -> None:
         "dropout": args.dropout,
         "freeze_backbone": args.freeze_backbone,
         "unfreeze_last_stage": args.unfreeze_last_stage,
+        "supcon_weight": args.supcon_weight,
+        "supcon_margin": args.supcon_margin,
         "regions": [name for name, _ in DEFAULT_REGIONS_224],
     }
     protocol_metadata = build_protocol_metadata(

@@ -58,38 +58,40 @@ The structure:
 
 ## Run table
 
-| | Run 001 | **Run 002** |
-|---|---|---|
-| **Date** | 2026-05-13 | 2026-05-13 |
-| **Phase** | 1 (frozen) | **2 (partial unfreeze)** |
-| **Trainable** | 5.6 M (7.9 %) | **31.6 M (44.6 %)** |
-| **LR** | 1e-4 | **1e-5** |
-| **Status** | Stopped at ep 7 | **Stopped at ep 7** |
-| **Best Val AUC** | 0.8351 (ep 3) | **0.9323 (ep 4)** — project max |
-| **Test ROC-AUC** | 0.7464 | **0.8564** ⭐ — **NEW PROJECT HEADLINE** |
-| **Test Accuracy** | 68.0 % | **76.8 %** |
-| **Val→test gap** | -0.089 | -0.076 |
-| **Notes** | Phase 1 capped Val AUC too low | **Phase 2 unfreezes stage 4 + output_layer (26 M extra params, LR 10× lower). Beats M02 R031 (0.850) by +0.006 on Test AUC, +1.7 pp on TAR@FAR=0.001, +3.6 pp TAR@FAR=0.01, +7.2 pp TAR@FAR=0.1. See [run-002.md](run-002.md).** |
+| | Run 001 | **Run 002** | Run 003 |
+|---|---|---|---|
+| **Date** | 2026-05-13 | 2026-05-13 | 2026-05-14 |
+| **Phase** | 1 (frozen) | **2 (partial unfreeze)** | 4 (R002 + SupCon λ=0.05) |
+| **Trainable** | 5.6 M (7.9 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) |
+| **LR** | 1e-4 | 1e-5 | 1e-5 |
+| **Status** | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 7 |
+| **Best Val AUC** | 0.8351 (ep 3) | **0.9323 (ep 4)** — project max | 0.9306 (ep 4) |
+| **Test ROC-AUC** | 0.7464 | **0.8564** ⭐ **PROJECT HEADLINE** | 0.8510 |
+| **Test Accuracy** | 68.0 % | 76.8 % | 76.4 % |
+| **Val→test gap** | -0.089 | -0.076 | -0.080 |
+| **Notes** | Phase 1 frozen capped ceiling | **Phase 2 partial unfreeze beats M02 R031**. [run-002.md](run-002.md) | SupCon aux REJECTED — improves siblings but regresses grandparent, net Test AUC -0.005. [run-003.md](run-003.md) |
 
 ---
 
 ## Test metrics
 
-| Metric | M02 R031 (prior best) | Run 001 (Phase 1) | **Run 002 (Phase 2)** |
-|---|---:|---:|---:|
-| **Test ROC-AUC** | 0.850 | 0.7464 | **0.8564** ⭐ |
-| Test Accuracy | 74.4 % | 68.00 % | **76.79 %** ⭐ |
-| Test Balanced Acc | 75.2 % | 67.41 % | **76.48 %** |
-| Test F1 | 0.779 | 0.6150 | 0.7402 |
-| Test Precision | 66.5 % | 72.60 % | **79.82 %** ⭐ |
-| Test Recall | 94.1 % | 53.34 % | 69.00 % |
-| **Avg Precision** | 0.817 | 0.7323 | **0.8389** ⭐ |
-| **TAR@FAR=0.001** | 2.5 % | 2.36 % | **4.18 %** ⭐ |
-| **TAR@FAR=0.01** | 14.0 % | 10.06 % | **17.58 %** ⭐ |
-| **TAR@FAR=0.1** | 49.9 % | 37.86 % | **57.11 %** ⭐ |
-| Best Val ROC-AUC | 0.881 | 0.8351 | **0.9323** |
-| Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % |
-| **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 |
+| Metric | M02 R031 (prior best) | Run 001 (Phase 1) | **Run 002 (Phase 2)** | Run 003 (+SupCon) |
+|---|---:|---:|---:|---:|
+| **Test ROC-AUC** | 0.850 | 0.7464 | **0.8564** ⭐ | 0.8510 |
+| Test Accuracy | 74.4 % | 68.00 % | **76.79 %** ⭐ | 76.37 % |
+| Test Balanced Acc | 75.2 % | 67.41 % | **76.48 %** | 76.09 % |
+| Test F1 | 0.779 | 0.6150 | 0.7402 | 0.7373 |
+| Test Precision | 66.5 % | 72.60 % | **79.82 %** ⭐ | 78.88 % |
+| Test Recall | 94.1 % | 53.34 % | 69.00 % | 69.22 % |
+| **Avg Precision** | 0.817 | 0.7323 | **0.8389** ⭐ | 0.8305 |
+| **TAR@FAR=0.001** | 2.5 % | 2.36 % | **4.18 %** ⭐ | 2.67 % |
+| **TAR@FAR=0.01** | 14.0 % | 10.06 % | **17.58 %** ⭐ | 16.57 % |
+| **TAR@FAR=0.1** | 49.9 % | 37.86 % | **57.11 %** ⭐ | 55.43 % |
+| Best Val ROC-AUC | 0.881 | 0.8351 | **0.9323** | 0.9306 |
+| Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % | 85.7 % |
+| **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 | -0.080 |
+
+⭐ = Run 002 wins on every threshold-invariant metric — remains the **project headline**.
 
 ⭐ = M12 R002 wins on **all** threshold-invariant metrics (AUC, Avg Precision, all three TAR@FAR levels).
 
