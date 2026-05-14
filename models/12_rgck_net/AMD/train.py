@@ -123,6 +123,14 @@ def parse_args() -> argparse.Namespace:
                    action="store_false",
                    help="Disable class-balancing weights (uniform CE).")
 
+    # R006: symmetric forward — process each pair as both (A,B) and (B,A) and
+    # combine the two directions in the loss. Same parameter count, ~+15-25%
+    # training time (tokenizer reused, only head runs twice).
+    p.add_argument("--symmetric_forward", action="store_true", default=False,
+                   help="Run the post-tokenizer head in both (A,B) and (B,A) orders "
+                        "and apply Option-B BCE / CE_rel on each direction "
+                        "(R006 default).")
+
     # Negative sampling
     p.add_argument("--negative_ratio", type=float, default=1.0)
     p.add_argument("--eval_negative_ratio", type=float, default=1.0)
@@ -196,6 +204,24 @@ class RGCKBCELoss(nn.Module):
         loss = label_f * pos_loss + (1.0 - label_f) * neg_loss
         return loss.mean()
 
+    def _masked_relation_ce(
+        self,
+        rel_logits: torch.Tensor,
+        relation_idx: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> "Optional[torch.Tensor]":
+        """CE over rel_logits restricted to positive pairs with a valid
+        relation index. Returns None when the mask is empty (so the caller
+        can skip the term)."""
+        mask = (relation_idx >= 0) & (labels.long() == 1)
+        if not mask.any():
+            return None
+        return nn.functional.cross_entropy(
+            rel_logits[mask].float(),
+            relation_idx[mask],
+            weight=self.relation_class_weights,
+        )
+
     def forward(
         self,
         outputs,
@@ -203,35 +229,65 @@ class RGCKBCELoss(nn.Module):
         relation_idx: "Optional[torch.Tensor]" = None,
     ) -> torch.Tensor:
         # outputs may be a 6-tuple (logit, weights, attn, gA, gB, rel_logits)
-        # from M12.forward (rel_logits is None when aux_relation_head is off).
+        # or a 7-tuple ending with sym_extras when M12 is in symmetric_forward
+        # mode. rel_logits is None when aux_relation_head is off.
         if not isinstance(outputs, tuple):
             return self.bce(outputs.squeeze(-1).float(), labels.float())
 
         logit = outputs[0]
-        total = self.bce(logit.squeeze(-1).float(), labels.float())
+        sym_extras = outputs[6] if len(outputs) >= 7 else None
+        is_symmetric = isinstance(sym_extras, dict)
 
+        if is_symmetric:
+            # Option-B BCE: penalise each direction individually so both heads
+            # are forced to be correct, then average. Equivalent to BCE on
+            # logits stacked along a virtual "direction" axis.
+            logit_ab = sym_extras["logit_ab"]
+            logit_ba = sym_extras["logit_ba"]
+            bce_ab = self.bce(logit_ab.squeeze(-1).float(), labels.float())
+            bce_ba = self.bce(logit_ba.squeeze(-1).float(), labels.float())
+            total = 0.5 * (bce_ab + bce_ba)
+        else:
+            total = self.bce(logit.squeeze(-1).float(), labels.float())
+
+        # SupCon aux: in symmetric mode average the two directions, otherwise
+        # use the AB tokens.
         if self.supcon_weight > 0.0 and len(outputs) >= 5 and outputs[3] is not None:
-            gA = outputs[3]
-            gB = outputs[4]
-            supcon = self._supcon_term(gA, gB, labels, self.supcon_margin)
+            gA_ab = outputs[3]
+            gB_ab = outputs[4]
+            supcon_ab = self._supcon_term(gA_ab, gB_ab, labels, self.supcon_margin)
+            if is_symmetric:
+                gA_ba = sym_extras["gA_norm_ba"]
+                gB_ba = sym_extras["gB_norm_ba"]
+                supcon_ba = self._supcon_term(gA_ba, gB_ba, labels, self.supcon_margin)
+                supcon = 0.5 * (supcon_ab + supcon_ba)
+            else:
+                supcon = supcon_ab
             total = total + self.supcon_weight * supcon
 
-        if (
-            self.relation_weight > 0.0
-            and relation_idx is not None
-            and len(outputs) >= 6
-            and outputs[5] is not None
-        ):
-            rel_logits = outputs[5]
-            # Apply CE only to positive pairs with a valid relation index.
-            mask = (relation_idx >= 0) & (labels.long() == 1)
-            if mask.any():
-                ce = nn.functional.cross_entropy(
-                    rel_logits[mask].float(),
-                    relation_idx[mask],
-                    weight=self.relation_class_weights,
+        # Phase 5 CE_rel aux: positives-only, masked CE on the relation head.
+        if self.relation_weight > 0.0 and relation_idx is not None:
+            if is_symmetric and sym_extras["rel_logits_ab"] is not None:
+                ce_ab = self._masked_relation_ce(
+                    sym_extras["rel_logits_ab"], relation_idx, labels
                 )
-                total = total + self.relation_weight * ce
+                ce_ba = self._masked_relation_ce(
+                    sym_extras["rel_logits_ba"], relation_idx, labels
+                )
+                if ce_ab is not None and ce_ba is not None:
+                    total = total + self.relation_weight * 0.5 * (ce_ab + ce_ba)
+                elif ce_ab is not None:
+                    total = total + self.relation_weight * ce_ab
+                elif ce_ba is not None:
+                    total = total + self.relation_weight * ce_ba
+            elif (
+                not is_symmetric
+                and len(outputs) >= 6
+                and outputs[5] is not None
+            ):
+                ce = self._masked_relation_ce(outputs[5], relation_idx, labels)
+                if ce is not None:
+                    total = total + self.relation_weight * ce
 
         return total
 
@@ -433,6 +489,7 @@ def main() -> None:
         unfreeze_last_stage=args.unfreeze_last_stage,
         aux_relation_head=aux_relation_head_enabled,
         num_relation_classes=FIW_NUM_RELATIONS,
+        symmetric_forward=args.symmetric_forward,
     )
     model = optimize_for_rocm(model)
 
@@ -491,12 +548,24 @@ def main() -> None:
         trainer.load_checkpoint(args.resume)
 
     print("\nStarting ROCm-optimised training...")
-    loss_components = ["BCE(classifier_logit)"]
+    if args.symmetric_forward:
+        bce_term = "0.5·(BCE_AB + BCE_BA)"
+    else:
+        bce_term = "BCE(classifier_logit)"
+    loss_components = [bce_term]
     if args.supcon_weight > 0:
-        loss_components.append(f"{args.supcon_weight:.3f}·SupCon(gA,gB)")
+        if args.symmetric_forward:
+            loss_components.append(f"{args.supcon_weight:.3f}·avg(SupCon_AB, SupCon_BA)")
+        else:
+            loss_components.append(f"{args.supcon_weight:.3f}·SupCon(gA,gB)")
     if args.relation_aux_weight > 0:
-        loss_components.append(f"{args.relation_aux_weight:.3f}·CE_rel(rel_logits|pos)")
+        if args.symmetric_forward:
+            loss_components.append(f"{args.relation_aux_weight:.3f}·avg(CE_rel_AB, CE_rel_BA)|pos")
+        else:
+            loss_components.append(f"{args.relation_aux_weight:.3f}·CE_rel(rel_logits|pos)")
     print(f"Loss: {' + '.join(loss_components)}")
+    if args.symmetric_forward:
+        print("Symmetric forward: each pair processed in both (A,B) and (B,A) orders")
     print(f"Scheduler: {train_config.scheduler} (warmup={train_config.warmup_epochs}, min_lr={train_config.min_lr:.1e})")
     print(f"Batch size: {args.batch_size}, Grad accum: {args.gradient_accumulation} "
           f"(effective {args.batch_size * args.gradient_accumulation})")
@@ -538,6 +607,7 @@ def main() -> None:
         "relation_aux_weight": args.relation_aux_weight,
         "relation_aux_balanced": bool(args.relation_aux_balanced),
         "num_relation_classes": FIW_NUM_RELATIONS,
+        "symmetric_forward": bool(args.symmetric_forward),
         "regions": [name for name, _ in DEFAULT_REGIONS_224],
     }
     protocol_metadata = build_protocol_metadata(

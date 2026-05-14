@@ -269,6 +269,7 @@ class RGCKNet(nn.Module):
         unfreeze_last_stage: bool = False,
         aux_relation_head: bool = False,
         num_relation_classes: int = 11,
+        symmetric_forward: bool = False,
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
@@ -276,6 +277,7 @@ class RGCKNet(nn.Module):
         self.unfreeze_last_stage = unfreeze_last_stage
         self.aux_relation_head = aux_relation_head
         self.num_relation_classes = num_relation_classes
+        self.symmetric_forward = symmetric_forward
 
         # Region tokenizer (shared backbone across regions)
         self.tokenizer = FixedPartitionRegionTokenizer(
@@ -343,39 +345,25 @@ class RGCKNet(nn.Module):
             return self.region_names.index("global")
         return 0  # Fallback
 
-    def forward(
-        self, img_a: torch.Tensor, img_b: torch.Tensor
-    ) -> Tuple[torch.Tensor, ...]:
-        """
-        img_a, img_b: (B, 3, 224, 224)  — aligned FIW faces
+    def _forward_head(
+        self, tokens_a: torch.Tensor, tokens_b: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "Optional[torch.Tensor]"]:
+        """Run the post-tokenizer stack on a single (tokens_a, tokens_b) order:
+        cross-region adapter → regional gate → fusion + classifier (and
+        relation_head when enabled). Used twice in the symmetric forward.
 
-        Returns (always a 6-tuple):
-            kinship_logit: (B,) raw logit (apply sigmoid for probability)
-            region_weights: (B, K) sigmoid gating weights per region
-            attn_map: (B, num_heads, K, K) last-layer A→B cross-attention
-            gA_norm: (B, embedding_dim) L2-normalised contextualised global token A
-            gB_norm: (B, embedding_dim) L2-normalised contextualised global token B
-            rel_logits: (B, num_relation_classes) auxiliary relation-class logits,
-                or None when aux_relation_head=False.
+        Returns (logit, weights, attn_map, gA_norm, gB_norm, rel_logits).
         """
-        # Region tokens (B, K, 512), backbone may be frozen
-        tokens_a = self.tokenizer(img_a)
-        tokens_b = self.tokenizer(img_b)
-
-        # Cross-region adapter
+        # Cross-region adapter (direction-dependent: attn_ab / attn_ba etc.)
         ctx_a, ctx_b, attn_map = self.cross_region(tokens_a, tokens_b)
 
         # Per-region cosine similarities (in contextualised space)
-        # L2-normalise before cosine (defensive — backbone returns L2-norm but
-        # the cross-attn block may have moved them off the unit sphere)
         ctx_a_n = F.normalize(ctx_a, dim=-1)
         ctx_b_n = F.normalize(ctx_b, dim=-1)
         sims = (ctx_a_n * ctx_b_n).sum(dim=-1)  # (B, K)
 
         # Regional gating
         weights = self.regional_gate(ctx_a, ctx_b)  # (B, K)
-
-        # Weighted regional score
         regional_score = (weights * sims).sum(dim=-1, keepdim=True)  # (B, 1)
 
         # Global features (pulled from the "global" region's contextualised token)
@@ -388,19 +376,78 @@ class RGCKNet(nn.Module):
         fusion = torch.cat([gA, gB, diff_abs, prod, sims, weights, regional_score], dim=-1)
         logit = self.classifier(fusion).squeeze(-1)  # (B,)
 
-        # L2-normalised global tokens for auxiliary supervised-contrastive loss
+        # L2-normalised global tokens for the SupCon aux loss
         gA_norm = ctx_a_n[:, self._global_index()]
         gB_norm = ctx_b_n[:, self._global_index()]
 
-        # Auxiliary relation-type logits (Phase 5) — uses the mean of the two
-        # contextualised global tokens so the head is symmetric in (A, B).
+        # Phase 5 aux head — averages the two contextualised globals so it is
+        # symmetric within a single forward direction (still direction-dependent
+        # across the AB/BA pair because the contextualisation differs).
         if self.relation_head is not None:
-            rel_input = 0.5 * (gA + gB)
-            rel_logits = self.relation_head(rel_input)
+            rel_logits = self.relation_head(0.5 * (gA + gB))
         else:
             rel_logits = None
 
         return logit, weights, attn_map, gA_norm, gB_norm, rel_logits
+
+    def forward(
+        self, img_a: torch.Tensor, img_b: torch.Tensor
+    ) -> Tuple[torch.Tensor, ...]:
+        """
+        img_a, img_b: (B, 3, 224, 224)  — aligned FIW faces
+
+        Returns a 6-tuple (or 7-tuple when symmetric_forward=True):
+
+            kinship_logit: (B,) raw logit. Symmetric mode returns the average
+                of the AB and BA forward logits.
+            region_weights: (B, K) sigmoid gating weights per region (AB direction).
+            attn_map: (B, num_heads, K, K) last-layer A→B cross-attention (AB direction).
+            gA_norm: (B, embedding_dim) L2-normalised contextualised global token A
+                (AB direction; in symmetric mode this is what SupCon uses as the
+                "A" partner).
+            gB_norm: (B, embedding_dim) L2-normalised contextualised global token B
+                (AB direction).
+            rel_logits: (B, num_relation_classes) auxiliary relation logits, or
+                None when aux_relation_head=False. Symmetric mode returns the
+                average of the AB and BA logits.
+            [optional 7th] sym_extras: dict with the per-direction outputs the
+                training loss needs for the Option-B symmetric BCE/CE_rel terms.
+                Present only when symmetric_forward=True.
+        """
+        # Region tokens (B, K, 512). Tokenizer is the expensive part — run once
+        # per face even in symmetric mode.
+        tokens_a = self.tokenizer(img_a)
+        tokens_b = self.tokenizer(img_b)
+
+        logit_ab, weights_ab, attn_ab, gA_norm_ab, gB_norm_ab, rel_ab = self._forward_head(
+            tokens_a, tokens_b
+        )
+
+        if not self.symmetric_forward:
+            return logit_ab, weights_ab, attn_ab, gA_norm_ab, gB_norm_ab, rel_ab
+
+        logit_ba, weights_ba, attn_ba, gA_norm_ba, gB_norm_ba, rel_ba = self._forward_head(
+            tokens_b, tokens_a
+        )
+
+        # Symmetric outputs: averaged for inference; per-direction kept for the
+        # Option-B training loss.
+        logit = 0.5 * (logit_ab + logit_ba)
+        if rel_ab is not None and rel_ba is not None:
+            rel_logits = 0.5 * (rel_ab + rel_ba)
+        else:
+            rel_logits = None
+
+        sym_extras = {
+            "logit_ab": logit_ab,
+            "logit_ba": logit_ba,
+            "rel_logits_ab": rel_ab,
+            "rel_logits_ba": rel_ba,
+            "gA_norm_ba": gA_norm_ba,
+            "gB_norm_ba": gB_norm_ba,
+        }
+
+        return logit, weights_ab, attn_ab, gA_norm_ab, gB_norm_ab, rel_logits, sym_extras
 
 
 def build_rgck_net(
@@ -416,6 +463,7 @@ def build_rgck_net(
     unfreeze_last_stage: bool = False,
     aux_relation_head: bool = False,
     num_relation_classes: int = 11,
+    symmetric_forward: bool = False,
 ) -> RGCKNet:
     """
     Build RGCK-Net with an AdaFace IR-101 backbone (shared by all regions).
@@ -440,6 +488,7 @@ def build_rgck_net(
         unfreeze_last_stage=unfreeze_last_stage,
         aux_relation_head=aux_relation_head,
         num_relation_classes=num_relation_classes,
+        symmetric_forward=symmetric_forward,
     )
 
 
@@ -453,6 +502,15 @@ if __name__ == "__main__":
     print(f"M12 RGCK-Net params total/trainable: {total:,}/{trainable:,} ({100*trainable/total:.2f}%)")
     print(f"Regions: {m.region_names}")
     x = torch.randn(2, 3, 224, 224)
-    logit, weights, attn, gA, gB, rel = m(x, x)
-    print(f"logit: {logit.shape}, weights: {weights.shape}, attn: {attn.shape}")
-    print(f"gA: {gA.shape}, gB: {gB.shape}, rel: {rel.shape if rel is not None else None}")
+    out = m(x, x)
+    logit, weights, attn, gA, gB, rel = out
+    print(f"[asym] logit: {logit.shape}, weights: {weights.shape}, attn: {attn.shape}")
+    print(f"[asym] gA: {gA.shape}, gB: {gB.shape}, rel: {rel.shape if rel is not None else None}")
+
+    # Symmetric forward smoke test
+    m_sym = build_rgck_net(adaface_weights=None, freeze_backbone=True,
+                            aux_relation_head=True, symmetric_forward=True)
+    out_sym = m_sym(x, x)
+    logit_s, w_s, attn_s, gA_s, gB_s, rel_s, sym_extras = out_sym
+    print(f"[sym]  logit: {logit_s.shape}, rel: {rel_s.shape if rel_s is not None else None}")
+    print(f"[sym]  sym_extras keys: {sorted(sym_extras.keys())}")

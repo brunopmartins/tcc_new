@@ -61,6 +61,7 @@ SUPCON_WEIGHT="${SUPCON_WEIGHT:-0.0}"             # Phase 4: weight λ for super
 SUPCON_MARGIN="${SUPCON_MARGIN:-0.3}"             # margin for negative pairs in supcon term
 RELATION_AUX_WEIGHT="${RELATION_AUX_WEIGHT:-0.0}" # Phase 5: weight λ for relation-type CE aux on positives (0.0 = disabled)
 RELATION_AUX_BALANCED="${RELATION_AUX_BALANCED:-1}" # 1 = inverse-freq class weights (default), 0 = uniform CE
+SYMMETRIC_FORWARD="${SYMMETRIC_FORWARD:-0}"        # R006: 1 = process each pair in both (A,B) and (B,A) orders (Option-B BCE)
 
 NEGATIVE_RATIO="${NEGATIVE_RATIO:-1.0}"
 EVAL_NEGATIVE_RATIO="${EVAL_NEGATIVE_RATIO:-1.0}"
@@ -180,6 +181,9 @@ if [ "${UNFREEZE_LAST_STAGE}" = "1" ]; then
 fi
 if [ "${RELATION_AUX_BALANCED}" != "1" ]; then
     TRAIN_ARGS+=(--relation_aux_unbalanced)
+fi
+if [ "${SYMMETRIC_FORWARD}" = "1" ]; then
+    TRAIN_ARGS+=(--symmetric_forward)
 fi
 
 TEST_ARGS=(
