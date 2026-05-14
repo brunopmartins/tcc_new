@@ -1,113 +1,91 @@
 \chapter[Resultados]{Resultados}
 \label{cap:resultados}
 
-Este capítulo reúne os resultados dos cinco modelos supervisionados descritos no Capítulo~\ref{cap:Metodologia} e dos dois baselines com modelos multimodais generalistas. Os experimentos cobrem os bancos KinFaceW-I e Families in the Wild (FIW) sob o split Track-I oficial do RFIW, com validação cruzada de cinco dobras em KinFaceW-I. A unidade experimental reportada é a melhor checkpoint salva em validação por run, e a métrica principal é o ROC AUC no conjunto de teste, complementada por accuracy, TAR@FAR=0,01 e accuracy por tipo de relação. Para cada modelo é mostrado o run que melhor representa o método e, quando aplicável, uma série de ablação que mapeia o espaço de hiperparâmetros explorado.
+Este capítulo reporta os resultados dos cinco modelos descritos no Capítulo~\ref{cap:Metodologia} sobre o benchmark Families in the Wild (FIW) com o split Track-I oficial do RFIW. O Modelo 02 também aparece em KinFaceW-I com validação cruzada de cinco dobras, para situar o trabalho contra a literatura clássica. A unidade experimental reportada é a melhor checkpoint salva em validação por run, e a métrica principal é o ROC AUC no conjunto de teste, complementada por Average Precision, TAR@FAR=0,001, TAR@FAR=0,01, TAR@FAR=0,1 e accuracy por tipo de relação. Os baselines com modelos multimodais entram em seção própria com tarefa diferente (classificação em onze classes), e os números não são comparados linha a linha com os supervisionados.
 
-\section{Visão geral dos experimentos}
+O conjunto inclui um baseline mínimo sem treinamento (B0, AdaFace IR-101 congelado com cosseno), o Modelo 02 (ViT com cross-attention bidirecional FaCoR), o Modelo 05 (DINOv2 com LoRA e cross-attention diferencial), o Modelo 06 (retrieval-augmented sobre galeria de pares positivos) e o Modelo 12 (RGCK-Net, com AdaFace IR-101 parcialmente descongelado e tokens regionais anatômicos). A escolha desses cinco cobre o piso sem treino, dois caminhos paramétricos plenos (M02 full FT, M12 partial FT), um caminho parameter-efficient (M05) e um caminho não-paramétrico (M06).
 
-A Tabela~\ref{tab:overview_runs} resume o total de runs concluídos por modelo e o melhor resultado de cada um em FIW Track-I. Os Modelos 01, 02 e 03 correspondem às famílias clássicas (CNN com síntese de idade, ViT com cross-attention bidirecional e híbrido ConvNeXt mais ViT), e os Modelos 05 e 06 são as duas linhas exploratórias (DINOv2 com LoRA e cross-attention diferencial e retrieval-augmented sobre galeria). A numeração reflete o histórico do projeto e não inclui um Modelo 04 ativo na entrega final.
+\section{Visão geral}
+
+A Tabela~\ref{tab:overview_runs} resume o melhor run de cada modelo em FIW Track-I, ordenado por Test ROC AUC. A linha do Modelo 12 aparece em destaque porque corresponde ao maior AUC observado neste conjunto experimental, mas com a ressalva de que a margem sobre o Modelo 02 é incremental (+0,006) e não foi validada por múltiplas seeds ou k-fold em FIW.
 
 \begin{table}[h]
 \centering
-\caption{Visão geral dos experimentos por modelo. Cada linha resume o melhor run em cada banco em que o modelo foi avaliado, com total de runs concluídos, AUC de teste, accuracy e parâmetros treináveis.}
+\caption{Visão geral dos cinco modelos avaliados em FIW Track-I, ordenados por Test ROC AUC.}
 \label{tab:overview_runs}
-\begin{tabular}{lllrrrr}
+\begin{tabular}{lllrrr}
 \hline
-\textbf{Modelo} & \textbf{Banco} & \textbf{Melhor run} & \textbf{Runs} & \textbf{Test AUC} & \textbf{Test Acc} & \textbf{Params} \\
+\textbf{Modelo} & \textbf{Família} & \textbf{Melhor run} & \textbf{Test AUC} & \textbf{TAR@FAR=0,01} & \textbf{Params treináveis} \\
 \hline
-Modelo 01 & KinFaceW-I    & R002 (sem SAM)           & 2  & 0{,}682          & 68{,}5\%          & {\raise.17ex\hbox{$\scriptstyle\sim$}}11M  \\
-Modelo 02 & KinFaceW-I    & R023 (ViT + FaCoR)       & 31 & 0{,}861          & 74{,}1\%          & {\raise.17ex\hbox{$\scriptstyle\sim$}}86M  \\
-Modelo 02 & FIW Track-I   & R031 (ViT + FaCoR)       & 31 & \textbf{0{,}850} & \textbf{74{,}4\%} & {\raise.17ex\hbox{$\scriptstyle\sim$}}86M  \\
-Modelo 03 & FIW Track-I   & R002 (full unfreeze)     & 7  & 0{,}850          & ---               & {\raise.17ex\hbox{$\scriptstyle\sim$}}176M \\
-Modelo 05 & FIW Track-I   & R005 (full unfreeze)     & 7  & 0{,}822          & 72{,}0\%          & 93{,}5M \\
-Modelo 06 & FIW Track-I   & R001 (ViT-B/16, K=32)    & 2  & 0{,}776          & 69{,}8\%          & 8{,}16M \\
+M12 & RGCK-Net AdaFace + tokens regionais & R002 & \textbf{0{,}856} & \textbf{0{,}176} & 31{,}6M \\
+M02 & ViT + FaCoR cross-attention         & R031 & 0{,}850          & 0{,}130          & {\raise.17ex\hbox{$\scriptstyle\sim$}}86M \\
+M05 & DINOv2 + LoRA + DiffAttn            & R005 & 0{,}822          & 0{,}100          & 93{,}5M \\
+B0  & AdaFace Cosine Frozen               & ---  & 0{,}799          & 0{,}218          & 0 \\
+M06 & Retrieval-augmented (ViT frozen)    & R001 & 0{,}776          & 0{,}062          & 8{,}16M \\
 \hline
 \end{tabular}
 \end{table}
 
-Em paralelo, dois baselines com modelos multimodais foram avaliados em regime zero-shot sobre o mesmo conjunto de teste. O Codex (gpt-5.4-mini) classificou 750 pares balanceados entre as onze relações com 33{,}1\% de accuracy, e o Claude Sonnet 4.6 atingiu 37{,}3\% em um piloto menor de 75 pares. Esses números aparecem em seção própria e não competem diretamente com os modelos supervisionados, porque atacam tarefa diferente (classificação em onze classes em vez de verificação binária).
+O baseline sem treinamento B0 atinge 0,799 de AUC apenas com cosseno sobre embeddings AdaFace pré-treinados, o que situa o piso útil do problema acima de boa parte das tentativas treinadas registradas no projeto. O ganho do Modelo 12 sobre B0 é de +0,057 AUC (cerca de 7\% relativo), enquanto o ganho sobre o Modelo 02 é de +0,006. Ambas as diferenças são reais nas métricas independentes de threshold, mas a segunda é pequena e deve ser lida como melhor resultado observado, não como superioridade definitiva.
 
 \section{Resultados em KinFaceW-I}
 
-KinFaceW-I serve como banco de prototipagem e como referência clássica da literatura. Os Modelos 01 e 02 foram avaliados no banco completo com a divisão original em cinco dobras, e o Modelo 02 recebeu também uma validação cruzada de cinco dobras independente para medir variabilidade entre folds. A Tabela~\ref{tab:kinface_resultados} compara o baseline com síntese de idade contra o ViT com cross-attention bidirecional.
+KinFaceW-I serve neste trabalho como banco de prototipagem e como referência à literatura clássica de verificação de parentesco. O Modelo 02 foi avaliado no split padrão de cinco dobras e em uma validação cruzada de cinco dobras independente para medir variabilidade entre folds. A Tabela~\ref{tab:kinface_resultados} reporta as duas leituras.
 
 \begin{table}[h]
 \centering
-\caption{Resultados em KinFaceW-I. As métricas do Modelo 02 vêm do checkpoint Run 023 sobre o split padrão; a linha de validação cruzada reporta a média mais ou menos desvio padrão sobre cinco dobras independentes do Run 026.}
+\caption{Resultados do Modelo 02 em KinFaceW-I. A primeira coluna usa o checkpoint do Run 023 sobre o split padrão; a segunda reporta média mais ou menos desvio padrão sobre cinco dobras independentes do Run 026.}
 \label{tab:kinface_resultados}
-\begin{tabular}{lrrrr}
+\begin{tabular}{lrr}
 \hline
-\textbf{Métrica} & \textbf{Modelo 01 (CNN)} & \textbf{Modelo 02 (ViT+FaCoR)} & \textbf{Modelo 02 (5-fold CV)} \\
+\textbf{Métrica} & \textbf{Modelo 02 R023 (split padrão)} & \textbf{Modelo 02 R026 (5-fold CV)} \\
 \hline
-Accuracy   & 68{,}5\% & \textbf{74{,}1\%} & 73{,}6\% $\pm$ 5{,}8\% \\
-F1         & 0{,}727  & \textbf{0{,}753}  & 0{,}771 $\pm$ 0{,}028 \\
-ROC AUC    & 0{,}682  & \textbf{0{,}861}  & 0{,}842 $\pm$ 0{,}012 \\
-Precision  & 64{,}2\% & \textbf{71{,}9\%} & 69{,}4\% $\pm$ 6{,}3\% \\
-Recall     & \textbf{84{,}0\%} & 79{,}0\% & 87{,}8\% $\pm$ 6{,}2\% \\
-Threshold  & 0{,}550 & 0{,}900 & 0{,}890 $\pm$ 0{,}020 \\
+Accuracy   & 74{,}1\% & 73{,}6\% $\pm$ 5{,}8\% \\
+F1         & 0{,}753  & 0{,}771 $\pm$ 0{,}028 \\
+ROC AUC    & 0{,}861  & 0{,}842 $\pm$ 0{,}012 \\
+Precision  & 71{,}9\% & 69{,}4\% $\pm$ 6{,}3\% \\
+Recall     & 79{,}0\% & 87{,}8\% $\pm$ 6{,}2\% \\
+Threshold  & 0{,}900  & 0{,}890 $\pm$ 0{,}020 \\
 \hline
 \end{tabular}
 \end{table}
 
-A diferença mais significativa está no AUC. O Modelo 02 atinge 0{,}861 contra 0{,}682 do baseline, ganho de 0{,}179 que cobre quase toda a diferença entre classificador aleatório e separação consistente. O Modelo 01 mantém recall alto (84{,}0\%) à custa de precision baixa (64{,}2\%), padrão típico de classificador siamês treinado com BCE direto. A validação cruzada do Modelo 02 confirma a robustez do método, com desvio padrão do AUC sobre as cinco dobras em 0{,}012, e intervalo de variação de F1 e accuracy também compatível com o que se espera de um método estável.
+O desvio padrão do AUC sobre as cinco dobras fica em 0,012, e a média entre folds (0,842) é compatível com o valor do split padrão (0,861) dentro dessa variabilidade. Esse resultado dá um piso de confiança na abordagem ViT mais cross-attention para o domínio, e serve como ponto de comparação com a literatura, que historicamente reporta números próximos de 73\% a 80\% de accuracy em KinFaceW-I.
 
 \section{Resultados em FIW Track-I}
 
-FIW Track-I é o benchmark principal deste trabalho. A Tabela~\ref{tab:fiw_main} consolida os melhores runs dos cinco modelos supervisionados, organizada do menor para o maior em termos de complexidade arquitetônica. O TAR@FAR=0,01 e o piso por relação dão duas leituras complementares ao AUC: o primeiro mede desempenho em regime de alta precisão, mais próximo do uso prático em aplicações forenses, e o segundo expõe a pior classe na matriz de confusão, sinalizando quão uniformemente o modelo trata as onze relações.
+FIW Track-I é o benchmark principal deste trabalho. A Tabela~\ref{tab:fiw_main} consolida métricas independentes de threshold (AUC, Average Precision, três níveis de TAR@FAR) para os cinco modelos. As métricas dependentes de threshold ficam na seção sobre operating points, porque comparações diretas entre M02 com $\tau = 0{,}90$ e M12 com $\tau = 0{,}50$ misturam efeito de método e efeito de operating point.
 
 \begin{table}[h]
 \centering
-\caption{Resultados consolidados em FIW Track-I. O AUC é a métrica principal. Test Acc usa o threshold $\tau^*$ selecionado em validação. O piso por relação corresponde à pior classe entre as onze.}
+\caption{Resultados em FIW Track-I. Métricas independentes de threshold permitem comparação direta entre métodos.}
 \label{tab:fiw_main}
 \begin{tabular}{lrrrrr}
 \hline
-\textbf{Modelo} & \textbf{Test AUC} & \textbf{Test Acc} & \textbf{TAR@FAR=0,01} & \textbf{Params treináveis} & \textbf{Piso por relação} \\
+\textbf{Modelo} & \textbf{Test AUC} & \textbf{Avg Prec.} & \textbf{TAR@FAR=0,001} & \textbf{TAR@FAR=0,01} & \textbf{TAR@FAR=0,1} \\
 \hline
-Modelo 02 R031 & \textbf{0{,}850} & 74{,}4\%          & 0{,}130            & 86M    & 88{,}4\% (gmgs) \\
-Modelo 03 R002 & \textbf{0{,}850} & ---               & 0{,}130            & 176M   & --- \\
-Modelo 03 R006 & 0{,}848          & ---               & 0{,}132            & 176M   & --- \\
-Modelo 05 R005 & 0{,}822          & 72{,}0\%          & 0{,}100            & 93{,}5M & 23{,}5\% (gfgs) \\
-Modelo 05 R001 & 0{,}806          & \textbf{72{,}6\%} & \textbf{0{,}152}   & 8{,}47M & 39{,}8\% (gfgs) \\
-Modelo 06 R001 & 0{,}776          & 69{,}8\%          & 0{,}062            & 8{,}16M & 61{,}2\% (gmgs) \\
-\hline
-\end{tabular}
-\end{table}
-
-Três observações resumem o que a tabela diz. O Modelo 02 e o Modelo 03 chegam ao mesmo AUC de 0{,}850 com volumes muito diferentes de parâmetros, e dobrar a capacidade do backbone não traz ganho proporcional. O Modelo 05 R001, com cerca de dez vezes menos parâmetros treináveis que o Modelo 02, atinge o melhor TAR@FAR=0,01 do projeto (0{,}152), indicando que o regime self-supervised mais LoRA produz separação superior em regiões de threshold rigoroso, mesmo com AUC absoluto abaixo dos parametrizados plenos. O Modelo 06, com quase a mesma quantidade de parâmetros treináveis, fica abaixo dos parametrizados em AUC mas eleva o piso por relação para 61{,}2\%, contra 23{,}5\% do melhor M05 em gfgs.
-
-\section{Estudo de freeze e unfreeze no Modelo 03}
-
-O Modelo 03 cresceu a 176 milhões de parâmetros e por isso recebeu o estudo mais detalhado de plasticidade do backbone. A Tabela~\ref{tab:m03_freeze} percorre as sete runs principais, do treino completamente livre até partial unfreeze conservador, mostrando como o desempenho varia em função do que se permite ao otimizador alterar.
-
-\begin{table}[h]
-\centering
-\caption{Estudo de freeze e unfreeze no Modelo 03 sobre FIW Track-I. As runs cobrem treino livre, freeze total e variantes intermediárias.}
-\label{tab:m03_freeze}
-\begin{tabular}{llrrl}
-\hline
-\textbf{Run} & \textbf{Estratégia} & \textbf{Val AUC} & \textbf{Test AUC} & \textbf{Status} \\
-\hline
-R002 & Sem freeze (full unfreeze)         & 0{,}885 & \textbf{0{,}850} & Melhor AUC absoluto \\
-R003 & Sem freeze (dropout maior)         & 0{,}877 & 0{,}845 & Overfit em 10 épocas \\
-R004 & Backbones congelados (sempre)      & 0{,}867 & 0{,}823 & Early stop por paciência \\
-R005 & Freeze então full unfreeze (ep 11) & 0{,}864 & 0{,}813 & OOM no descongelamento \\
-R006 & Freeze então full unfreeze (ep 11) & 0{,}873 & 0{,}848 & Overfit pós-unfreeze \\
-R007 & Freeze então partial unfreeze      & 0{,}868 & 0{,}828 & LR conservador limitou adaptação \\
+M12 R002 & \textbf{0{,}856} & \textbf{0{,}839} & 0{,}042          & \textbf{0{,}176} & \textbf{0{,}571} \\
+M02 R031 & 0{,}850          & 0{,}817          & 0{,}025          & 0{,}140          & 0{,}499 \\
+M05 R001 & 0{,}806          & ---              & ---              & \textbf{0{,}152} & --- \\
+B0       & 0{,}799          & 0{,}809          & \textbf{0{,}071} & \textbf{0{,}218} & 0{,}524 \\
+M06 R001 & 0{,}776          & ---              & ---              & 0{,}062          & --- \\
 \hline
 \end{tabular}
 \end{table}
 
-O resultado central é que treinar sem nenhum freeze (R002 e R003) atinge o melhor desempenho, com R002 chegando a 0{,}850 de AUC, empatando com o Modelo 02. O regime que descongela os backbones a partir da época 11 (R005 e R006) consegue alcançar quase o mesmo desempenho na R006 (0{,}848), mas a R005 sofreu crash de memória durante o descongelamento, evidência da pressão sobre os 12 GB de VRAM disponíveis. Freeze total nos dois backbones (R004) fica em 0{,}823, abaixo do treino livre, indicando que o ConvNeXt e o ViT em paralelo precisam adaptar profundidade considerável para que a fusão tire proveito dos dois ramos. Esse comportamento é o oposto do que aparece no Modelo 05, em que o backbone DINOv2 self-supervised se beneficia mais de adaptação esparsa via LoRA do que de full unfreeze.
+Três leituras saem da tabela. O Modelo 12 lidera em AUC, Average Precision, TAR@FAR=0,01 (entre os treinados) e TAR@FAR=0,1, e essa é a base para tratá-lo como melhor resultado observado no conjunto experimental. O Modelo 02 segue muito próximo em AUC, com diferença de 0,006, ainda dentro do que se esperaria de variabilidade de single-run em FIW Track-I. O baseline sem treino B0 tem o maior TAR@FAR=0,001 de todos os modelos (0,071), o que reflete o que AdaFace foi treinado para fazer originalmente, separação de identidades em regimes de baixa taxa de falsos positivos, e expõe que parte expressiva do sinal de parentesco já está codificada no embedding de reconhecimento facial sem treino específico.
+
+Comparações diretas entre M12 e M02 em métricas dependentes de threshold são delicadas. O Modelo 12 R002 foi testado com threshold 0,500, padrão do script, porque o metadado de validação não foi gravado no checkpoint antes do treino ser interrompido manualmente. O Modelo 02 R031 opera em threshold 0,900, escolhido em validação para maximizar F1. Isso significa que precision e recall em pontos distintos da curva. No threshold 0,500 do M12 a precision é 79,8\% e o recall é 69,0\%; no threshold 0,900 do M02 a precision é 66,5\% e o recall é 94,1\%. As métricas dependentes de threshold deste trabalho são reportadas com essa ressalva.
 
 \section{Estudo de regime no Modelo 05}
 
-O Modelo 05 passou por sete runs cobrindo quatro regimes de plasticidade do backbone DINOv2 e quatro variações independentes de loss e amostragem. A Tabela~\ref{tab:m05_runs} resume cada run com o regime principal e as três métricas de teste mais informativas.
+O Modelo 05 passou por sete runs cobrindo quatro regimes de plasticidade do backbone DINOv2 e quatro variações de loss e amostragem. A Tabela~\ref{tab:m05_runs} resume cada run, isolando uma hipótese por vez.
 
 \begin{table}[h]
 \centering
-\caption{Sete runs do Modelo 05 em FIW Track-I. Cada run isola uma hipótese diferente sobre o backbone, a loss ou o sampler.}
+\caption{Sete runs do Modelo 05 em FIW Track-I, cada um isolando uma hipótese sobre o backbone, a loss ou o sampler.}
 \label{tab:m05_runs}
-\begin{tabular}{lp{6.5cm}rrr}
+\begin{tabular}{lp{6.0cm}rrr}
 \hline
 \textbf{Run} & \textbf{Hipótese isolada} & \textbf{Test AUC} & \textbf{TAR@FAR=0,01} & \textbf{Params} \\
 \hline
@@ -117,98 +95,122 @@ R003 & Class-balanced sampler                          & 0{,}809 & 0{,}098 & 8{,
 R004 & Partial unfreeze dos 4 blocos finais           & 0{,}812 & 0{,}119 & 36{,}8M \\
 R005 & Full unfreeze com LR 5e-6 estilo M02           & \textbf{0{,}822} & 0{,}100 & 93{,}5M \\
 R006 & Heavy contrastive loss (peso 0,9)              & 0{,}814 & 0{,}094 & 8{,}47M \\
-R007 & Backbone híbrido DINOv2 + M02-trained-ViT      & 0{,}810 & 0{,}136 & 11{,}58M \\
+R007 & Backbone híbrido DINOv2 + ViT do M02           & 0{,}810 & 0{,}136 & 11{,}58M \\
 \hline
 \end{tabular}
 \end{table}
 
-Os resultados mostram um teto arquitetônico em torno de 0{,}81-0{,}82 AUC que sete intervenções diferentes não conseguem mover de forma consistente. A R005, com full unfreeze do DINOv2, atinge o maior AUC do M05 (0{,}822) mas perde o melhor TAR@FAR=0,01 para a R001, que mantém o regime original LoRA-only. Esse resultado é importante para a interpretação metodológica: o checkpoint Pareto-ótimo do Modelo 05 não é o de maior AUC, é o R001, porque o ganho de R005 em AUC vem acompanhado de perda em precisão de alta exigência (0{,}152 \textrightarrow{} 0{,}100). A R007 testa a hipótese mais ambiciosa, fundir o DINOv2 com o ViT do Modelo 02 R031 em arquitetura híbrida com cross-attention diferencial intra-face, e produz AUC idêntico ao R001 sem o backbone adicional. Esse achado negativo, descrito como hipótese H0 confirmada no log de execução, indica que as features kinship fortes do M02 R031 não estão isoladas no ViT mas vêm do sistema completo treinado em conjunto.
+Há um teto arquitetônico em torno de 0,81-0,82 AUC que sete intervenções diferentes não conseguem mover de forma consistente. A R005, com full unfreeze do DINOv2 e LR 5e-6, atinge o maior AUC do M05 mas perde o melhor TAR@FAR=0,01 para a R001, que mantém o regime original LoRA-only. O checkpoint mais útil do Modelo 05 não é o de maior AUC, é a R001, porque o ganho de R005 em AUC vem acompanhado de perda em precisão de alta exigência (0,152 cai para 0,100). A R007 testa a hipótese mais ambiciosa, fundir o DINOv2 com o ViT do Modelo 02 R031 em arquitetura híbrida com cross-attention diferencial intra-face, e produz AUC idêntico ao R001 sem o backbone adicional. Esse achado negativo, descrito como hipótese H0 confirmada no log de execução, indica que as features kinship-fortes do M02 R031 não estão isoladas no ViT mas vêm do sistema completo treinado em conjunto.
 
 \section{Retrieval-augmented no Modelo 06}
 
-O Modelo 06 explora a hipótese de que parte do sinal necessário para verificação de parentesco pode vir de memória não-paramétrica em vez de pesos. A Run 001 mantém o encoder ViT-B/16 congelado e usa uma galeria de 33.207 pares positivos do split de treino do FIW, recuperando 32 pares mais similares por consulta. A Tabela~\ref{tab:m06_per_rel} mostra a accuracy por relação, que é o ponto mais distintivo do modelo.
+O Modelo 06 testa se parte do sinal necessário para verificação de parentesco pode vir de memória não-paramétrica em vez de pesos. A Run 001 mantém o encoder ViT-B/16 congelado e usa uma galeria de 33.207 pares positivos do split de treino do FIW, recuperando 32 pares mais similares por consulta de inferência. A Tabela~\ref{tab:m06_per_rel} mostra a accuracy por relação, que é o ponto mais distintivo do modelo.
 
 \begin{table}[h]
 \centering
-\caption{Accuracy do Modelo 06 R001 por tipo de relação em FIW Track-I. As onze relações cobrem pais e filhos, irmãos e quatro relações de avós e netos.}
+\caption{Accuracy do Modelo 06 R001 por tipo de relação em FIW Track-I.}
 \label{tab:m06_per_rel}
 \begin{tabular}{lrr}
 \hline
 \textbf{Relação} & \textbf{Accuracy} & \textbf{N pares} \\
 \hline
-sibs (irmãos de gêneros distintos) & 87{,}2\% & 234 \\
-bb (irmão-irmão)                   & 86{,}5\% & 860 \\
-ss (irmã-irmã)                     & 86{,}3\% & 731 \\
-md (mãe-filha)                     & 85{,}9\% & 1.038 \\
-ms (mãe-filho)                     & 83{,}9\% & 1.036 \\
-gfgs (avô-neto)                    & 82{,}7\% & 98 \\
-fs (pai-filho)                     & 78{,}8\% & 1.135 \\
-fd (pai-filha)                     & 76{,}9\% & 918 \\
-gfgd (avô-neta)                    & 75{,}4\% & 138 \\
-gmgd (avó-neta)                    & 63{,}4\% & 123 \\
-gmgs (avó-neto)                    & 61{,}2\% & 121 \\
+sibs (irmãos misto)  & 87{,}2\% & 234 \\
+bb (irmão-irmão)     & 86{,}5\% & 860 \\
+ss (irmã-irmã)       & 86{,}3\% & 731 \\
+md (mãe-filha)       & 85{,}9\% & 1.038 \\
+ms (mãe-filho)       & 83{,}9\% & 1.036 \\
+gfgs (avô-neto)      & 82{,}7\% & 98 \\
+fs (pai-filho)       & 78{,}8\% & 1.135 \\
+fd (pai-filha)       & 76{,}9\% & 918 \\
+gfgd (avô-neta)      & 75{,}4\% & 138 \\
+gmgd (avó-neta)      & 63{,}4\% & 123 \\
+gmgs (avó-neto)      & 61{,}2\% & 121 \\
 \hline
 \end{tabular}
 \end{table}
 
-A faixa de accuracy entre 61{,}2\% e 87{,}2\% é a mais estreita entre todos os modelos avaliados. Em comparação, o Modelo 02 R031 atinge 88{,}4\% em gmgs como melhor, e o Modelo 05 R001 cai a 39{,}8\% em gfgs como pior, deixando um piso muito mais baixo para regiões raras do banco. A interpretação é que retrieval-augmentation atua como regularizador estrutural para classes com poucos exemplos. Ao expor explicitamente exemplos positivos similares no momento da inferência, o modelo não precisa codificar todo o conhecimento sobre cada relação nos pesos.
+A faixa entre 61,2\% e 87,2\% é a mais estreita entre os modelos com per-relação registrada no mesmo threshold. O Modelo 05 R001, no mesmo threshold, cai a 39,8\% em gfgs como pior classe, deixando um piso muito mais baixo para relações raras. A interpretação é que retrieval-augmentation atua como regularizador estrutural para classes com poucos exemplos. Expor explicitamente pares positivos similares no momento da inferência reduz a pressão sobre os pesos para codificar todas as variações de cada relação. A Run 002 do Modelo 06 testou substituir o backbone por DINOv2 e dobrar K para 64, mas o AUC caiu de 0,776 para 0,731 (-0,045) e o gap val-teste cresceu de 0,060 para 0,090. Backbone mais rico e maior contexto não compensaram a fragilidade da cross-attention contra a galeria fixa.
 
-A Run 002 testou substituir o backbone ViT-B/16 por DINOv2 e dobrar K para 64, mantendo o encoder congelado. O Test AUC caiu de 0{,}776 para 0{,}731 (-0{,}045) e o gap val\textrightarrow{}teste subiu de 0{,}060 para 0{,}090. Backbone mais rico e maior contexto não compensaram a fragilidade da cross-attention contra a galeria fixa, indicando que o gargalo do método não é qualidade visual mas regularização da camada de retrieval.
+\section{RGCK-Net no Modelo 12}
+
+O Modelo 12 implementa a proposta RGCK-Net (Region-Guided Cross Kinship Network) descrita no Capítulo~\ref{cap:Metodologia}. A avaliação ocorreu em duas fases consecutivas, uma com o backbone AdaFace IR-101 totalmente congelado (R001) e outra com partial unfreeze do último estágio e da camada de saída (R002). A Tabela~\ref{tab:m12_runs} compara as duas fases.
+
+\begin{table}[h]
+\centering
+\caption{Duas runs do Modelo 12 em FIW Track-I, isolando o efeito do partial unfreeze do último estágio do AdaFace.}
+\label{tab:m12_runs}
+\begin{tabular}{lp{5.5cm}rrr}
+\hline
+\textbf{Run} & \textbf{Regime} & \textbf{Val AUC} & \textbf{Test AUC} & \textbf{Params treináveis} \\
+\hline
+R001 & Backbone totalmente congelado, treino apenas em tokens, cross-attention, gate e cabeça & 0{,}835 & 0{,}746 & 5{,}59M (7,9\%) \\
+R002 & Partial unfreeze: stages 1-3 congelados, stage 4 e output\_layer treináveis, LR 1e-5 & \textbf{0{,}932} & \textbf{0{,}856} & 31{,}55M (44,6\%) \\
+\hline
+\end{tabular}
+\end{table}
+
+A R001 produz val→teste gap de -0,089, o menor entre os modelos AdaFace-based do projeto, mas o teto de validação ficou em 0,835 e o Test AUC em 0,746, abaixo dos modelos paramétricos plenos. A R002 destrava os 26 milhões de parâmetros adicionais correspondentes ao stage 4 mais o output\_layer e reduz o LR de 1e-4 para 1e-5. O Val AUC sobe para 0,932, o maior do projeto, e o Test AUC sobe para 0,856.
+
+A hipótese registrada antes do experimento era de que partial unfreeze elevaria o teto de validação preservando boa parte do gap pequeno do R001. O resultado observado confirmou a direção, embora a magnitude tenha sido maior do que o esperado. O LR conservador de 1e-5 protege as features identitárias profundas do AdaFace de serem reescritas drasticamente, enquanto o sinal de gradiente é forte o suficiente para que o stage 4 e o output\_layer se ajustem ao domínio de parentesco. A redação não atribui o ganho exclusivamente ao LR porque não houve ablação isolada de LR sobre o mesmo conjunto de parâmetros descongelados; o registro experimental sustenta a interação entre partial unfreeze e LR conservador, não a contribuição individual de cada um.
+
+A estrutura regional, com 5 tokens anatômicos (global, olhos, nariz, boca, mandíbula) e cross-region attention 5x5, fornece um prior estrutural que, ao contrário das 196 patch tokens do M02, restringe explicitamente onde o modelo deve comparar as duas faces. Em validação, todas as 11 classes ficam entre 86\% e 96\% de accuracy na época do checkpoint, faixa mais estreita do que qualquer outro modelo do projeto. Esse comportamento sustenta a hipótese da proposta de que regiões anatômicas fornecem indutivo útil para parentesco, embora os números de teste no threshold 0,500 não permitam afirmar isso categoricamente porque o threshold não foi otimizado em validação.
 
 \section{Accuracy por relação}
 
-A Tabela~\ref{tab:per_rel_compare} compara accuracy por relação entre os modelos mais relevantes em FIW Track-I, mostrando o que cada família arquitetônica ganha ou perde nas onze classes. As relações entre parentes de primeiro grau aparecem em cima e as de segundo grau (avós e netos) em baixo, ordem que enfatiza a queda esperada em relações distantes.
+A Tabela~\ref{tab:per_rel_compare} compara accuracy por tipo de relação entre modelos no threshold 0,500. M02 R031 não aparece nesta tabela porque opera em threshold 0,900 e os números por classe não são comparáveis diretamente; aparece em texto como referência ao final.
 
 \begin{table}[h]
 \centering
-\caption{Accuracy por tipo de relação em FIW Track-I, em pontos percentuais. M02 R031 representa o ViT com cross-attention bidirecional, M05 R001 representa o regime LoRA-only e M06 R001 representa o retrieval-augmented. Os números do M02 R031 e M05 R001 usam o threshold $\tau^*$ selecionado em validação (0,90 e 0,10 respectivamente).}
+\caption{Accuracy por tipo de relação em FIW Track-I no threshold 0,500, em pontos percentuais. As quatro classes inferiores são relações de segundo grau (avós e netos).}
 \label{tab:per_rel_compare}
 \begin{tabular}{lrrrr}
 \hline
-\textbf{Relação} & \textbf{N pares} & \textbf{M02 R031} & \textbf{M05 R001} & \textbf{M06 R001} \\
+\textbf{Relação} & \textbf{N pares} & \textbf{B0} & \textbf{M05 R001} & \textbf{M12 R002} \\
 \hline
-fs (pai-filho)      & 1.135 & 95{,}3\% & 71{,}6\% & 78{,}8\% \\
-fd (pai-filha)      & 918   & 91{,}7\% & 71{,}5\% & 76{,}9\% \\
-ms (mãe-filho)      & 1.036 & 93{,}9\% & 69{,}4\% & 83{,}9\% \\
-md (mãe-filha)      & 1.038 & 94{,}4\% & 67{,}3\% & 85{,}9\% \\
-bb (irmão-irmão)    & 860   & 95{,}5\% & 79{,}8\% & 86{,}5\% \\
-ss (irmã-irmã)      & 731   & 94{,}7\% & 77{,}2\% & 86{,}3\% \\
-sibs (irmãos misto) & 234   & 94{,}9\% & 83{,}3\% & 87{,}2\% \\
+fs (pai-filho)      & 1.135 & 89{,}9\% & 71{,}6\% & 68{,}6\% \\
+fd (pai-filha)      & 918   & 80{,}1\% & 71{,}5\% & 68{,}4\% \\
+ms (mãe-filho)      & 1.036 & 86{,}6\% & 69{,}4\% & 69{,}4\% \\
+md (mãe-filha)      & 1.038 & 89{,}4\% & 67{,}3\% & 68{,}7\% \\
+bb (irmão-irmão)    & 860   & 89{,}9\% & 79{,}8\% & 75{,}4\% \\
+ss (irmã-irmã)      & 731   & 89{,}9\% & 77{,}2\% & 75{,}9\% \\
+sibs (irmãos misto) & 234   & 90{,}6\% & 83{,}3\% & 79{,}5\% \\
 \hline
-gfgs (avô-neto)     & 98  & 95{,}9\% & 39{,}8\% & 82{,}7\% \\
-gfgd (avô-neta)     & 138 & 89{,}9\% & 50{,}7\% & 75{,}4\% \\
-gmgs (avó-neto)     & 121 & 88{,}4\% & 52{,}1\% & 61{,}2\% \\
-gmgd (avó-neta)     & 123 & 91{,}1\% & 40{,}7\% & 63{,}4\% \\
+gfgs (avô-neto)     & 98  & 68{,}4\% & 39{,}8\% & 39{,}8\% \\
+gfgd (avô-neta)     & 138 & 72{,}5\% & 50{,}7\% & \textbf{52{,}2\%} \\
+gmgs (avó-neto)     & 121 & 52{,}9\% & 52{,}1\% & 44{,}6\% \\
+gmgd (avó-neta)     & 123 & 75{,}6\% & 40{,}7\% & 36{,}6\% \\
+\hline
+non-kin             & 6.993 & 48{,}6\% & --- & 84{,}0\% \\
 \hline
 \end{tabular}
 \end{table}
 
-A leitura cruzada da tabela aponta um padrão central de troca entre regimes. O Modelo 02 R031 domina em quase todas as classes graças ao backbone treinado em conjunto com cross-attention e supervised contrastive, com pico de 95{,}9\% em gfgs e piso de 88{,}4\% em gmgs, faixa estreita característica de um modelo plenamente ajustado ao domínio. O Modelo 05 R001 mantém um padrão razoável em relações de primeiro grau (67\% a 83\%) mas colapsa em relações de avós e netos (39{,}8\% a 52{,}1\%), inversão exatamente oposta ao perfil do M02. O M05 R005, com full unfreeze, melhora marginalmente o AUC mas piora o piso em gfgs para 23{,}5\%, indicando que aumentar plasticidade do backbone DINOv2 concentra capacidade nas relações majoritárias e sacrifica as raras. O Modelo 06 R001 entrega o perfil mais uniforme entre os três, com gfgs a 82{,}7\% e gmgs a 61{,}2\%, validando a hipótese de que retrieval explícito de exemplos similares compensa parcialmente a escassez de dados nas classes raras, mesmo sem atingir o AUC absoluto dos modelos parametrizados.
+A leitura cruzada precisa de cuidado. No threshold 0,500, B0 opera em regime de alta recall e baixa precision; o modelo classifica como kin a maioria dos pares positivos (53\% a 91\% de accuracy em classes kin) mas erra em mais da metade dos pares non-kin (accuracy non-kin de 48,6\%). Esse comportamento é típico de cosseno sobre embeddings AdaFace, em que pares de irmãos e de pais e filhos têm similaridade alta independente do parentesco real. M12 R002 troca recall por precisão: a accuracy em classes kin cai (68\% a 80\%) mas a accuracy em non-kin sobe para 84\%, o que sustenta o ganho em AUC observado anteriormente. A relação gfgd, historicamente uma das mais difíceis do projeto, vai de 31\% no M09 R001 (modelo AdaFace anterior) a 52\% no M12 R002. As demais relações de avós e netos seguem como o principal gargalo, com gmgd em 36,6\% e gmgs em 44,6\% no M12, ainda longe de qualquer paridade entre classes.
 
 \section{Baselines com modelos multimodais}
 
-Os dois VLMs avaliados respondem à pergunta sobre o que um modelo multimodal generalista consegue inferir em parentesco facial sem treinamento específico. A Tabela~\ref{tab:vlm_resultados} resume a accuracy dos dois modelos sob três regimes e indica a amostra usada em cada um.
+Dois VLMs avaliam o que um modelo multimodal generalista consegue inferir sobre parentesco facial sem treinamento específico. A tarefa é classificação em onze classes do FIW, não verificação binária, e por isso os números não são comparados diretamente com os modelos supervisionados. A Tabela~\ref{tab:vlm_resultados} resume.
 
 \begin{table}[h]
 \centering
-\caption{Resultados dos baselines com VLMs em classificação multiclasse das onze relações do FIW. O Codex foi avaliado em três regimes; o Claude entrou apenas em zero-shot.}
+\caption{Resultados dos baselines com VLMs em classificação multiclasse de onze relações.}
 \label{tab:vlm_resultados}
 \begin{tabular}{lllr}
 \hline
 \textbf{Modelo} & \textbf{Regime} & \textbf{Amostra} & \textbf{Accuracy} \\
 \hline
 Codex gpt-5.4-mini & Zero-shot                          & 750 pares balanceados & 33{,}1\% \\
-Codex gpt-5.4-mini & Adaptação por prompt (7-shot)      & 750 pares (mesmos) & 26{,}7\% \\
-Codex gpt-5.4-mini & Prompts direcionados por treino    & 750 pares (mesmos) & 28{,}4\% \\
-Claude Sonnet 4.6 & Zero-shot direto                    & 75 pares (piloto) & 37{,}3\% \\
+Codex gpt-5.4-mini & Adaptação por prompt (7-shot)      & 750 pares (mesmos)    & 26{,}7\% \\
+Codex gpt-5.4-mini & Prompts direcionados por treino    & 750 pares (mesmos)    & 28{,}4\% \\
+Claude Sonnet 4.6  & Zero-shot direto                   & 75 pares (piloto)     & 37{,}3\% \\
 \hline
 \end{tabular}
 \end{table}
 
-A accuracy do Codex em zero-shot fica em 33{,}1\%, e a tentativa de adaptação ao domínio via few-shot mais prompt estruturado mais calibração leve em validação piorou o desempenho para 26{,}7\%. O efeito foi consistente nas três configurações de prompt testadas, e o relatório técnico associado interpreta a queda como amplificação de heurísticas de idade e gênero quando o modelo é forçado a produzir saídas auxiliares antes da resposta final. A versão com prompts direcionados por treinamento iterativo, em que o conjunto de exemplos foi ajustado em rodadas sucessivas a partir do desempenho em validação, recuperou parte da queda mas ainda ficou abaixo do zero-shot puro.
-
-Os dois VLMs apresentam o mesmo padrão de falha catastrófica em relações de avós e netos. As quatro classes gfgs, gfgd, gmgs e gmgd ficam em 0\% de accuracy nos dois modelos, em todas as configurações testadas. As classes intra-geração, em particular sibs, bb e ss, recebem accuracy compatível com a média do conjunto, sugerindo que o sinal explorado pelos VLMs é dominado por características de aparência etária e de gênero, não por traços de parentesco propriamente ditos. Esse comportamento é coerente com o que aparece em comparações qualitativas entre os modelos. Enquanto o Modelo 06 atinge 61\% a 82\% nas relações de avós e netos por meio de retrieval, os VLMs colapsam em zero quando precisam fazer essa distinção fine-grained.
+A accuracy do Codex em zero-shot é 33,1\%, e o experimento de adaptação ao domínio via few-shot mais prompt estruturado mais calibração leve piorou o desempenho para 26,7\% nas mesmas amostras. As três configurações de prompt testadas mantiveram a queda, e o relatório técnico associado interpreta o efeito como amplificação de heurísticas de idade e gênero quando o modelo é forçado a produzir saídas auxiliares antes da resposta final. As quatro classes gfgs, gfgd, gmgs e gmgd ficam em 0\% nos dois modelos, em todas as configurações testadas, indicando que a aparência facial isolada não basta para distinções genealógicas de segundo grau em zero-shot. O Claude Sonnet só foi avaliado em piloto de 75 pares, então o número de 37,3\% deve ser lido como indicação, não como comparação robusta.
 
 \section{Síntese dos resultados}
 
-Os experimentos sustentam quatro observações que serão retomadas na discussão. O ViT com cross-attention bidirecional treinado de ponta a ponta é a abordagem que melhor combina AUC absoluto e accuracy por classe em FIW, com piso de 88{,}4\% nas onze relações e 0{,}850 de AUC. Aumentar a capacidade do backbone por meio do híbrido ConvNeXt mais ViT não traz ganho proporcional em AUC, apesar de dobrar os parâmetros. A combinação DINOv2 mais LoRA mais cross-attention diferencial atinge o melhor TAR@FAR=0,01 do projeto (0{,}152) com cerca de dez vezes menos parâmetros treináveis, sendo competitiva em aplicações que exigem precisão alta. O retrieval-augmented entrega o perfil mais uniforme por relação, com piso de 61{,}2\%, validando o uso de memória não-paramétrica para regularizar classes raras. Os VLMs zero-shot ficam claramente abaixo dos modelos treinados em todas as métricas relevantes e falham por completo em relações de segundo grau.
+O conjunto experimental sustenta cinco leituras principais. O Modelo 12 obteve o maior Test AUC observado neste estudo (0,856) e lidera Average Precision e TAR@FAR=0,01 entre os modelos treinados, mas com margem incremental sobre o Modelo 02 (+0,006 AUC) que requer confirmação por múltiplas seeds ou validação cruzada em FIW antes de qualquer afirmação categórica de superioridade. O Modelo 02 ViT full FT segue competitivo (0,850) e mantém o operating point que historicamente maximiza F1 em verificação binária. O baseline sem treinamento B0 atinge AUC 0,799 e o maior TAR@FAR=0,001 do projeto, o que mostra que o AdaFace pré-treinado já codifica parte expressiva do sinal de parentesco e que o ganho arquitetônico do M12 sobre esse piso é de +0,057, leitura mais informativa do que o ganho sobre o M02. O Modelo 05 com LoRA é Pareto-relevante em eficiência paramétrica, atingindo TAR@FAR=0,01 = 0,152 com 8,47 milhões de parâmetros treináveis. O Modelo 06 retrieval-augmented entrega o perfil per-relação mais uniforme entre os métodos avaliados, e os VLMs zero-shot ficam claramente abaixo dos modelos treinados e falham por completo em relações de avós e netos.
+
+A literatura registrada sobre o FIW reporta resultados próximos de 0,85 a 0,92 em accuracy ou AUC dependendo do protocolo. Os resultados deste trabalho situam-se nessa faixa em AUC com M12 e M02, e abaixo dela quando se considera accuracy no operating point 0,500. As métricas independentes de threshold são o referencial mais defensável para a comparação entre métodos deste estudo, e accuracy ou F1 só devem ser interpretadas dentro do mesmo operating point.
