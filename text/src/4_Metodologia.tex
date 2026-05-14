@@ -1,7 +1,7 @@
 \chapter[Metodologia]{Metodologia}
 \label{cap:Metodologia}
 
-A metodologia adotada cobre cinco modelos supervisionados treinados sobre os bancos KinFaceW-I e Families in the Wild, com um protocolo de avaliação uniforme baseado em validação cruzada de cinco dobras. Os cinco modelos compartilham ainda uma estratégia transversal de invariância geracional, em que cada face de entrada é processada por um módulo de síntese de idade e a decisão final agrega o par original com três variantes etárias. Junto com eles, dois baselines com modelos multimodais generalistas foram executados sobre o mesmo conjunto de teste, mas em tarefa diferente, e por isso aparecem em seção própria.
+A metodologia adotada cobre cinco modelos de comparação central no benchmark Families in the Wild, em split Track-I oficial do RFIW. São eles um baseline sem treinamento com extrator facial pronto (B0, AdaFace IR-101 com cosseno), um ViT full FT com cross-attention bidirecional FaCoR (Modelo 02), um DINOv2 com adaptação por LoRA e cross-attention diferencial (Modelo 05), um modelo retrieval-augmented sobre galeria de pares positivos (Modelo 06) e a proposta principal RGCK-Net com AdaFace parcialmente descongelado e tokens regionais anatômicos (Modelo 12). O Modelo 02 também passa por validação cruzada de cinco dobras em KinFaceW-I como ponto de comparação com a literatura clássica. Os Modelos 01 e 03 ficam registrados na metodologia como referência histórica e estudo de capacidade do híbrido CNN-Transformer, respectivamente; seus resultados completos aparecem no log experimental anexo e em pontos pontuais do Capítulo~\ref{cap:resultados}. Junto com os cinco modelos centrais, dois baselines com modelos multimodais generalistas foram executados sobre o mesmo conjunto de teste em tarefa diferente, e por isso aparecem em seção própria.
 
 \section{Desenho da pesquisa}
 
@@ -40,30 +40,32 @@ Families in the Wild & 762 & {\raise.17ex\hbox{$\scriptstyle\sim$}}99.000 / 13.0
 
 \section{Modelos avaliados}
 
-Cinco modelos supervisionados foram implementados e avaliados sob o mesmo protocolo. Os Modelos 01, 02 e 03 formam a coluna vertebral da comparação, cada um representando uma família de método da literatura, e os Modelos 05 e 06 são exploratórios e combinam técnicas recentes. A Tabela~\ref{tab:modelos_metodologia} resume a comparação por backbone, parâmetros treináveis e ideia central de cada modelo.
+Os modelos descritos a seguir correspondem ao eixo central da comparação no Capítulo~\ref{cap:resultados}. O B0 entra como piso sem treinamento e baseline mínimo recomendado pelo documento de baselines do projeto. Os Modelos 02, 05 e 06 são as três famílias supervisionadas comparadas, e o Modelo 12 é a proposta principal deste TCC. Os Modelos 01 e 03 aparecem em seções separadas como referência histórica e estudo de capacidade, sem ocupar lugar no eixo de comparação principal. A Tabela~\ref{tab:modelos_metodologia} resume os cinco modelos centrais por backbone, parâmetros treináveis e ideia central.
 
 \begin{table}[h]
 \centering
-\caption{Visão geral dos cinco modelos avaliados, com backbone, total de parâmetros treináveis e ideia central de cada um.}
+\caption{Visão geral dos cinco modelos no eixo central de comparação, com backbone, total de parâmetros treináveis e ideia central de cada um.}
 \label{tab:modelos_metodologia}
 \begin{tabular}{llrl}
 \hline
 \textbf{Modelo} & \textbf{Backbone} & \textbf{Params treináveis} & \textbf{Ideia central} \\
 \hline
-M01 & ResNet-18 / ArcFace + SAM      & {\raise.17ex\hbox{$\scriptstyle\sim$}}11M  & Síntese de idade antes da comparação \\
-M02 & vit\_base\_patch16\_224         & {\raise.17ex\hbox{$\scriptstyle\sim$}}86M  & Cross-attention bidirecional entre faces \\
-M03 & convnext\_base + vit\_base\_p16 & {\raise.17ex\hbox{$\scriptstyle\sim$}}176M & Fusão de features locais e globais \\
-M05 & DINOv2 ViT-B/14 + LoRA / (un)freeze & 8,5M a 95M & Backbone self-supervised com cross-attention diferencial \\
-M06 & ViT-B/16 ou DINOv2 (frozen)     & {\raise.17ex\hbox{$\scriptstyle\sim$}}8-12M & Memória não-paramétrica de pares positivos \\
+B0  & AdaFace IR-101 (frozen)             & 0 & Extrator facial pronto com cosseno e threshold em validação \\
+M02 & vit\_base\_patch16\_224              & {\raise.17ex\hbox{$\scriptstyle\sim$}}86M & Cross-attention bidirecional entre faces \\
+M05 & DINOv2 ViT-B/14 + LoRA / (un)freeze   & 8,5M a 95M & Backbone self-supervised com cross-attention diferencial \\
+M06 & ViT-B/16 ou DINOv2 (frozen)          & {\raise.17ex\hbox{$\scriptstyle\sim$}}8-12M & Memória não-paramétrica de pares positivos \\
+M12 & AdaFace IR-101 (stage 4 + output\_layer) & 31,6M & Tokens regionais anatômicos com cross-region attention e gate \\
 \hline
 \end{tabular}
 \end{table}
 
-\subsection{Modelo 01, CNN com síntese de idade}
+\subsection{Baseline B0, AdaFace cosseno congelado}
 
-O baseline do trabalho toma como base uma rede neural convolucional pré-treinada em reconhecimento facial, ResNet-18 com pesos do ArcFace. O Modelo 01 segue o esquema de invariância geracional descrito na Seção~\ref{sec:invariancia_geracional}, com quatro pares diagonais (original mais três variantes etárias) e a agregação convexa da Equação~\ref{eq:invariancia_geracional}. Como ablação adicional, o Modelo 01 mantém a variante histórica em que as três variantes etárias por face geram nove comparações cruzadas, agregadas por um módulo de atenção aprendível que decide qual combinação é mais informativa caso a caso. O modelo tem cerca de 11 milhões de parâmetros sem o módulo SAM, que entra como pesos congelados quando ativado.
+O B0 implementa o baseline mínimo recomendado pelo documento de baselines do projeto. O backbone é o AdaFace IR-101 \cite{kim2022adaface} pré-treinado em WebFace4M, com todos os pesos congelados. Para cada par $(x_a, x_b)$, o modelo extrai embeddings $L^2$-normalizados de 512 dimensões e calcula a similaridade cosseno. O escore é mapeado para o intervalo $[0, 1]$ por meio de $(\cos + 1)/2$, e o threshold de decisão é escolhido em validação por busca do ponto que maximiza F1. Não há treinamento e não há parâmetros treináveis. O B0 mede o piso da tarefa de parentesco com um extrator facial pronto, sem qualquer adaptação, e dá o referencial honesto para isolar o ganho arquitetônico dos modelos treinados.
 
-O módulo SAM exige pesos pré-treinados específicos de cerca de 4,5 GB e nem todos os experimentos com o Modelo 01 puderam ativá-lo. Quando o módulo não está carregado, o modelo opera como rede siamesa convencional sobre o par original. Os resultados reportados no Capítulo 5 deixam essa condição explícita run a run.
+\subsection{Modelo 01, baseline histórico com CNN e síntese de idade}
+
+O Modelo 01 é o baseline histórico do projeto e não entra no eixo central de comparação. A descrição aqui registra o método para fins de continuidade com a versão anterior do trabalho e com a literatura de síntese de idade aplicada a parentesco. O backbone é uma ResNet-18 com pesos do ArcFace, pré-treinada em reconhecimento facial. A ideia original era usar o módulo de síntese de idade SAM \cite{alaluf2022sam} para gerar três variantes etárias por face e agregar nove comparações cruzadas por atenção aprendível. Na prática, o módulo SAM exige pesos pré-treinados específicos de cerca de 4,5 GB e nem todos os runs do Modelo 01 puderam ativá-lo. Quando o módulo não está carregado, o modelo opera como rede siamesa convencional sobre o par original. O Modelo 01 foi avaliado em KinFaceW-I, onde atingiu AUC 0,682, e não competiu no benchmark principal em FIW Track-I.
 
 \subsection{Modelo 02, ViT com cross-attention bidirecional}
 
@@ -83,10 +85,20 @@ O Modelo 05 cobre quatro regimes de plasticidade do backbone, comparados no Cap�
 
 O Modelo 06 adota uma abordagem de memória não-paramétrica. Em vez de forçar a decisão de parentesco numa única passagem feed-forward, o modelo mantém uma galeria de pares positivos do conjunto de treino e, em inferência, recupera os K pares mais similares ao par de consulta. Os pares recuperados, junto com seus tipos de relação, viram tokens de contexto para um módulo de cross-attention que olha da consulta para os suportes. O encoder permanece congelado, e a galeria é construída uma vez por run, com cerca de 33 mil pares positivos do split de treino do FIW. A configuração padrão usa K igual a 32 e duas camadas de cross-attention, com total treinável entre 8 e 12 milhões de parâmetros, dependendo da configuração de retrieval. A motivação é dar acesso explícito a exemplos conhecidos de parentesco que se parecem com o par de consulta, em vez de tentar absorver tudo nos pesos.
 
+\subsection{Modelo 12, RGCK-Net com tokens regionais e partial unfreeze}
+
+O Modelo 12 implementa o RGCK-Net, sigla de Region-Guided Cross Kinship Network, que é a proposta principal deste trabalho. O backbone é o AdaFace IR-101 \cite{kim2022adaface} pré-treinado em WebFace4M, especializado em reconhecimento facial em large-scale. A estratégia de plasticidade do backbone mantém os três primeiros estágios congelados e libera apenas o stage 4 (três blocos BasicBlockIR de saída) e o output\_layer, que produz o embedding de 512 dimensões. Esse partial unfreeze adiciona cerca de 26 milhões de parâmetros treináveis sobre o esqueleto de tokens regionais e adapter, totalizando 31,55 milhões de parâmetros treináveis em 70,74 milhões totais (44,6\%).
+
+Sobre o backbone facial, o RGCK-Net constrói uma representação regional explícita. Cinco regiões anatômicas são definidas em coordenadas fixas na imagem alinhada de 224x224 pixels. As regiões cobrem face inteira (global), faixa horizontal superior (olhos), região central (nariz), faixa inferior média (boca) e faixa inferior (mandíbula). Cada região é recortada e redimensionada para 112x112, e o AdaFace produz um embedding por região. Os cinco tokens passam por uma camada bidirecional de cross-region attention com 4 cabeças, que computa um mapa de atenção 5x5 entre as regiões das duas faces. Esse mapa permite que cada região de uma face atenda às regiões correspondentes ou complementares da outra, em escala muito menor do que os mapas de patch 196x196 dos modelos baseados em ViT.
+
+A decisão final combina três componentes. Para cada região $k$, o modelo calcula a similaridade entre os tokens correspondentes das duas faces $s_k$. Um módulo de gating sigmoide aprende pesos $w_k \in [0, 1]$ por região, interpretáveis como saliência regional para o par específico em análise. Diferentemente de softmax, o sigmoide permite que mais de uma região seja saliente simultaneamente. O classificador final é uma MLP de três camadas que recebe um vetor concatenado de 2049 dimensões formado por $[g_A, g_B, |g_A - g_B|, g_A \odot g_B, \text{sims}, \text{weights}, \text{score}]$, com $g_A$ e $g_B$ os tokens globais e $\text{score}$ o produto interno entre as similaridades regionais e os pesos do gate. A saída é um único logit, treinado por BCEWithLogitsLoss. A taxa de aprendizado pico é 1e-5, dez vezes menor do que a usada com backbone totalmente congelado, escolhida para proteger as features identitárias profundas do AdaFace de serem reescritas drasticamente.
+
+A avaliação do Modelo 12 cobre duas fases. Na primeira fase (R001), o backbone AdaFace fica totalmente congelado e apenas os 5,6 milhões de parâmetros do esqueleto regional, do adapter, do gate e da cabeça são treinados, com LR 1e-4. Na segunda fase (R002), o partial unfreeze do stage 4 e do output\_layer entra em ação com LR 1e-5. A comparação entre as duas fases isola o efeito do partial unfreeze sobre a mesma estrutura regional, e os resultados aparecem no Capítulo~\ref{cap:resultados}.
+
 \section{Invariância geracional por síntese de idade}
 \label{sec:invariancia_geracional}
 
-Comparar um pai de cinquenta anos com um filho de vinte traz um problema conhecido em parentesco facial. O sinal facial fica dominado por mudanças associadas ao envelhecimento, e parte da semelhança de parentesco entre as duas pessoas fica encoberta. Para reduzir esse efeito, os cinco modelos supervisionados deste trabalho usam uma estratégia transversal de invariância geracional. Cada face passa uma vez por um módulo de síntese de idade que produz três variantes etárias adicionais nas faixas de criança, jovem e idoso, e a comparação entre dois indivíduos passa a agregar quatro pares de imagens em vez de um só.
+Comparar um pai de cinquenta anos com um filho de vinte traz um problema conhecido em parentesco facial. O sinal facial fica dominado por mudanças associadas ao envelhecimento, e parte da semelhança de parentesco entre as duas pessoas fica encoberta. Como linha de pesquisa parcialmente executada neste trabalho, foi formulada uma estratégia de invariância geracional baseada em síntese de idade que poderia, em princípio, ser aplicada de forma uniforme aos modelos supervisionados. A descrição a seguir registra a proposta, e em seguida explicita em quais modelos ela foi de fato integrada ao pipeline. A ideia é que cada face passe uma vez por um módulo de síntese de idade que produz três variantes etárias adicionais nas faixas de criança, jovem e idoso, e a comparação entre dois indivíduos agregue quatro pares de imagens em vez de um só.
 
 Dado um par de consulta $(a, b)$, o módulo de síntese gera $a_{\text{cri}}, a_{\text{jov}}, a_{\text{ido}}$ e $b_{\text{cri}}, b_{\text{jov}}, b_{\text{ido}}$. A inferência roda sobre quatro pares diagonais. O par original $(a, b)$ carrega o sinal mais fiel ao indivíduo e recebe o maior peso. Os três pares etários $(a_{\text{cri}}, b_{\text{cri}})$, $(a_{\text{jov}}, b_{\text{jov}})$ e $(a_{\text{ido}}, b_{\text{ido}})$ entram como votos auxiliares que aproximam a comparação de uma mesma faixa etária e reduzem o viés introduzido pela assimetria de idade entre as faces originais. Cada par produz um escore de similaridade $s_k$ pelo mesmo modelo, e o escore final é a combinação convexa
 
@@ -99,7 +111,7 @@ com $w_0 + w_{\text{cri}} + w_{\text{jov}} + w_{\text{ido}} = 1$, $w_0 > w_{\tex
 
 O módulo de síntese é o SAM \cite{alaluf2022sam}, com pesos pré-treinados externos, descrito no Capítulo~\ref{cap:Fundamentação Teórica}. A síntese roda em pré-processamento, uma única vez por face do banco, e as três variantes ficam em cache em disco. Em inferência o custo extra fica em $4\times$ no número de forward passes por par, e em treino o esquema é mantido para que o modelo veja, em cada batch, as quatro variantes do par positivo e do par negativo.
 
-A ativação efetiva do SAM nos cinco modelos depende da disponibilidade dos pesos pré-treinados de cerca de 4,5 GB e do tempo de pré-processamento das três variantes etárias para o banco completo. Nesta versão da metodologia, o esquema diagonal de quatro pares é descrito como o protocolo padrão, mas só o Modelo 01 tem o SAM integrado ao pipeline de treino, e mesmo nele apenas parte dos runs operou com o módulo ativo. Para os Modelos 02, 03, 05 e 06 a ativação fica registrada no \texttt{RUN\_LOG.md} de cada run, e o Capítulo 5 indica run a run se a invariância geracional esteve ativa, se rodou só com o par original ou se usou a variante histórica de nove comparações do Modelo 01.
+A ativação efetiva do SAM depende da disponibilidade dos pesos pré-treinados de cerca de 4,5 GB e do tempo de pré-processamento das três variantes etárias para o banco completo. Nesta versão do trabalho, só o Modelo 01 teve o SAM integrado ao pipeline de treino, e mesmo nele apenas parte dos runs operou com o módulo ativo. Os Modelos 02, 05, 06 e 12 não usam o módulo de síntese de idade nem o esquema diagonal de quatro pares, e o baseline B0 também opera só sobre o par original. A invariância geracional, portanto, é uma direção planejada e parcialmente executada deste trabalho, não um protocolo uniforme aplicado aos modelos do eixo central de comparação. O Capítulo~\ref{cap:resultados} reporta apenas o regime efetivamente avaliado por cada modelo.
 
 \section{Treinamento}
 

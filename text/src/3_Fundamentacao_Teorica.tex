@@ -37,6 +37,8 @@ onde $Q$, $K$ e $V$ são projeções lineares dos tokens de entrada chamadas res
 DINOv2 \cite{oquab2024dinov2}
 é um Vision Transformer treinado de forma self-supervised sobre 142 milhões de imagens sem rótulos. O método combina destilação entre crops aumentados de uma mesma imagem e um objetivo de máscara em nível de patch, e produz features que se transferem bem para tarefas fine-grained sem fine-tuning. No Modelo 05 deste trabalho, o backbone DINOv2 fica congelado e a adaptação ao domínio é feita apenas pelos adaptadores LoRA descritos adiante.
 
+Em contraste com backbones de uso geral, modelos especializados em reconhecimento facial usam arquiteturas e perdas voltadas à separação de identidades em large-scale. O AdaFace \cite{kim2022adaface}, baseado em uma variante IR-101 da família ResNet adaptada para faces, é treinado em WebFace4M com uma loss de margem adaptativa que ajusta o peso de exemplos difíceis em função da qualidade da imagem. O resultado é um extrator de 512 dimensões em que distâncias entre embeddings refletem similaridade de identidade. No Modelo 12 deste trabalho, o AdaFace IR-101 entra como backbone facial especializado, com partial unfreeze do último estágio, e seus embeddings alimentam a estrutura regional descrita no Capítulo~\ref{cap:Metodologia}.
+
 \section{Cross-attention entre faces}
 
 Cross-attention é uma variante da self-attention em que as queries vêm de uma sequência e as keys e values vêm de outra. No modelo de verificação de parentesco, isso significa que os tokens de patch de uma face geram as queries e os tokens da outra face geram keys e values. Formalmente, dado $X_a$ e $X_b$ os tokens das duas faces, a cross-attention de $a$ sobre $b$ é
@@ -47,6 +49,8 @@ Cross-attention é uma variante da self-attention em que as queries vêm de uma 
 \end{equation}
 
 onde $W_Q$, $W_K$ e $W_V$ são matrizes aprendíveis. A versão bidirecional alterna o papel das duas faces ao longo de camadas sucessivas, e o efeito prático é que o modelo aprende quais regiões da face $a$ comparar com quais regiões da face $b$, em vez de operar só sobre embeddings globais. Este é o módulo central do FaCoR \cite{su2023facornet} e do Modelo 02 deste trabalho.
+
+Uma variante recente reduz drasticamente o número de tokens envolvidos na cross-attention ao trocar patches densos por regiões anatômicas fixas. Em vez de 196 tokens espaciais como no ViT base, define-se um pequeno conjunto de regiões da face (por exemplo, global, olhos, nariz, boca e mandíbula) e cada região vira um único token. A cross-region attention opera sobre uma matriz pequena, da ordem de cinco por cinco no caso anatômico, e fornece um prior estrutural ao restringir explicitamente onde o modelo compara as duas faces. O Modelo 12 deste trabalho usa essa abordagem regional combinada com um mecanismo de gate sigmoide que aprende pesos por região, permitindo que múltiplas regiões sejam salientes ao mesmo tempo.
 
 Uma variante mais recente, a atenção diferencial \cite{ye2024differential},
 divide cada cabeça de atenção em duas metades e computa a atenção como diferença entre dois mapas softmax,
