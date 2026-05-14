@@ -267,11 +267,15 @@ class RGCKNet(nn.Module):
         dropout: float = 0.2,
         freeze_backbone: bool = True,
         unfreeze_last_stage: bool = False,
+        aux_relation_head: bool = False,
+        num_relation_classes: int = 11,
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
         self.freeze_backbone = freeze_backbone
         self.unfreeze_last_stage = unfreeze_last_stage
+        self.aux_relation_head = aux_relation_head
+        self.num_relation_classes = num_relation_classes
 
         # Region tokenizer (shared backbone across regions)
         self.tokenizer = FixedPartitionRegionTokenizer(
@@ -326,6 +330,14 @@ class RGCKNet(nn.Module):
             nn.Linear(classifier_hidden // 4, 1),
         )
 
+        # Phase 5 (proposta_rgck_net_kinship.md §38): auxiliary relation-type
+        # classifier on the average of the contextualised global tokens. Used
+        # only for positive pairs during training (mask handled in the loss).
+        if aux_relation_head:
+            self.relation_head = nn.Linear(embedding_dim, num_relation_classes)
+        else:
+            self.relation_head = None
+
     def _global_index(self) -> int:
         if "global" in self.region_names:
             return self.region_names.index("global")
@@ -333,16 +345,18 @@ class RGCKNet(nn.Module):
 
     def forward(
         self, img_a: torch.Tensor, img_b: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, ...]:
         """
         img_a, img_b: (B, 3, 224, 224)  — aligned FIW faces
 
-        Returns:
+        Returns (always a 6-tuple):
             kinship_logit: (B,) raw logit (apply sigmoid for probability)
             region_weights: (B, K) sigmoid gating weights per region
             attn_map: (B, num_heads, K, K) last-layer A→B cross-attention
             gA_norm: (B, embedding_dim) L2-normalised contextualised global token A
             gB_norm: (B, embedding_dim) L2-normalised contextualised global token B
+            rel_logits: (B, num_relation_classes) auxiliary relation-class logits,
+                or None when aux_relation_head=False.
         """
         # Region tokens (B, K, 512), backbone may be frozen
         tokens_a = self.tokenizer(img_a)
@@ -378,7 +392,15 @@ class RGCKNet(nn.Module):
         gA_norm = ctx_a_n[:, self._global_index()]
         gB_norm = ctx_b_n[:, self._global_index()]
 
-        return logit, weights, attn_map, gA_norm, gB_norm
+        # Auxiliary relation-type logits (Phase 5) — uses the mean of the two
+        # contextualised global tokens so the head is symmetric in (A, B).
+        if self.relation_head is not None:
+            rel_input = 0.5 * (gA + gB)
+            rel_logits = self.relation_head(rel_input)
+        else:
+            rel_logits = None
+
+        return logit, weights, attn_map, gA_norm, gB_norm, rel_logits
 
 
 def build_rgck_net(
@@ -392,6 +414,8 @@ def build_rgck_net(
     dropout: float = 0.2,
     freeze_backbone: bool = True,
     unfreeze_last_stage: bool = False,
+    aux_relation_head: bool = False,
+    num_relation_classes: int = 11,
 ) -> RGCKNet:
     """
     Build RGCK-Net with an AdaFace IR-101 backbone (shared by all regions).
@@ -414,6 +438,8 @@ def build_rgck_net(
         dropout=dropout,
         freeze_backbone=freeze_backbone,
         unfreeze_last_stage=unfreeze_last_stage,
+        aux_relation_head=aux_relation_head,
+        num_relation_classes=num_relation_classes,
     )
 
 
@@ -421,11 +447,12 @@ if __name__ == "__main__":
     # Smoke test (random init)
     import os, sys
     sys.path.insert(0, os.path.dirname(__file__))
-    m = build_rgck_net(adaface_weights=None, freeze_backbone=True)
+    m = build_rgck_net(adaface_weights=None, freeze_backbone=True, aux_relation_head=True)
     total = sum(p.numel() for p in m.parameters())
     trainable = sum(p.numel() for p in m.parameters() if p.requires_grad)
     print(f"M12 RGCK-Net params total/trainable: {total:,}/{trainable:,} ({100*trainable/total:.2f}%)")
     print(f"Regions: {m.region_names}")
     x = torch.randn(2, 3, 224, 224)
-    logit, weights, attn = m(x, x)
+    logit, weights, attn, gA, gB, rel = m(x, x)
     print(f"logit: {logit.shape}, weights: {weights.shape}, attn: {attn.shape}")
+    print(f"gA: {gA.shape}, gB: {gB.shape}, rel: {rel.shape if rel is not None else None}")

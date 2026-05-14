@@ -59,6 +59,8 @@ FREEZE_BACKBONE="${FREEZE_BACKBONE:-1}"        # Phase 1 default: frozen
 UNFREEZE_LAST_STAGE="${UNFREEZE_LAST_STAGE:-0}" # Phase 2: set to 1 to unfreeze body[46:49] + output_layer
 SUPCON_WEIGHT="${SUPCON_WEIGHT:-0.0}"             # Phase 4: weight λ for supervised-contrastive aux (0.0 = disabled)
 SUPCON_MARGIN="${SUPCON_MARGIN:-0.3}"             # margin for negative pairs in supcon term
+RELATION_AUX_WEIGHT="${RELATION_AUX_WEIGHT:-0.0}" # Phase 5: weight λ for relation-type CE aux on positives (0.0 = disabled)
+RELATION_AUX_BALANCED="${RELATION_AUX_BALANCED:-1}" # 1 = inverse-freq class weights (default), 0 = uniform CE
 
 NEGATIVE_RATIO="${NEGATIVE_RATIO:-1.0}"
 EVAL_NEGATIVE_RATIO="${EVAL_NEGATIVE_RATIO:-1.0}"
@@ -165,6 +167,7 @@ TRAIN_ARGS=(
     --max_grad_norm           "${MAX_GRAD_NORM}"
     --supcon_weight           "${SUPCON_WEIGHT}"
     --supcon_margin           "${SUPCON_MARGIN}"
+    --relation_aux_weight     "${RELATION_AUX_WEIGHT}"
     --seed                    "${SEED}"
     --rocm_device             "${GPU_ID}"
     --checkpoint_dir          "${CKPT_DIR}"
@@ -174,6 +177,9 @@ if [ "${FREEZE_BACKBONE}" != "1" ]; then
 fi
 if [ "${UNFREEZE_LAST_STAGE}" = "1" ]; then
     TRAIN_ARGS+=(--unfreeze_last_stage)
+fi
+if [ "${RELATION_AUX_BALANCED}" != "1" ]; then
+    TRAIN_ARGS+=(--relation_aux_unbalanced)
 fi
 
 TEST_ARGS=(

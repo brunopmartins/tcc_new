@@ -37,7 +37,7 @@ from rocm_utils import (  # noqa: E402
     clear_rocm_cache,
 )
 from config import DataConfig, TrainConfig  # noqa: E402
-from dataset import create_dataloaders, KinshipPairDataset, get_transforms  # noqa: E402
+from dataset import create_dataloaders, KinshipPairDataset, get_transforms, FIW_RELATION_TO_IDX, FIW_NUM_RELATIONS  # noqa: E402
 from trainer import ROCmTrainer  # noqa: E402
 from evaluation import print_metrics  # noqa: E402
 from protocol import (  # noqa: E402
@@ -113,6 +113,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--supcon_margin", type=float, default=0.3,
                    help="Margin for negative pairs in supcon term — cos sim above (1-margin) is penalised.")
 
+    # Phase 5 of proposta_rgck_net_kinship.md §38: relation-type auxiliary head
+    p.add_argument("--relation_aux_weight", type=float, default=0.0,
+                   help="Weight λ for the relation-type CE auxiliary loss applied to positive pairs only. "
+                        "0.0 = disabled (R002 baseline). 0.05 = R005 default.")
+    p.add_argument("--relation_aux_balanced", action="store_true", default=True,
+                   help="Use inverse-frequency class weights computed from train positives.")
+    p.add_argument("--relation_aux_unbalanced", dest="relation_aux_balanced",
+                   action="store_false",
+                   help="Disable class-balancing weights (uniform CE).")
+
     # Negative sampling
     p.add_argument("--negative_ratio", type=float, default=1.0)
     p.add_argument("--eval_negative_ratio", type=float, default=1.0)
@@ -137,25 +147,44 @@ def parse_args() -> argparse.Namespace:
 
 class RGCKBCELoss(nn.Module):
     """
-    BCE-with-logits over classifier head + optional supervised-contrastive
-    auxiliary over the (gA_norm, gB_norm) L2-normalised global tokens.
+    BCE-with-logits over classifier head + optional auxiliary losses.
 
-    Phase 4 of `proposta_rgck_net_kinship.md` §28:
-      L_total = L_bce + supcon_weight * L_supcon
-
-    SupCon term is a margin-style label-aware contrastive on cosine similarity:
+    Phase 4 (`proposta_rgck_net_kinship.md` §28) — supervised contrastive on
+    (gA_norm, gB_norm):
       pos pairs (label=1): pull cos toward 1 → (1 - cos)^2
       neg pairs (label=0): push cos below margin → max(0, cos - (1-margin))^2
 
-    Reduces to pure BCE when supcon_weight=0 (the default — matches R001/R002).
+    Phase 5 (`proposta_rgck_net_kinship.md` §38) — relation-type CE on the
+    11-way relation_head logits, applied only to positive pairs (non-kin
+    masked out via relation_idx = -1). Class-balanced via inverse-frequency
+    weights computed from train positives.
+
+    L_total = L_bce
+            + supcon_weight   * L_supcon
+            + relation_weight * L_ce_relation(mask=positive)
+
+    Reduces to pure BCE when both aux weights are 0 (matches R002).
     """
 
-    def __init__(self, supcon_weight: float = 0.0, supcon_margin: float = 0.3):
+    def __init__(
+        self,
+        supcon_weight: float = 0.0,
+        supcon_margin: float = 0.3,
+        relation_weight: float = 0.0,
+        relation_class_weights: "Optional[torch.Tensor]" = None,
+    ):
         super().__init__()
         self.loss_type = "bce"
         self.bce = nn.BCEWithLogitsLoss()
         self.supcon_weight = float(supcon_weight)
         self.supcon_margin = float(supcon_margin)
+        self.relation_weight = float(relation_weight)
+        if relation_class_weights is not None:
+            self.register_buffer(
+                "relation_class_weights", relation_class_weights.float()
+            )
+        else:
+            self.relation_class_weights = None
 
     @staticmethod
     def _supcon_term(gA: torch.Tensor, gB: torch.Tensor, labels: torch.Tensor, margin: float) -> torch.Tensor:
@@ -167,30 +196,132 @@ class RGCKBCELoss(nn.Module):
         loss = label_f * pos_loss + (1.0 - label_f) * neg_loss
         return loss.mean()
 
-    def forward(self, outputs, labels: torch.Tensor) -> torch.Tensor:
-        # outputs may be a tuple (logit, weights, attn, gA, gB) from M12.forward
-        if isinstance(outputs, tuple):
-            logit = outputs[0]
-            bce_loss = self.bce(logit.squeeze(-1).float(), labels.float())
-            if self.supcon_weight > 0.0 and len(outputs) >= 5:
-                gA = outputs[3]
-                gB = outputs[4]
-                supcon = self._supcon_term(gA, gB, labels, self.supcon_margin)
-                return bce_loss + self.supcon_weight * supcon
-            return bce_loss
-        return self.bce(outputs.squeeze(-1).float(), labels.float())
+    def forward(
+        self,
+        outputs,
+        labels: torch.Tensor,
+        relation_idx: "Optional[torch.Tensor]" = None,
+    ) -> torch.Tensor:
+        # outputs may be a 6-tuple (logit, weights, attn, gA, gB, rel_logits)
+        # from M12.forward (rel_logits is None when aux_relation_head is off).
+        if not isinstance(outputs, tuple):
+            return self.bce(outputs.squeeze(-1).float(), labels.float())
+
+        logit = outputs[0]
+        total = self.bce(logit.squeeze(-1).float(), labels.float())
+
+        if self.supcon_weight > 0.0 and len(outputs) >= 5 and outputs[3] is not None:
+            gA = outputs[3]
+            gB = outputs[4]
+            supcon = self._supcon_term(gA, gB, labels, self.supcon_margin)
+            total = total + self.supcon_weight * supcon
+
+        if (
+            self.relation_weight > 0.0
+            and relation_idx is not None
+            and len(outputs) >= 6
+            and outputs[5] is not None
+        ):
+            rel_logits = outputs[5]
+            # Apply CE only to positive pairs with a valid relation index.
+            mask = (relation_idx >= 0) & (labels.long() == 1)
+            if mask.any():
+                ce = nn.functional.cross_entropy(
+                    rel_logits[mask].float(),
+                    relation_idx[mask],
+                    weight=self.relation_class_weights,
+                )
+                total = total + self.relation_weight * ce
+
+        return total
+
+
+def compute_fiw_relation_class_weights(
+    train_dataset, num_classes: int = FIW_NUM_RELATIONS
+) -> torch.Tensor:
+    """Inverse-frequency class weights for the Phase 5 CE aux loss.
+
+    Counts only positive (kin) pairs. Returns a (num_classes,) tensor that
+    can be passed to F.cross_entropy as `weight`. Weights are rescaled so
+    that their mean is 1.0, which keeps the loss magnitude comparable to
+    an unweighted CE for stable λ tuning.
+    """
+    counts = torch.zeros(num_classes, dtype=torch.long)
+    for (_, _, rel), label in zip(train_dataset.pairs, train_dataset.labels):
+        if int(label) != 1:
+            continue
+        idx = FIW_RELATION_TO_IDX.get(rel, -1)
+        if 0 <= idx < num_classes:
+            counts[idx] += 1
+
+    safe = counts.clamp(min=1).float()
+    weights = 1.0 / safe
+    weights = weights * (float(num_classes) / weights.sum())
+    return weights, counts
 
 
 class RGCKROCmTrainer(ROCmTrainer):
-    """ROCm trainer for M12 — passes full output tuple to RGCKBCELoss."""
+    """ROCm trainer for M12 — passes full output tuple to RGCKBCELoss and
+    threads ``relation_idx`` through to support the Phase 5 aux CE loss."""
 
     def __init__(self, *args, gradient_accumulation: int = 1, **kwargs):
         self.gradient_accumulation = max(1, int(gradient_accumulation))
         super().__init__(*args, **kwargs)
 
     def _compute_loss(self, outputs, labels):
-        # RGCKBCELoss handles the tuple unpacking itself so it can access gA, gB
         return self.loss_fn(outputs, labels)
+
+    def train_epoch(self) -> float:
+        """Train for one epoch. Mirrors ROCmTrainer.train_epoch but also pulls
+        ``relation_idx`` from each batch and forwards it to the loss so the
+        Phase 5 relation-type CE head can be supervised."""
+        from tqdm import tqdm
+
+        self.model.train()
+        total_loss = 0.0
+        num_batches = 0
+
+        clear_rocm_cache()
+
+        pbar = tqdm(self.train_loader, desc="Training (ROCm)")
+        for batch in pbar:
+            img1 = batch["img1"].to(self.device, non_blocking=True)
+            img2 = batch["img2"].to(self.device, non_blocking=True)
+            labels = batch["label"].to(self.device, non_blocking=True)
+            relation_idx = batch.get("relation_idx")
+            if relation_idx is not None:
+                relation_idx = relation_idx.to(self.device, non_blocking=True)
+
+            self.optimizer.zero_grad(set_to_none=True)
+
+            if self.use_amp:
+                from torch.cuda.amp import autocast
+                with autocast():
+                    outputs = self.model(img1, img2)
+                    loss = self.loss_fn(outputs, labels, relation_idx)
+                self.scaler.scale(loss).backward()
+                if self.config.max_grad_norm > 0:
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.config.max_grad_norm,
+                    )
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                outputs = self.model(img1, img2)
+                loss = self.loss_fn(outputs, labels, relation_idx)
+                loss.backward()
+                if self.config.max_grad_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.config.max_grad_norm,
+                    )
+                self.optimizer.step()
+
+            total_loss += loss.item()
+            num_batches += 1
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+        return total_loss / max(num_batches, 1)
 
 
 def main() -> None:
@@ -289,6 +420,7 @@ def main() -> None:
     print(f"  Cross-attn:          {args.cross_attn_layers} layer × {args.cross_attn_heads} heads")
     print(f"  Dropout:             {args.dropout}")
 
+    aux_relation_head_enabled = bool(args.relation_aux_weight > 0)
     model = build_rgck_net(
         adaface_weights=args.adaface_weights,
         embedding_dim=args.embedding_dim,
@@ -299,6 +431,8 @@ def main() -> None:
         dropout=args.dropout,
         freeze_backbone=args.freeze_backbone,
         unfreeze_last_stage=args.unfreeze_last_stage,
+        aux_relation_head=aux_relation_head_enabled,
+        num_relation_classes=FIW_NUM_RELATIONS,
     )
     model = optimize_for_rocm(model)
 
@@ -307,12 +441,35 @@ def main() -> None:
     print(f"  Total params:        {total:,}")
     print(f"  Trainable params:    {trainable:,} ({100*trainable/total:.2f}%)")
 
+    relation_class_weights = None
+    relation_class_counts = None
+    if aux_relation_head_enabled:
+        if args.relation_aux_balanced:
+            relation_class_weights, relation_class_counts = (
+                compute_fiw_relation_class_weights(train_loader.dataset)
+            )
+            print(
+                f"  Relation CE class weights (balanced, mean=1.0):\n"
+                f"    counts:  {relation_class_counts.tolist()}\n"
+                f"    weights: {[f'{w:.3f}' for w in relation_class_weights.tolist()]}"
+            )
+        else:
+            print("  Relation CE class weights: uniform (--relation_aux_unbalanced)")
+
     loss_fn = RGCKBCELoss(
         supcon_weight=args.supcon_weight,
         supcon_margin=args.supcon_margin,
+        relation_weight=args.relation_aux_weight,
+        relation_class_weights=relation_class_weights,
     )
     if args.supcon_weight > 0:
         print(f"  Loss: BCE + {args.supcon_weight:.3f} × SupCon (margin={args.supcon_margin})")
+    if args.relation_aux_weight > 0:
+        print(
+            f"  Loss: + {args.relation_aux_weight:.3f} × CE_rel "
+            f"(positives only, {FIW_NUM_RELATIONS} classes, "
+            f"{'balanced' if args.relation_aux_balanced else 'uniform'})"
+        )
 
     trainer = RGCKROCmTrainer(
         model=model,
@@ -325,13 +482,21 @@ def main() -> None:
         monitor_metric="roc_auc",
         gradient_accumulation=args.gradient_accumulation,
     )
+    # Ensure loss-side buffers (e.g. Phase 5 relation_class_weights) live on the
+    # same device as the model.
+    loss_fn.to(device)
 
     if args.resume:
         print(f"Resuming from {args.resume}")
         trainer.load_checkpoint(args.resume)
 
     print("\nStarting ROCm-optimised training...")
-    print(f"Loss: BCE on classifier head logit")
+    loss_components = ["BCE(classifier_logit)"]
+    if args.supcon_weight > 0:
+        loss_components.append(f"{args.supcon_weight:.3f}·SupCon(gA,gB)")
+    if args.relation_aux_weight > 0:
+        loss_components.append(f"{args.relation_aux_weight:.3f}·CE_rel(rel_logits|pos)")
+    print(f"Loss: {' + '.join(loss_components)}")
     print(f"Scheduler: {train_config.scheduler} (warmup={train_config.warmup_epochs}, min_lr={train_config.min_lr:.1e})")
     print(f"Batch size: {args.batch_size}, Grad accum: {args.gradient_accumulation} "
           f"(effective {args.batch_size * args.gradient_accumulation})")
@@ -369,6 +534,10 @@ def main() -> None:
         "unfreeze_last_stage": args.unfreeze_last_stage,
         "supcon_weight": args.supcon_weight,
         "supcon_margin": args.supcon_margin,
+        "aux_relation_head": aux_relation_head_enabled,
+        "relation_aux_weight": args.relation_aux_weight,
+        "relation_aux_balanced": bool(args.relation_aux_balanced),
+        "num_relation_classes": FIW_NUM_RELATIONS,
         "regions": [name for name, _ in DEFAULT_REGIONS_224],
     }
     protocol_metadata = build_protocol_metadata(

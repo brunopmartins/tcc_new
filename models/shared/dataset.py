@@ -22,6 +22,24 @@ from config import DataConfig
 
 SPLIT_OFFSETS = {"train": 0, "val": 1, "test": 2}
 
+# FIW Track-I relation labels → contiguous ints for auxiliary-head training.
+# 11 kin classes; non-kin (and any unrecognised label) maps to -1 so callers
+# can mask it out of relation-classification losses.
+FIW_RELATION_TO_IDX: Dict[str, int] = {
+    "bb":   0,
+    "ss":   1,
+    "sibs": 2,
+    "fs":   3,
+    "fd":   4,
+    "ms":   5,
+    "md":   6,
+    "gfgd": 7,
+    "gfgs": 8,
+    "gmgd": 9,
+    "gmgs": 10,
+}
+FIW_NUM_RELATIONS: int = len(FIW_RELATION_TO_IDX)
+
 
 def _split_offset(split: str) -> int:
     return SPLIT_OFFSETS.get(split, 0)
@@ -578,6 +596,9 @@ class KinshipPairDataset(Dataset):
             "img2": img2,
             "label": torch.tensor(label, dtype=torch.float32),
             "relation": relation,
+            "relation_idx": torch.tensor(
+                FIW_RELATION_TO_IDX.get(relation, -1), dtype=torch.long
+            ),
         }
 
 
