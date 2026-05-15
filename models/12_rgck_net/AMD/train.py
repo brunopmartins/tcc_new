@@ -145,6 +145,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lr_head", type=float, default=2e-5,
                    help="LR for cross_region + regional_gate + classifier + relation_head when --differential_lr (R007 default).")
 
+    # R008: L2-SP — pull the unfrozen backbone params toward their AdaFace
+    # pretrained values. Surgical regulariser of the train→test gap.
+    p.add_argument("--l2sp_weight", type=float, default=0.0,
+                   help="Coefficient λ for L2-SP penalty on the unfrozen backbone "
+                        "(stage 4 + output_layer). 0.0 disables (R006 default). "
+                        "1e-3 is the R008 default.")
+
     # Negative sampling
     p.add_argument("--negative_ratio", type=float, default=1.0)
     p.add_argument("--eval_negative_ratio", type=float, default=1.0)
@@ -330,6 +337,57 @@ def compute_fiw_relation_class_weights(
     return weights, counts
 
 
+class L2SPState:
+    """Snapshot of pretrained AdaFace weights for L2-SP regularisation.
+
+    Captures the current values of every trainable parameter in
+    ``model.tokenizer.backbone.body[46:49]`` and ``output_layer`` at
+    construction time, and exposes a :meth:`penalty` that computes
+    `Σ_i ‖θ_i - θ_i^(0)‖²` against those snapshots on every call.
+
+    Call this AFTER moving the model to its training device so the
+    snapshots live on the same device as the live params.
+    """
+
+    def __init__(self, model: nn.Module, weight: float):
+        self.weight = float(weight)
+        self._entries: list = []
+        if self.weight <= 0.0:
+            return
+
+        backbone = model.tokenizer.backbone
+        sources = [
+            ("stage4", backbone.body[46:49]),
+            ("output_layer", backbone.output_layer),
+        ]
+        for group_name, module in sources:
+            for name, param in module.named_parameters():
+                if not param.requires_grad:
+                    continue
+                snapshot = param.detach().clone()
+                snapshot.requires_grad = False
+                self._entries.append((f"{group_name}.{name}", param, snapshot))
+
+    @property
+    def num_tensors(self) -> int:
+        return len(self._entries)
+
+    @property
+    def total_params(self) -> int:
+        return sum(p.numel() for _, p, _ in self._entries)
+
+    def penalty(self) -> torch.Tensor:
+        """Return the scalar L2-SP loss already scaled by ``self.weight``.
+
+        Returns a zero scalar (on CPU) when the state is empty so the
+        caller can add it unconditionally without device juggling.
+        """
+        if not self._entries or self.weight <= 0.0:
+            return torch.zeros((), dtype=torch.float32)
+        terms = [((param - snap) ** 2).sum() for _, param, snap in self._entries]
+        return self.weight * torch.stack(terms).sum()
+
+
 def build_differential_lr_optimizer_and_scheduler(
     model: nn.Module,
     lr_stage4: float,
@@ -397,6 +455,9 @@ class RGCKROCmTrainer(ROCmTrainer):
 
     def __init__(self, *args, gradient_accumulation: int = 1, **kwargs):
         self.gradient_accumulation = max(1, int(gradient_accumulation))
+        # Caller may attach an L2SPState after construction by setting
+        # ``trainer.l2sp_state = ...``; defaults to None (off).
+        self.l2sp_state = None
         super().__init__(*args, **kwargs)
 
     def _compute_loss(self, outputs, labels):
@@ -405,7 +466,8 @@ class RGCKROCmTrainer(ROCmTrainer):
     def train_epoch(self) -> float:
         """Train for one epoch. Mirrors ROCmTrainer.train_epoch but also pulls
         ``relation_idx`` from each batch and forwards it to the loss so the
-        Phase 5 relation-type CE head can be supervised."""
+        Phase 5 relation-type CE head can be supervised. Adds the L2-SP
+        penalty term when ``self.l2sp_state`` is configured."""
         from tqdm import tqdm
 
         self.model.train()
@@ -430,6 +492,10 @@ class RGCKROCmTrainer(ROCmTrainer):
                 with autocast():
                     outputs = self.model(img1, img2)
                     loss = self.loss_fn(outputs, labels, relation_idx)
+                    # L2-SP penalty: keep it outside autocast-friendly ops so
+                    # we don't get gradient scale issues — compute in FP32.
+                    if self.l2sp_state is not None and self.l2sp_state.weight > 0.0:
+                        loss = loss + self.l2sp_state.penalty().to(loss.dtype)
                 self.scaler.scale(loss).backward()
                 if self.config.max_grad_norm > 0:
                     self.scaler.unscale_(self.optimizer)
@@ -441,6 +507,8 @@ class RGCKROCmTrainer(ROCmTrainer):
             else:
                 outputs = self.model(img1, img2)
                 loss = self.loss_fn(outputs, labels, relation_idx)
+                if self.l2sp_state is not None and self.l2sp_state.weight > 0.0:
+                    loss = loss + self.l2sp_state.penalty().to(loss.dtype)
                 loss.backward()
                 if self.config.max_grad_norm > 0:
                     torch.nn.utils.clip_grad_norm_(
@@ -618,6 +686,17 @@ def main() -> None:
     # same device as the model.
     loss_fn.to(device)
 
+    # R008: snapshot pretrained AdaFace weights for L2-SP. Done AFTER the
+    # model is on the training device so snapshots and live params share
+    # the same device. No-op when --l2sp_weight <= 0.
+    if args.l2sp_weight > 0.0:
+        l2sp_state = L2SPState(model, args.l2sp_weight)
+        trainer.l2sp_state = l2sp_state
+        print(
+            f"\n  L2-SP regulariser enabled (R008): λ={args.l2sp_weight:.1e}, "
+            f"{l2sp_state.num_tensors} tensors, {l2sp_state.total_params:,} params anchored to AdaFace pretrain"
+        )
+
     # R007: replace the single-LR optimizer/scheduler with a 3-group differential
     # LR + SequentialLR(LinearLR warmup + CosineAnnealingLR). Setting
     # config.warmup_epochs = 0 disables the parent's uniform-warmup block so
@@ -665,6 +744,8 @@ def main() -> None:
             loss_components.append(f"{args.relation_aux_weight:.3f}·avg(CE_rel_AB, CE_rel_BA)|pos")
         else:
             loss_components.append(f"{args.relation_aux_weight:.3f}·CE_rel(rel_logits|pos)")
+    if args.l2sp_weight > 0:
+        loss_components.append(f"{args.l2sp_weight:.1e}·L2SP(stage4+output_layer)")
     print(f"Loss: {' + '.join(loss_components)}")
     if args.symmetric_forward:
         print("Symmetric forward: each pair processed in both (A,B) and (B,A) orders")
@@ -714,6 +795,7 @@ def main() -> None:
         "lr_stage4": args.lr_stage4 if args.differential_lr else None,
         "lr_output_layer": args.lr_output_layer if args.differential_lr else None,
         "lr_head": args.lr_head if args.differential_lr else None,
+        "l2sp_weight": args.l2sp_weight,
         "regions": [name for name, _ in DEFAULT_REGIONS_224],
     }
     protocol_metadata = build_protocol_metadata(
