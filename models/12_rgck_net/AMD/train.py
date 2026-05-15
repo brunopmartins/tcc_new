@@ -25,6 +25,8 @@ os.environ.setdefault("HSA_FORCE_FINE_GRAIN_PCIE", "1")
 
 import torch
 import torch.nn as nn
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared" / "AMD"))
@@ -130,6 +132,18 @@ def parse_args() -> argparse.Namespace:
                    help="Run the post-tokenizer head in both (A,B) and (B,A) orders "
                         "and apply Option-B BCE / CE_rel on each direction "
                         "(R006 default).")
+
+    # R007: differential LR — split trainable params into 3 groups (backbone
+    # stage 4, backbone output_layer, head). Lets the head adapt more while
+    # the backbone melts less. Replaces --lr when enabled.
+    p.add_argument("--differential_lr", action="store_true", default=False,
+                   help="Enable per-group learning rates. Overrides --lr.")
+    p.add_argument("--lr_stage4", type=float, default=5e-6,
+                   help="LR for backbone body[46:49] when --differential_lr (R007 default).")
+    p.add_argument("--lr_output_layer", type=float, default=5e-6,
+                   help="LR for backbone output_layer when --differential_lr (R007 default).")
+    p.add_argument("--lr_head", type=float, default=2e-5,
+                   help="LR for cross_region + regional_gate + classifier + relation_head when --differential_lr (R007 default).")
 
     # Negative sampling
     p.add_argument("--negative_ratio", type=float, default=1.0)
@@ -314,6 +328,67 @@ def compute_fiw_relation_class_weights(
     weights = 1.0 / safe
     weights = weights * (float(num_classes) / weights.sum())
     return weights, counts
+
+
+def build_differential_lr_optimizer_and_scheduler(
+    model: nn.Module,
+    lr_stage4: float,
+    lr_output_layer: float,
+    lr_head: float,
+    weight_decay: float,
+    warmup_epochs: int,
+    num_epochs: int,
+    min_lr: float,
+):
+    """Build an AdamW optimizer with 3 param groups (backbone stage 4,
+    backbone output_layer, head) and a SequentialLR (LinearLR warmup +
+    CosineAnnealingLR decay) that respects each group's base LR.
+
+    Returns (optimizer, scheduler, group_summary).
+    """
+    backbone = model.tokenizer.backbone
+    stage4_params = [p for p in backbone.body[46:49].parameters() if p.requires_grad]
+    output_layer_params = [p for p in backbone.output_layer.parameters() if p.requires_grad]
+
+    head_modules = [model.cross_region, model.regional_gate, model.classifier]
+    if getattr(model, "relation_head", None) is not None:
+        head_modules.append(model.relation_head)
+    head_params = []
+    for module in head_modules:
+        head_params.extend(p for p in module.parameters() if p.requires_grad)
+
+    param_groups = [
+        {"params": stage4_params, "lr": lr_stage4, "name": "backbone_stage4"},
+        {"params": output_layer_params, "lr": lr_output_layer, "name": "backbone_output_layer"},
+        {"params": head_params, "lr": lr_head, "name": "head"},
+    ]
+    optimizer = AdamW(param_groups, weight_decay=weight_decay, eps=1e-8)
+
+    warmup = LinearLR(
+        optimizer,
+        start_factor=1.0 / max(warmup_epochs, 1),
+        end_factor=1.0,
+        total_iters=max(warmup_epochs, 1),
+    )
+    cosine = CosineAnnealingLR(
+        optimizer,
+        T_max=max(num_epochs - warmup_epochs, 1),
+        eta_min=min_lr,
+    )
+    scheduler = SequentialLR(
+        optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs]
+    )
+
+    group_summary = [
+        {
+            "name": pg["name"],
+            "lr": pg["lr"],
+            "num_params": sum(p.numel() for p in pg["params"]),
+            "num_tensors": len(pg["params"]),
+        }
+        for pg in param_groups
+    ]
+    return optimizer, scheduler, group_summary
 
 
 class RGCKROCmTrainer(ROCmTrainer):
@@ -543,6 +618,33 @@ def main() -> None:
     # same device as the model.
     loss_fn.to(device)
 
+    # R007: replace the single-LR optimizer/scheduler with a 3-group differential
+    # LR + SequentialLR(LinearLR warmup + CosineAnnealingLR). Setting
+    # config.warmup_epochs = 0 disables the parent's uniform-warmup block so
+    # the SequentialLR handles per-group warmup itself.
+    if args.differential_lr:
+        new_optimizer, new_scheduler, group_summary = (
+            build_differential_lr_optimizer_and_scheduler(
+                model=model,
+                lr_stage4=args.lr_stage4,
+                lr_output_layer=args.lr_output_layer,
+                lr_head=args.lr_head,
+                weight_decay=args.weight_decay,
+                warmup_epochs=args.warmup_epochs,
+                num_epochs=args.epochs,
+                min_lr=args.min_lr,
+            )
+        )
+        trainer.optimizer = new_optimizer
+        trainer.scheduler = new_scheduler
+        trainer.config.warmup_epochs = 0  # bypass parent's uniform warmup
+        print("\n  Differential LR enabled (R007):")
+        for grp in group_summary:
+            print(
+                f"    {grp['name']:<22} lr={grp['lr']:.1e}  "
+                f"({grp['num_tensors']} tensors, {grp['num_params']:,} params)"
+            )
+
     if args.resume:
         print(f"Resuming from {args.resume}")
         trainer.load_checkpoint(args.resume)
@@ -608,6 +710,10 @@ def main() -> None:
         "relation_aux_balanced": bool(args.relation_aux_balanced),
         "num_relation_classes": FIW_NUM_RELATIONS,
         "symmetric_forward": bool(args.symmetric_forward),
+        "differential_lr": bool(args.differential_lr),
+        "lr_stage4": args.lr_stage4 if args.differential_lr else None,
+        "lr_output_layer": args.lr_output_layer if args.differential_lr else None,
+        "lr_head": args.lr_head if args.differential_lr else None,
         "regions": [name for name, _ in DEFAULT_REGIONS_224],
     }
     protocol_metadata = build_protocol_metadata(

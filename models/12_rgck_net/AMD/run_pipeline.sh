@@ -62,6 +62,10 @@ SUPCON_MARGIN="${SUPCON_MARGIN:-0.3}"             # margin for negative pairs in
 RELATION_AUX_WEIGHT="${RELATION_AUX_WEIGHT:-0.0}" # Phase 5: weight λ for relation-type CE aux on positives (0.0 = disabled)
 RELATION_AUX_BALANCED="${RELATION_AUX_BALANCED:-1}" # 1 = inverse-freq class weights (default), 0 = uniform CE
 SYMMETRIC_FORWARD="${SYMMETRIC_FORWARD:-0}"        # R006: 1 = process each pair in both (A,B) and (B,A) orders (Option-B BCE)
+DIFFERENTIAL_LR="${DIFFERENTIAL_LR:-0}"            # R007: 1 = per-group LRs (overrides LEARNING_RATE)
+LR_STAGE4="${LR_STAGE4:-5e-6}"                     # R007: LR for backbone body[46:49] (only if DIFFERENTIAL_LR=1)
+LR_OUTPUT_LAYER="${LR_OUTPUT_LAYER:-5e-6}"         # R007: LR for backbone output_layer
+LR_HEAD="${LR_HEAD:-2e-5}"                         # R007: LR for cross_region + gate + classifier + relation_head
 
 NEGATIVE_RATIO="${NEGATIVE_RATIO:-1.0}"
 EVAL_NEGATIVE_RATIO="${EVAL_NEGATIVE_RATIO:-1.0}"
@@ -184,6 +188,9 @@ if [ "${RELATION_AUX_BALANCED}" != "1" ]; then
 fi
 if [ "${SYMMETRIC_FORWARD}" = "1" ]; then
     TRAIN_ARGS+=(--symmetric_forward)
+fi
+if [ "${DIFFERENTIAL_LR}" = "1" ]; then
+    TRAIN_ARGS+=(--differential_lr --lr_stage4 "${LR_STAGE4}" --lr_output_layer "${LR_OUTPUT_LAYER}" --lr_head "${LR_HEAD}")
 fi
 
 TEST_ARGS=(
