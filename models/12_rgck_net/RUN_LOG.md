@@ -6,6 +6,118 @@ Newest run on top.
 
 ---
 
+## Run 006 — 2026-05-14 — Manually stopped at epoch 8 (peak Val AUC 0.9049 ep 3; Test AUC **0.8788** — NEW PROJECT HEADLINE)
+
+**Status:** Stopped manually at epoch 8 (Val AUC plateauing 0.025 below R005; user decision to early-stop). best.pt patched manually before test.py.
+
+**Outcome:** Phase 5 (relation aux head) + **symmetric forward** (Option-B BCE: 0.5·(BCE_AB + BCE_BA), + averaged CE_rel). **NEW PROJECT HEADLINE: Test ROC AUC 0.8788 — +0.022 vs R002's 0.8564 (the prior headline), well outside the ±0.009 noise floor.** Val→test gap collapses to **-0.026** (R002: -0.076, R005: -0.084) — smallest of any AdaFace-based model with non-trivial training in the project. Every kin class improved by 13-43 pp vs R002; grandparents jumped 31-43 pp.
+
+**Hypothesis test result:** CONFIRMED. The asymmetry diagnosis from R005 was correct — `cross_region.attn_ab/attn_ba`, `regional_gate`'s `[A,B]` concat, and `classifier`'s `[gA,gB,…]` concat were learning direction-specific shortcuts that didn't transfer across the val/test family split. Symmetric forward (process each pair in both orders, combine in Option-B BCE) removed the shortcut, dropping Val AUC by 0.027 (model can't shortcut any more) and raising Test AUC by 0.031 vs R005.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 \
+GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+LEARNING_RATE=1e-5 \
+RELATION_AUX_WEIGHT=0.05 \
+SYMMETRIC_FORWARD=1 \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 005
+
+| Parameter | R005 | **R006** |
+|---|---|---|
+| `SYMMETRIC_FORWARD` | 0 (off) | **1 (on)** |
+| Loss | BCE + 0.05·CE_rel\|pos | **0.5·(BCE_AB + BCE_BA) + 0.05·avg(CE_rel_AB, CE_rel_BA)\|pos** |
+| All other knobs | — | identical to R005 |
+| Trainable params | 31,560,461 | 31,560,461 (same — symmetry runs the same weights twice) |
+| Time/epoch | ~26 min | ~26.6 min (+2 % — tokenizer reused, only head runs twice) |
+
+### Configuration
+
+Same as R005 plus:
+
+| Param | Value |
+|-------|-------|
+| `symmetric_forward` | True |
+| Loss | 0.5·(BCE_AB + BCE_BA) + 0.05·avg(CE_rel_AB, CE_rel_BA)\|pos |
+| Time/epoch | ~26.6 min (~+2 % over R005, much less than the 15-25 % I had estimated) |
+
+### Training trajectory
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR | R005 same ep | Δ R006-R005 |
+|------:|-----------:|--------:|--------:|----:|-----|------:|------:|
+| 1 | 0.7278 | 75.2 % | 0.8594 | 0.450 | 2.0e-6 | 0.8696 | -0.010 |
+| 2 | 0.5504 | 80.5 % | 0.9045 | 0.350 | 4.0e-6 | 0.9279 | -0.023 |
+| **3** | **0.4695** | **81.4 %** | **0.9049 (peak)** | 0.500 | 6.0e-6 | 0.9306 | -0.026 |
+| 4 | 0.4013 | 82.1 % | 0.9035 | 0.200 | 8.0e-6 | 0.9318 | -0.028 |
+| 5 | 0.3538 | 81.4 % | 0.9006 | 0.250 | 1.0e-5 | 0.9273 | -0.027 |
+| 6 | 0.3078 | 82.3 % | 0.9019 | 0.100 | 1.0e-5 | 0.9278 | -0.026 |
+| 7 | 0.2601 | 81.3 % | 0.8923 | 0.100 | 9.99e-6 | 0.9230 | -0.031 |
+| 8 | (manual stop) | | | | | — | — |
+
+Val AUC ceiling dropped 0.027 vs R005, exactly as the hypothesis predicted (the model can no longer use direction-specific shortcuts). Peak at ep 3, declining monotonely afterward — same shape as R002/R005 but from a lower ceiling. Manual stop at ep 8 saved ~5 h of compute (SAFEGUARD would have fired at ep 13).
+
+### Test metrics (val-selected threshold 0.500)
+
+| Metric | M12 R002 (prior HEADLINE) | M12 R005 | **M12 R006** | Δ R006-R002 |
+|---|---:|---:|---:|---:|
+| **Test ROC AUC** | 0.8564 | 0.8476 | **0.8788** ⭐ | **+0.022** |
+| Test Accuracy | 76.79 % | 76.53 % | **79.33 %** ⭐ | +2.5 pp |
+| Test Balanced Acc | 76.48 % | 76.45 % | **79.65 %** ⭐ | +3.2 pp |
+| Test F1 | 0.7402 | 0.7528 | **0.8017** ⭐ | +0.061 |
+| Test Precision | **79.82 %** | 75.99 % | 74.17 % | -5.7 pp |
+| Test Recall | 69.00 % | 74.58 % | **87.24 %** ⭐ | **+18.2 pp** |
+| Test Avg Precision | 0.8389 | 0.8288 | **0.8561** ⭐ | +0.017 |
+| TAR @ FAR=0.001 | **4.18 %** | 2.94 % | 3.33 % | -0.9 pp |
+| TAR @ FAR=0.01 | 17.58 % | 16.67 % | **18.61 %** ⭐ | +1.0 pp |
+| TAR @ FAR=0.1 | 57.11 % | 55.60 % | **59.93 %** ⭐ | +2.8 pp |
+| **Val→test AUC gap** | -0.076 | -0.084 | **-0.026** ⭐⭐ | gap shrunk by 0.050 |
+
+R006 wins R002 on every threshold-invariant metric (AUC, AP, TAR@FAR=0.01, TAR@FAR=0.1) and every threshold-dependent metric except Precision and TAR@FAR=0.001 (the operating point is more recall-oriented).
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.500)
+
+| Relation | N | M12 R002 | M12 R005 | **M12 R006** | Δ R006-R002 |
+|----------|--:|---------:|---------:|-------------:|---:|
+| bb | 860 | 75.4 % | 78.5 % | **89.1 %** | **+13.7 pp** |
+| ss | 731 | 75.9 % | 82.2 % | **88.9 %** | **+13.0 pp** |
+| sibs | 234 | 79.5 % | 85.9 % | **93.2 %** | **+13.7 pp** |
+| md | 1038 | 68.7 % | 74.3 % | **89.0 %** | **+20.3 pp** |
+| fs | 1135 | 68.6 % | 75.0 % | **87.9 %** | **+19.3 pp** |
+| ms | 1036 | 69.4 % | 75.6 % | **86.2 %** | **+16.8 pp** |
+| fd | 918 | 68.4 % | 74.2 % | **84.6 %** | **+16.2 pp** |
+| **gfgd** | 138 | 52.2 % | 55.8 % | **83.3 %** | **+31.1 pp** ⭐⭐ |
+| **gfgs** | 98 | 39.8 % | 41.8 % | **76.5 %** | **+36.7 pp** ⭐⭐ |
+| **gmgd** | 123 | 36.6 % | 43.9 % | **79.7 %** | **+43.1 pp** ⭐⭐⭐ |
+| **gmgs** | 121 | 44.6 % | 51.2 % | **80.2 %** | **+35.6 pp** ⭐⭐⭐ |
+| non-kin | 6993 | **84.0 %** | 78.3 % | 72.1 % | -11.9 pp |
+
+**Every kin class improved 13-43 pp.** The four grandparent classes — the historic weakness of the M12 family — went from 36-52 % to 76-83 %. Non-kin specificity dropped 12 pp (operating regime is higher-recall) but Test AUC of 0.8788 is unambiguous evidence the trade-off is heavily net-positive.
+
+### Notes
+
+- **Symmetric forward isolated contribution (R006 vs R005)**: +0.031 Test AUC, 0.058 reduction in val→test gap, +31.6 pp average grandparent accuracy. Single architectural change, no new parameters, no new loss terms.
+- **Phase 5 + symmetric forward are multiplicative**: e.g. gmgd was 36.6 % at R002, 43.9 % at R005 (+7.3 from Phase 5 alone), 79.7 % at R006 (+35.8 from symmetry on top of Phase 5). The two interventions combine constructively, not as a saturation.
+- **Mechanism**: the cross_region adapter has separate `attn_ab` / `attn_ba` / `ffn_a` / `ffn_b` weights, and the gate/classifier concatenate in `[A, B]` order. RFIW Track-I lists pairs in a single canonical order, so the model could learn `attn_ab` to extract "kinship given role X-Y". This shortcut didn't transfer across families because role ordering by visual cue (age, pose) differs between training and held-out families. Symmetric forward forces `f(A,B) ≈ f(B,A)`, removing the shortcut and reducing memorisation.
+- **Negligible compute overhead** (~+2 % per epoch) because the tokenizer (5× AdaFace passes per face) dominates and is shared between the two directions.
+
+### Artifacts
+
+- Checkpoint (epoch 3, Val AUC 0.9049): `output/006/checkpoints/best.pt` (536 MB) — patched manually with `model_config` (symmetric_forward=True, aux_relation_head=True, relation_aux_weight=0.05, selected_threshold=0.500)
+- Train log: `output/006/logs/train.log`
+- Test results: `output/006/results/test_metrics_rocm.txt`
+- Trainable params: 31,560,461 / 70,746,317 (44.61 %)
+
+---
+
 ## Run 005 — 2026-05-14 — SAFEGUARD-stopped at epoch 16 (peak Val AUC 0.9318 ep 4; Test AUC 0.8476. Phase 5 relation aux: per-class targets confirmed, AUC within noise floor)
 
 **Status:** SAFEGUARD auto-stopped at epoch 16 — Val AUC below peak (0.9318 ep 4) for 10 consecutive epochs.
