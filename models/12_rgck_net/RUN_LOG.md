@@ -6,6 +6,116 @@ Newest run on top.
 
 ---
 
+## Run 007 — 2026-05-15 — SAFEGUARD ep 15 (peak Val AUC 0.9093 ep 4; Test AUC 0.8730. Differential LR: Val lift confirmed, Test neutral within noise)
+
+**Status:** SAFEGUARD auto-stopped at ep 15 (Val below peak 0.9093 for 10 consecutive epochs).
+
+**Outcome:** Differential LR on top of R006 stack: stage4 5e-6, output_layer 5e-6, head 2e-5 (vs R006's uniform 1e-5). **Peak Val AUC 0.9093 — +0.004 above R006 (mechanism confirmed: higher head LR raises fit).** Test ROC AUC 0.8730 — -0.006 vs R006 within the ±0.009 noise floor. Val→Test gap widened slightly to -0.036 (R006: -0.026). Per-FAR: TAR@FAR=0.001 +1.2 pp, FAR=0.01 +1.0 pp, FAR=0.1 -2.4 pp — diff-LR partially recovers strict-FAR performance that R006 had sacrificed.
+
+**Hypothesis test result:** PARTIALLY CONFIRMED. Val lift confirmed (+0.004 peak), Test AUC change within noise. Diff-LR is empirically neutral on Test in this configuration. R006 remains project headline.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 \
+GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+DIFFERENTIAL_LR=1 \
+LR_STAGE4=5e-6 \
+LR_OUTPUT_LAYER=5e-6 \
+LR_HEAD=2e-5 \
+RELATION_AUX_WEIGHT=0.05 \
+SYMMETRIC_FORWARD=1 \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 006
+
+| Parameter | R006 | **R007** |
+|---|---|---|
+| Optimiser | AdamW single LR 1e-5 | **AdamW 3 param groups** |
+| LR — stage 4 | 1e-5 | **5e-6** (-50 %) |
+| LR — output_layer | 1e-5 | **5e-6** (-50 %) |
+| LR — head | 1e-5 | **2e-5** (+100 %) |
+| Scheduler | manual warmup + CosineAnnealingLR | **SequentialLR(LinearLR warmup → CosineAnnealingLR)** |
+| All other knobs | — | identical |
+
+Parameter count per group: stage4 13.1M / output_layer 12.8M / head 5.6M (total 31.6M; same as R005/R006).
+
+### Training trajectory
+
+LR reported is the head group's LR (highest of the three).
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR_head | R006 same ep | Δ R007-R006 |
+|------:|-----------:|--------:|--------:|----:|-----|------:|------:|
+| 1 | 0.7283 | 75.8 % | 0.8496 | 0.450 | 4.0e-6 | 0.8594 | -0.010 |
+| 2 | 0.5676 | 81.1 % | 0.9046 | 0.400 | 7.2e-6 | 0.9045 | +0.000 |
+| 3 | 0.4998 | 81.9 % | 0.9089 | 0.550 | 1.04e-5 | 0.9049 | +0.004 |
+| **4** | **0.4431** | **81.7 %** | **0.9093 (peak)** | 0.200 | 1.36e-5 | 0.9035 | **+0.006** |
+| 5 | 0.3991 | 82.5 % | 0.9056 | 0.400 | 1.68e-5 | 0.9006 | +0.005 |
+| 6 | 0.3605 | 81.9 % | 0.9023 | 0.100 | 2.00e-5 | 0.9019 | +0.000 |
+| 7 | 0.3127 | 81.7 % | 0.9024 | 0.100 | 2.00e-5 | 0.8923 | +0.010 |
+| 8-14 | (declining) | 79-82 % | 0.88-0.90 | 0.10 | ~2e-5 | — | — |
+| 15 | 0.1467 | 80.0 % | 0.8878 | 0.100 | 1.96e-5 | — | SAFEGUARD fired |
+
+R007 stayed slightly above R006 through ep 5 (+0.000 to +0.006). Peak +0.004 vs R006 — the higher head LR did push the ceiling up as predicted. Faster post-peak decline (ep 14: 0.8801) suggests the head also over-fits faster.
+
+### Test metrics (val-selected threshold 0.200)
+
+| Metric | M12 R002 | M12 R006 (HEADLINE) | **M12 R007** | Δ R007-R006 |
+|---|---:|---:|---:|---:|
+| **Test ROC AUC** | 0.8564 | **0.8788** | 0.8730 | -0.006 (within noise floor) |
+| Test Accuracy | 76.79 % | 79.33 % | 78.76 % | -0.6 pp |
+| Test Balanced Acc | 76.48 % | 79.65 % | 79.11 % | -0.5 pp |
+| Test F1 | 0.7402 | **0.8017** | 0.7980 | -0.004 |
+| Test Precision | 79.82 % | 74.17 % | 73.28 % | -0.9 pp |
+| Test Recall | 69.00 % | 87.24 % | **87.61 %** | +0.4 pp |
+| Test Avg Precision | 0.8389 | **0.8561** | 0.8521 | -0.004 |
+| **TAR @ FAR=0.001** | 4.18 % | 3.33 % | **4.49 %** ⭐ | **+1.2 pp** |
+| **TAR @ FAR=0.01** | 17.58 % | 18.61 % | **19.59 %** ⭐ | **+1.0 pp** |
+| TAR @ FAR=0.1 | 57.11 % | **59.93 %** | 57.56 % | -2.4 pp |
+| Val→Test AUC gap | -0.076 | **-0.026** | -0.036 | slightly wider |
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.200)
+
+| Relation | N | M12 R006 | **M12 R007** | Δ |
+|----------|--:|---------:|-------------:|---:|
+| bb | 860 | 89.1 % | **90.5 %** | +1.4 pp |
+| ss | 731 | 88.9 % | **90.8 %** | +1.9 pp |
+| sibs | 234 | 93.2 % | **94.9 %** | +1.7 pp |
+| fs | 1135 | 87.9 % | 88.3 % | +0.4 pp |
+| fd | 918 | 84.6 % | 83.3 % | -1.3 pp |
+| ms | 1036 | 86.2 % | 85.4 % | -0.8 pp |
+| md | 1038 | 89.0 % | **90.4 %** | +1.4 pp |
+| **gfgd** | 138 | 83.3 % | 81.2 % | -2.1 pp |
+| **gfgs** | 98 | 76.5 % | **79.6 %** | **+3.1 pp** |
+| **gmgd** | 123 | 79.7 % | 81.3 % | +1.6 pp |
+| **gmgs** | 121 | 80.2 % | 75.2 % | -5.0 pp |
+| non-kin | 6993 | 72.1 % | 70.6 % | -1.5 pp |
+
+Mixed per-class signals. Siblings and ss/md gained 1-2 pp; gmgs dropped 5 pp. No clear class-level improvement direction.
+
+### Notes
+
+- **Mechanism on Val**: head LR 2e-5 (4× the backbone LR 5e-6) lets the head reach a marginally higher fit on val. Confirmed by the +0.004 peak.
+- **Mechanism on Test**: dif-LR is a *fit-quality* intervention (changes how well each component learns the training signal), not a *generalisation* intervention. On a dataset where the train→test gap was already small after R006, there's nothing for fit-quality to recover.
+- **Trade-off**: R007 shifts the operating curve slightly toward strict-FAR. For low-FAR deployment, R007 has +1.2 pp TAR@FAR=0.001 and +1.0 pp TAR@FAR=0.01 over R006. For balanced discrimination (R006's regime), R006 wins by 0.006 AUC.
+- **Negligible compute overhead** — same wall-clock as R006 (~26 min/epoch). No new parameters.
+
+### Artifacts
+
+- Checkpoint (epoch 4, Val AUC 0.9093): `output/007/checkpoints/best.pt` (536 MB)
+- Train log: `output/007/logs/train.log`
+- Test log: `output/007/logs/test.log`
+- Results: `output/007/results/test_metrics_rocm.txt`
+- Trainable params: 31,560,461 / 70,746,317 (44.61 %) — same as R005/R006
+
+---
+
 ## Run 006 — 2026-05-14 — Manually stopped at epoch 8 (peak Val AUC 0.9049 ep 3; Test AUC **0.8788** — NEW PROJECT HEADLINE)
 
 **Status:** Stopped manually at epoch 8 (Val AUC plateauing 0.025 below R005; user decision to early-stop). best.pt patched manually before test.py.
