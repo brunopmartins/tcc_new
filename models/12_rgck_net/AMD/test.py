@@ -73,6 +73,7 @@ def main():
         aux_relation_head=model_config.get("aux_relation_head", False),
         num_relation_classes=model_config.get("num_relation_classes", 11),
         symmetric_forward=model_config.get("symmetric_forward", False),
+        comparison_only_fusion=model_config.get("comparison_only_fusion", False),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)

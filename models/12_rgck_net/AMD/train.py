@@ -152,6 +152,12 @@ def parse_args() -> argparse.Namespace:
                         "(stage 4 + output_layer). 0.0 disables (R006 default). "
                         "1e-3 is the R008 default.")
 
+    # R009: comparison-only fusion — drop gA, gB from the classifier input to
+    # remove identity-as-feature leakage. Classifier sees only comparison
+    # features: |diff|, prod, sims, weights, regional_score.
+    p.add_argument("--comparison_only_fusion", action="store_true", default=False,
+                   help="Drop gA, gB from the classifier input. R009 default.")
+
     # Negative sampling
     p.add_argument("--negative_ratio", type=float, default=1.0)
     p.add_argument("--eval_negative_ratio", type=float, default=1.0)
@@ -633,6 +639,7 @@ def main() -> None:
         aux_relation_head=aux_relation_head_enabled,
         num_relation_classes=FIW_NUM_RELATIONS,
         symmetric_forward=args.symmetric_forward,
+        comparison_only_fusion=args.comparison_only_fusion,
     )
     model = optimize_for_rocm(model)
 
@@ -796,6 +803,7 @@ def main() -> None:
         "lr_output_layer": args.lr_output_layer if args.differential_lr else None,
         "lr_head": args.lr_head if args.differential_lr else None,
         "l2sp_weight": args.l2sp_weight,
+        "comparison_only_fusion": bool(args.comparison_only_fusion),
         "regions": [name for name, _ in DEFAULT_REGIONS_224],
     }
     protocol_metadata = build_protocol_metadata(

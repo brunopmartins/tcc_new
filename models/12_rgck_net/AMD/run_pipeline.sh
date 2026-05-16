@@ -67,6 +67,7 @@ LR_STAGE4="${LR_STAGE4:-5e-6}"                     # R007: LR for backbone body[
 LR_OUTPUT_LAYER="${LR_OUTPUT_LAYER:-5e-6}"         # R007: LR for backbone output_layer
 LR_HEAD="${LR_HEAD:-2e-5}"                         # R007: LR for cross_region + gate + classifier + relation_head
 L2SP_WEIGHT="${L2SP_WEIGHT:-0.0}"                  # R008: λ for L2-SP penalty on unfrozen backbone (stage 4 + output_layer)
+COMPARISON_ONLY_FUSION="${COMPARISON_ONLY_FUSION:-0}"  # R009: 1 = drop gA, gB from classifier input
 
 NEGATIVE_RATIO="${NEGATIVE_RATIO:-1.0}"
 EVAL_NEGATIVE_RATIO="${EVAL_NEGATIVE_RATIO:-1.0}"
@@ -194,6 +195,9 @@ if [ "${DIFFERENTIAL_LR}" = "1" ]; then
     TRAIN_ARGS+=(--differential_lr --lr_stage4 "${LR_STAGE4}" --lr_output_layer "${LR_OUTPUT_LAYER}" --lr_head "${LR_HEAD}")
 fi
 TRAIN_ARGS+=(--l2sp_weight "${L2SP_WEIGHT}")
+if [ "${COMPARISON_ONLY_FUSION}" = "1" ]; then
+    TRAIN_ARGS+=(--comparison_only_fusion)
+fi
 
 TEST_ARGS=(
     --checkpoint   "${CKPT_DIR}/best.pt"

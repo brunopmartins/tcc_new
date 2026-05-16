@@ -270,6 +270,7 @@ class RGCKNet(nn.Module):
         aux_relation_head: bool = False,
         num_relation_classes: int = 11,
         symmetric_forward: bool = False,
+        comparison_only_fusion: bool = False,
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
@@ -278,6 +279,7 @@ class RGCKNet(nn.Module):
         self.aux_relation_head = aux_relation_head
         self.num_relation_classes = num_relation_classes
         self.symmetric_forward = symmetric_forward
+        self.comparison_only_fusion = comparison_only_fusion
 
         # Region tokenizer (shared backbone across regions)
         self.tokenizer = FixedPartitionRegionTokenizer(
@@ -316,9 +318,15 @@ class RGCKNet(nn.Module):
         )
 
         # Classifier head
-        # Input: [gA(512), gB(512), |diff|(512), prod(512), per-rel cosines(K), weights(K), regional_score(1)]
+        # Default fusion: [gA(512), gB(512), |diff|(512), prod(512), per-rel cosines(K), weights(K), regional_score(1)]
+        # Comparison-only fusion (R009): drop gA and gB to remove identity-as-
+        # feature leakage. Fusion becomes [|diff|(512), prod(512), per-rel
+        # cosines(K), weights(K), regional_score(1)].
         K = self.num_regions
-        classifier_input_dim = 4 * embedding_dim + 2 * K + 1
+        if comparison_only_fusion:
+            classifier_input_dim = 2 * embedding_dim + 2 * K + 1
+        else:
+            classifier_input_dim = 4 * embedding_dim + 2 * K + 1
 
         self.classifier = nn.Sequential(
             nn.Linear(classifier_input_dim, classifier_hidden),
@@ -372,8 +380,12 @@ class RGCKNet(nn.Module):
         diff_abs = (gA - gB).abs()
         prod = gA * gB
 
-        # Final fusion
-        fusion = torch.cat([gA, gB, diff_abs, prod, sims, weights, regional_score], dim=-1)
+        # Final fusion. R009 (comparison_only_fusion=True) drops gA and gB
+        # from the classifier input to remove identity-as-feature signal.
+        if self.comparison_only_fusion:
+            fusion = torch.cat([diff_abs, prod, sims, weights, regional_score], dim=-1)
+        else:
+            fusion = torch.cat([gA, gB, diff_abs, prod, sims, weights, regional_score], dim=-1)
         logit = self.classifier(fusion).squeeze(-1)  # (B,)
 
         # L2-normalised global tokens for the SupCon aux loss
@@ -464,6 +476,7 @@ def build_rgck_net(
     aux_relation_head: bool = False,
     num_relation_classes: int = 11,
     symmetric_forward: bool = False,
+    comparison_only_fusion: bool = False,
 ) -> RGCKNet:
     """
     Build RGCK-Net with an AdaFace IR-101 backbone (shared by all regions).
@@ -489,6 +502,7 @@ def build_rgck_net(
         aux_relation_head=aux_relation_head,
         num_relation_classes=num_relation_classes,
         symmetric_forward=symmetric_forward,
+        comparison_only_fusion=comparison_only_fusion,
     )
 
 
