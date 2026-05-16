@@ -6,6 +6,112 @@ Newest run on top.
 
 ---
 
+## Run 008 — 2026-05-16 — SAFEGUARD ep 16 (peak Val AUC 0.9052 ep 3; Test AUC 0.8788 — TIED with R006 within 4-decimal precision)
+
+**Status:** SAFEGUARD auto-stopped at ep 16 (Val below peak 0.9052 for 10 consecutive epochs).
+
+**Outcome:** R006 stack + **L2-SP regulariser λ=1e-3** on the 34 unfrozen backbone tensors (stage 4 + output_layer, 25.9 M params, 82.3 % of trainable). Penalty was applied and constrained the backbone (R008 train loss at ep 7: 0.344 vs R006: 0.260, +0.084) but the final solution converges to **the same Test predictions** as R006: Test ROC AUC 0.8788 (identical to R006 at 4 dec.), Val→test gap -0.026 (identical), Test F1 0.8017 (identical), Test AP 0.8563 (+0.0002 noise). Per-relation differences ≤0.4 pp in 10 of 11 kin classes; only gmgd shifted +1.6 pp.
+
+**Hypothesis test result:** NOT CONFIRMED (no Test lift); the neutral hypothesis is CONFIRMED. R006's symmetric forward appears to have already exhausted the gap-closure available from generalisation regularisers at this λ. Whether a higher λ (1e-2 or 1e-1) would help or hurt is untested.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 \
+GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+LEARNING_RATE=1e-5 \
+RELATION_AUX_WEIGHT=0.05 \
+SYMMETRIC_FORWARD=1 \
+L2SP_WEIGHT=1e-3 \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 006
+
+| Parameter | R006 | **R008** |
+|---|---|---|
+| `L2SP_WEIGHT` | 0.0 (off) | **1e-3** |
+| Loss | 0.5·(BCE_AB+BCE_BA) + 0.05·avg(CE_rel_AB, CE_rel_BA)\|pos | **+ 1e-3·L2SP(stage4+output_layer)** |
+| All other knobs | — | identical |
+
+L2-SP state: 34 tensors / 25,965,056 params anchored to AdaFace pretrain (stage 4: 13.1 M, output_layer: 12.8 M).
+
+### Training trajectory
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR | R006 same ep | Δ R008-R006 |
+|------:|-----------:|--------:|--------:|----:|-----|------:|------:|
+| 1 | 0.7289 | 75.2 % | 0.8592 | 0.450 | 2.0e-6 | 0.8594 | -0.000 |
+| 2 | 0.5561 | 80.6 % | 0.9046 | 0.350 | 4.0e-6 | 0.9045 | +0.000 |
+| **3** | **0.4849** | **81.3 %** | **0.9052 (peak)** | 0.500 | 6.0e-6 | 0.9049 | +0.000 |
+| 4 | 0.4315 | 81.9 % | 0.9047 | 0.200 | 8.0e-6 | 0.9035 | +0.001 |
+| 5 | 0.4028 | 81.6 % | 0.9019 | 0.300 | 1.0e-5 | 0.9006 | +0.001 |
+| 6 | 0.3749 | 82.1 % | 0.9048 | 0.100 | 1.0e-5 | 0.9019 | +0.003 |
+| 7 | 0.3438 | 82.0 % | 0.8968 | 0.100 | 9.99e-6 | 0.8923 | +0.005 |
+| 8-15 | (declining 0.33→0.27) | 80-82 % | 0.88-0.89 | 0.10 | ~9.9e-6 | — | — |
+| 16 | 0.2785 | 80.6 % | 0.8887 | 0.100 | 9.71e-6 | — | SAFEGUARD fired |
+
+Val AUC peak +0.0003 vs R006 (within noise). Post-peak decline ~0.003-0.005 gentler than R006 — expected effect of a regulariser. Train loss substantially higher at every epoch — penalty is being applied and constraining the backbone.
+
+### Test metrics (val-selected threshold 0.500)
+
+| Metric | M12 R002 | M12 R006 (HEADLINE) | M12 R007 | **M12 R008** | Δ R008-R006 |
+|---|---:|---:|---:|---:|---:|
+| **Test ROC AUC** | 0.8564 | **0.8788** | 0.8730 | **0.8788** | **+0.0000** (tied) |
+| Test Accuracy | 76.79 % | 79.33 % | 78.76 % | 79.28 % | -0.05 pp |
+| Test Balanced Acc | 76.48 % | 79.65 % | 79.11 % | 79.61 % | -0.04 pp |
+| Test F1 | 0.7402 | 0.8017 | 0.7980 | **0.8017** | **+0.0000** (tied) |
+| Test Precision | 79.82 % | 74.17 % | 73.28 % | 74.05 % | -0.12 pp |
+| Test Recall | 69.00 % | 87.24 % | 87.61 % | 87.39 % | +0.15 pp |
+| Test Avg Precision | 0.8389 | 0.8561 | 0.8521 | **0.8563** | +0.0002 (noise) |
+| TAR @ FAR=0.001 | 4.18 % | 3.33 % | **4.49 %** | 2.78 % | -0.55 pp |
+| TAR @ FAR=0.01 | 17.58 % | 18.61 % | **19.59 %** | 19.12 % | +0.51 pp |
+| TAR @ FAR=0.1 | 57.11 % | **59.93 %** | 57.56 % | 59.65 % | -0.28 pp |
+| Val→test AUC gap | -0.076 | **-0.026** | -0.036 | **-0.026** | **0.0000** (tied) |
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.500)
+
+| Relation | N | M12 R006 | **M12 R008** | Δ |
+|----------|--:|---------:|-------------:|---:|
+| bb | 860 | 89.1 % | 89.4 % | +0.4 pp |
+| ss | 731 | 88.9 % | 88.9 % | 0.0 pp |
+| sibs | 234 | 93.2 % | 92.7 % | -0.4 pp |
+| fs | 1135 | 87.9 % | 88.0 % | +0.1 pp |
+| fd | 918 | 84.6 % | 84.8 % | +0.2 pp |
+| ms | 1036 | 86.2 % | 86.3 % | +0.1 pp |
+| md | 1038 | 89.0 % | 89.3 % | +0.3 pp |
+| **gfgd** | 138 | 83.3 % | 83.3 % | 0.0 pp |
+| **gfgs** | 98 | 76.5 % | 76.5 % | 0.0 pp |
+| **gmgd** | 123 | 79.7 % | 81.3 % | +1.6 pp |
+| **gmgs** | 121 | 80.2 % | 80.2 % | 0.0 pp |
+| non-kin | 6993 | 72.1 % | 71.8 % | -0.3 pp |
+
+Three of four grandparent classes match R006 to the decimal; only gmgd shifted +1.6 pp. R008 is essentially identical to R006 at the per-class level — the signature of a regulariser that doesn't change the final classifier behaviour.
+
+### Notes
+
+- **Mechanism**: L2-SP penalty IS being applied (train loss +0.084 vs R006 at ep 7, smoother post-peak decline). The backbone genuinely cannot drift as far. But the constrained solution lands at the same Test discrimination as R006.
+- **Two interpretations of the neutral outcome**:
+  - λ=1e-3 may be too small to meaningfully change the final solution. Untested higher λ (1e-2 or 1e-1).
+  - R006's symmetric forward already exhausted the gap-closure available from generalisation regularisers; the residual -0.026 gap may be irreducible noise for this dataset/architecture.
+- **R006 stays headline.** R008 is empirically a tie, not an improvement.
+- **Structural taxonomy now clear**: R006 (symmetry) is a *shortcut-removal* intervention — qualitatively different from R005 (per-class loss), R007 (capacity reallocation), R008 (parameter anchoring). Only R006 moves Test AUC meaningfully.
+
+### Artifacts
+
+- Checkpoint (epoch 3, Val AUC 0.9052): `output/008/checkpoints/best.pt` (536 MB)
+- Train log: `output/008/logs/train.log`
+- Test log: `output/008/logs/test.log`
+- Results: `output/008/results/test_metrics_rocm.txt`
+- Trainable params: 31,560,461 / 70,746,317 (44.61 %)
+- L2-SP anchored: 25,965,056 / 34 tensors
+
+---
+
 ## Run 007 — 2026-05-15 — SAFEGUARD ep 15 (peak Val AUC 0.9093 ep 4; Test AUC 0.8730. Differential LR: Val lift confirmed, Test neutral within noise)
 
 **Status:** SAFEGUARD auto-stopped at ep 15 (Val below peak 0.9093 for 10 consecutive epochs).
