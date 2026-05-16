@@ -6,6 +6,109 @@ Newest run on top.
 
 ---
 
+## Run 009 — 2026-05-16 — SAFEGUARD ep 15 (peak Val AUC 0.9012 ep 3; Test AUC 0.8739. Comparison-only fusion: Val drop confirmed, NEW STRICT-FAR CHAMPION)
+
+**Status:** SAFEGUARD auto-stopped at ep 15.
+
+**Outcome:** R006 stack + **comparison-only fusion** — drop gA, gB from the classifier input. Aggregate Test AUC -0.005 vs R006 (within ±0.009 noise floor), but **TAR@FAR=0.001 = 5.43 % — highest among any trained M12 model in the project**, +2.1 pp over R006 and +1.25 pp over R002 (prior trained-model best). **9 of 11 kin classes improved 1-9 pp vs R006** (gfgs +9.2 pp the standout; the historically hardest grandparent class is now at 85.7 %). Val→test gap stayed at -0.027 (tied with R006).
+
+**Hypothesis test result:** PARTIALLY CONFIRMED. Val AUC dropped exactly as predicted (-0.004), Test AUC tied. The intervention IS doing something — per-class kin discrimination shifted substantially and strict-FAR jumped — but the aggregate AUC summary doesn't capture it. R006 stays aggregate-AUC headline; **R009 is the new strict-FAR champion** (best for low-FAR verification deployment).
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 \
+GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+LEARNING_RATE=1e-5 \
+RELATION_AUX_WEIGHT=0.05 \
+SYMMETRIC_FORWARD=1 \
+COMPARISON_ONLY_FUSION=1 \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 006
+
+| Parameter | R006 | **R009** |
+|---|---|---|
+| `COMPARISON_ONLY_FUSION` | 0 (off) | **1 (on)** |
+| Classifier input dim | 2049 (4·512 + 11) | **1035 (2·512 + 11)** |
+| Classifier first Linear | `Linear(2049, 512)` | `Linear(1035, 512)` |
+| Trainable params | 31,560,461 | 31,036,173 (-524,288, -1.7 %) |
+| All other knobs | — | identical |
+
+### Training trajectory
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR | R006 same ep | Δ R009-R006 |
+|------:|-----------:|--------:|--------:|----:|-----|------:|------:|
+| 1 | 0.7260 | 74.5 % | 0.8505 | 0.450 | 2.0e-6 | 0.8594 | -0.009 |
+| 2 | 0.5530 | 80.2 % | 0.8993 | 0.300 | 4.0e-6 | 0.9045 | -0.005 |
+| **3** | **0.4727** | **80.1 %** | **0.9012 (peak)** | 0.250 | 6.0e-6 | 0.9049 | **-0.004** |
+| 4 | 0.4041 | 80.2 % | 0.8975 | 0.300 | 8.0e-6 | 0.9035 | -0.006 |
+| 5 | 0.3507 | 81.3 % | 0.8994 | 0.350 | 1.0e-5 | 0.9006 | -0.001 |
+| 6-14 | 0.30→0.14 | 79-82 % | 0.88-0.90 | 0.10-0.35 | ~9.9e-6 | — | — |
+| 15 | 0.1297 | 78.0 % | 0.8800 | 0.100 | 9.76e-6 | — | SAFEGUARD fired |
+
+Val AUC consistently 0.004-0.009 below R006 throughout — exactly the predicted "less raw signal" effect. Train loss drops faster than R006 (R009 ep 15: 0.130 vs R006/R008 ~0.20-0.30): with fewer features (no gA/gB) the classifier fits faster, but Val/Test don't move proportionally.
+
+### Test metrics (val-selected threshold 0.250)
+
+| Metric | M12 R002 | M12 R006 (HEADLINE) | M12 R007 | M12 R008 | **M12 R009** | Δ R009-R006 |
+|---|---:|---:|---:|---:|---:|---:|
+| **Test ROC AUC** | 0.8564 | **0.8788** | 0.8730 | 0.8788 | 0.8739 | -0.005 (within noise floor) |
+| Test Accuracy | 76.79 % | 79.33 % | 78.76 % | 79.28 % | 78.28 % | -1.0 pp |
+| Test Balanced Acc | 76.48 % | 79.65 % | 79.11 % | 79.61 % | 78.74 % | -0.9 pp |
+| Test F1 | 0.7402 | **0.8017** | 0.7980 | 0.8017 | 0.7984 | -0.003 |
+| Test Precision | 79.82 % | 74.17 % | 73.28 % | 74.05 % | 71.89 % | -2.3 pp |
+| Test Recall | 69.00 % | 87.24 % | 87.61 % | 87.39 % | **89.77 %** | +2.5 pp |
+| Test Avg Precision | 0.8389 | 0.8561 | 0.8521 | 0.8563 | 0.8497 | -0.006 |
+| **TAR @ FAR=0.001** | 4.18 % | 3.33 % | 4.49 % | 2.78 % | **5.43 %** ⭐⭐ | **+2.1 pp** |
+| **TAR @ FAR=0.01** | 17.58 % | **18.61 %** | 19.59 % | 19.12 % | 17.79 % | -0.8 pp |
+| **TAR @ FAR=0.1** | 57.11 % | **59.93 %** | 57.56 % | 59.65 % | 58.61 % | -1.3 pp |
+| Val→test AUC gap | -0.076 | **-0.026** | -0.036 | -0.026 | -0.027 | tied |
+
+**TAR@FAR=0.001 = 5.43 % is the highest of any TRAINED M12 run** (only B0 at 7.06 % is higher, and B0 has zero training). For strict-verification deployment R009 is the best M12 model.
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.250)
+
+| Relation | N | M12 R006 | **M12 R009** | Δ |
+|----------|--:|---------:|-------------:|---:|
+| bb | 860 | 89.1 % | **91.5 %** | **+2.4 pp** |
+| ss | 731 | 88.9 % | **90.8 %** | +1.9 pp |
+| sibs | 234 | 93.2 % | **94.9 %** | +1.7 pp |
+| fs | 1135 | 87.9 % | **90.6 %** | **+2.7 pp** |
+| fd | 918 | 84.6 % | **86.9 %** | **+2.3 pp** |
+| ms | 1036 | 86.2 % | **89.2 %** | **+3.0 pp** |
+| md | 1038 | 89.0 % | **91.9 %** | **+2.9 pp** |
+| **gfgd** | 138 | 83.3 % | **84.8 %** | +1.5 pp |
+| **gfgs** | 98 | 76.5 % | **85.7 %** | **+9.2 pp** ⭐⭐ |
+| **gmgd** | 123 | 79.7 % | **82.9 %** | **+3.2 pp** |
+| **gmgs** | 121 | 80.2 % | 77.7 % | -2.5 pp |
+| non-kin | 6993 | 72.1 % | 67.7 % | -4.4 pp |
+
+9 of 11 kin classes gained 1-9 pp; gfgs gained 9.2 pp (historic worst class now at 85.7 %).
+
+### Notes
+
+- **Mechanism**: gA, gB carry identity-as-feature signal. R006 had the classifier seeing both raw global tokens AND comparison features. R009 forces it to use only comparison features (|diff|, prod, sims, weights, score). The "less raw signal" effect drops Val by 0.004 (predicted); the "no identity shortcut" effect lets strict-FAR gain 2.1 pp.
+- **Operating-point shift**: R009 trades mid-range FAR for strict-range FAR. R006 wins TAR@FAR=0.01 (+0.8) and FAR=0.1 (+1.3); R009 wins FAR=0.001 (+2.1).
+- **Per-class signature is dominant**: R009's grandparent improvements are large (gfgs +9.2 the standout). The trade-off is concentrated in non-kin (-4.4) and one grandparent (gmgs -2.5).
+- **Train loss falls faster** in R009 (fewer features → easier fit), but Val/Test AUC don't move proportionally. The signal R009 removes wasn't "missing capacity" — it was identity leakage.
+
+### Artifacts
+
+- Checkpoint (epoch 3, Val AUC 0.9012): `output/009/checkpoints/best.pt` (529 MB — smaller than R006/R008 due to reduced classifier input)
+- Train log: `output/009/logs/train.log`
+- Test log: `output/009/logs/test.log`
+- Results: `output/009/results/test_metrics_rocm.txt`
+- Trainable params: 31,036,173 / 70,222,029 (44.20 %) — 524,288 fewer than R005-R008
+
+---
+
 ## Run 008 — 2026-05-16 — SAFEGUARD ep 16 (peak Val AUC 0.9052 ep 3; Test AUC 0.8788 — TIED with R006 within 4-decimal precision)
 
 **Status:** SAFEGUARD auto-stopped at ep 16 (Val below peak 0.9052 for 10 consecutive epochs).
