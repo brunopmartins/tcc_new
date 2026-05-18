@@ -1,12 +1,13 @@
-# M12 RGCK-Net — Post-R002 R&D Cycle Summary (R005-R009)
+# M12 RGCK-Net — Post-R002 R&D Cycle Summary (R005-R010)
 
-**Period:** 2026-05-14 to 2026-05-16
+**Period:** 2026-05-14 to 2026-05-17
 **Starting point:** M12 R002 (Test AUC 0.8564) — project headline after Phase 2 (partial unfreeze of stage 4 + output_layer).
-**Ending point:** Two complementary headlines:
+**Ending point:** **Three** complementary headlines (each champion of a different deployment regime):
 - **M12 R006 (Test AUC 0.8788)** — aggregate-AUC champion
 - **M12 R009 (TAR@FAR=0.001 = 5.43 %)** — strict-FAR champion
+- **M12 R010 (TAR@FAR=0.01 = 21.16 %, TAR@FAR=0.1 = 60.00 %, Test AP = 0.8567)** — mid-FAR + AP champion (R007 + R009 stack)
 
-Both lie on the M12 architectural family with the same backbone freezing recipe; they differ by two single-knob structural changes added on top of a shared Phase 5 (relation-type aux head) base.
+All lie on the M12 architectural family with the same backbone freezing recipe; they differ by structural and capacity-allocation knobs added on top of a shared Phase 5 (relation-type aux head) base.
 
 ---
 
@@ -21,19 +22,21 @@ neutral interventions are training-dynamics adjustments (auxiliary
 loss, learning-rate split, parameter anchoring) that do not change
 the structural shortcut surface.
 
-| Run | Intervention | Test AUC vs R002 | TAR@FAR=0.001 vs R002 | Net result |
-|---|---|---:|---:|---|
-| R002 | (baseline) | 0.8564 | 4.18 % | prior headline |
-| R003 | + SupCon aux (λ=0.05) | −0.005 | −1.5 pp | rejected — wrong-direction signature |
-| R004 | + "hard negs" (sampler bug) | −0.009 | −2.2 pp | hypothesis untested (R004 Errata) |
-| R005 | + relation aux head (Phase 5) | −0.009 | −1.2 pp | per-class balance confirmed; AUC neutral |
-| **R006** | + symmetric forward (Option-B BCE) | **+0.022** | −0.85 pp | **AUC champion** |
-| R007 | R006 + differential LR | −0.006 | +1.2 pp | neutral on AUC; mild strict-FAR gain |
-| R008 | R006 + L2-SP (λ=1e-3) | +0.000 | −1.4 pp | tied with R006 |
-| **R009** | R006 + comparison-only fusion | −0.005 | **+2.1 pp** | **strict-FAR champion** |
+| Run | Intervention | Test AUC vs R002 | TAR@FAR=0.001 vs R002 | TAR@FAR=0.01 vs R002 | Net result |
+|---|---|---:|---:|---:|---|
+| R002 | (baseline) | 0.8564 | 4.18 % | 17.58 % | prior headline |
+| R003 | + SupCon aux (λ=0.05) | −0.005 | −1.5 pp | −1.0 pp | rejected — wrong-direction signature |
+| R004 | + "hard negs" (sampler bug) | −0.009 | −2.2 pp | −2.9 pp | hypothesis untested (R004 Errata) |
+| R005 | + relation aux head (Phase 5) | −0.009 | −1.2 pp | −0.9 pp | per-class balance confirmed; AUC neutral |
+| **R006** | + symmetric forward (Option-B BCE) | **+0.022** | −0.85 pp | +1.03 pp | **AUC champion** |
+| R007 | R006 + differential LR | −0.006 | +0.31 pp | +2.01 pp | neutral on AUC; mid-FAR shift |
+| R008 | R006 + L2-SP (λ=1e-3) | +0.000 | −1.4 pp | +1.54 pp | tied with R006 |
+| **R009** | R006 + comparison-only fusion | −0.005 | **+1.25 pp** | +0.21 pp | **strict-FAR champion** |
+| **R010** | R006 + R007 + R009 (stack) | −0.003 | +1.03 pp | **+3.58 pp ⭐⭐** | **mid-FAR + AP champion** |
 
 R005 ran with `RELATION_AUX_WEIGHT=0.05` alone. R006-R009 all include
-the same R005 stack and add one more knob each.
+the same R005 stack and add one more knob each. R010 stacks R007 + R009
+on top of the R006 baseline (3 knobs on top of Phase 5).
 
 ---
 
@@ -121,6 +124,59 @@ The aggregate AUC summary doesn't capture the win because the operating
 curve shifted: strict-FAR up substantially, mid-range FAR slightly
 down. R009 is the best M12 model for low-FAR verification deployment.
 
+### 4. R010 — Stacking R007 + R009 on R006 (operating-curve champion)
+
+R010 tests whether the two non-AUC interventions compound. The setup:
+R006 baseline (Phase 5 + symmetric forward) plus differential LR (R007:
+stage 4 = 5e-6, output_layer = 5e-6, head = 2e-5) plus comparison-only
+fusion (R009: drop gA, gB from classifier). All other knobs identical
+to R006.
+
+**The hypothesis was strict-FAR compounding** to the 6-7 % range
+(R007 +1.2 pp + R009 +2.1 pp ≈ +3 pp from R006's 3.33 %). The
+hypothesis was **falsified on strict-FAR but exceeded on mid-FAR**.
+
+**Effect (R010 vs R006):**
+- Test ROC AUC: 0.8788 → 0.8754 (−0.003, within noise)
+- TAR@FAR=0.001: 3.33 % → 5.21 % (+1.88 pp; tied with R009 alone
+  within noise — strict-FAR ceiling not exceeded)
+- **TAR@FAR=0.01: 18.61 % → 21.16 % (+2.55 pp)** — *superadditive*,
+  larger than R007's +0.98 pp + R009's −0.82 pp combined
+- **TAR@FAR=0.1: 59.93 % → 60.00 % (+0.07 pp)** — M12 best
+- **Test AP: 0.8561 → 0.8567 (+0.001)** — M12 best
+- Test Precision: 74.17 % → 75.43 % (+1.26 pp) — best of any
+  post-R002 M12 run
+- non-kin specificity: 72.1 % → 74.8 % (+2.7 pp)
+- gfgs: 76.5 % → 83.7 % (+7.2 pp) — R009's gain held under stack
+- gmgs: 80.2 % → 66.1 % (−14.1 pp) — worst per-class regression
+  in the cycle (threshold-shift artifact at val-selected 0.500)
+
+**Mechanism — why mid-FAR compounded but strict-FAR didn't:**
+
+R009 alone *hurt* TAR@FAR=0.01 (−0.82 pp) — removing gA/gB shifted
+probability mass toward strict-FAR but lost mid-FAR discriminative
+power. R007 alone *helped* TAR@FAR=0.01 (+0.98 pp) — the head LR
+ramped up faster and the head learned mid-FAR features more
+thoroughly. In R010, R007's mid-FAR boost compensates for R009's
+mid-FAR loss in a way that exceeds either parent alone:
+
+- Strict-FAR tail saturates at the R009 ceiling (~5.4 %): both
+  interventions converge on the same identity-leakage-free
+  operating point at the extreme threshold.
+- Mid-FAR region is jointly shaped by both interventions: the
+  smaller cmp-only head + higher head LR + ramped-up training
+  refinement produces an operating curve neither parent reaches.
+
+This is the first **superadditive** result in the M12 cycle. The
+other stack interactions (R005+R006, R006+R007, R006+R008,
+R006+R009) were either neutral or roughly additive.
+
+R010's val-selected threshold (0.500) is the highest of any M12 run,
+explaining the per-class regression at high-N classes (the higher
+threshold rejects borderline positives). The trade-off shifts the
+deployment regime from "balanced kin-recall" (R006) to "high-precision
+mid-FAR" (R010).
+
 ---
 
 ## What was tested and rejected
@@ -154,24 +210,25 @@ from sampler variance unless the seed is controlled.
 
 ---
 
-## Mechanistic picture (R005-R009 taxonomy)
+## Mechanistic picture (R005-R010 taxonomy)
 
 The cycle produced a structural taxonomy of interventions and their
 effects on M12:
 
-| Intervention type | Example | Effect on Test AUC | Effect on TAR@FAR=0.001 |
-|---|---|---:|---:|
-| **Shortcut removal — direction** | R006 symmetric forward | **+0.022** (decisive) | −0.85 pp |
-| **Shortcut removal — identity** | R009 comparison-only fusion | −0.005 within noise | **+2.1 pp** (decisive) |
-| **Per-class loss** | R005 relation aux head | −0.009 within noise | −1.2 pp |
-| **Capacity reallocation** | R007 differential LR | −0.006 within noise | +1.2 pp |
-| **Parameter anchoring** | R008 L2-SP λ=1e-3 | +0.000 tied | −1.4 pp |
-| **Wrong-direction aux loss** | R003 SupCon | −0.005 with bad signature | −1.5 pp |
-| **No-op (bug)** | R004 broken sampler | −0.009 sampler noise | −2.2 pp sampler noise |
+| Intervention type | Example | Effect on Test AUC | Effect on TAR@FAR=0.001 | Effect on TAR@FAR=0.01 |
+|---|---|---:|---:|---:|
+| **Shortcut removal — direction** | R006 symmetric forward | **+0.022** (decisive) | −0.85 pp | +1.03 pp |
+| **Shortcut removal — identity** | R009 comparison-only fusion | −0.005 within noise | **+2.1 pp** (decisive) | −0.82 pp |
+| **Capacity reallocation** | R007 differential LR | −0.006 within noise | +1.2 pp | +0.98 pp |
+| **Per-class loss** | R005 relation aux head | −0.009 within noise | −1.2 pp | −0.94 pp |
+| **Parameter anchoring** | R008 L2-SP λ=1e-3 | +0.000 tied | −0.55 pp | +0.51 pp |
+| **Wrong-direction aux loss** | R003 SupCon | −0.005 with bad signature | −1.5 pp | −1.01 pp |
+| **No-op (bug)** | R004 broken sampler | −0.009 sampler noise | −2.2 pp sampler noise | −2.87 pp sampler noise |
+| **Stack: capacity + identity removal** | R010 (R007 + R009) | −0.003 within noise | +1.88 pp (≈R009) | **+2.55 pp ⭐⭐ (superadditive)** |
 
 The cleanest distinction is between **shortcut-removal interventions**
 (R006, R009) and everything else. Only shortcut-removal interventions
-moved a Test-side metric meaningfully:
+moved an aggregate Test-side metric meaningfully on their own:
 
 - R006's symmetric forward removed **direction-specific shortcuts**
   in the cross-region adapter — these moved the *aggregate AUC*
@@ -180,8 +237,14 @@ moved a Test-side metric meaningfully:
   shortcuts** in the classifier — these moved *strict-FAR* because
   they were affecting the tail of the score distribution.
 
-The other interventions adjusted training dynamics within a
-shortcut-containing architecture and were empirically neutral.
+The training-dynamics interventions (R005, R007, R008) were each
+empirically neutral on aggregate AUC. But R010 demonstrated that
+*combining* an identity-removal shortcut intervention (R009) with
+a capacity-reallocation intervention (R007) produces a
+**superadditive** mid-FAR effect — the cmp-only head's mid-FAR
+weakness is compensated by diff-LR's mid-FAR strength, and the
+combination exceeds either parent alone. This is the first composed
+intervention in the cycle that exceeded its parts.
 
 ---
 
@@ -194,14 +257,15 @@ model relies on shortcuts that do not transfer across families:
 |---|---:|---|
 | M02 R031 (ViT-B/16 full FT) | −0.031 | best gap, but a different architecture family |
 | **M12 R006** | **−0.026** | smallest in AdaFace-trained family |
-| M12 R009 | −0.027 | tied with R006 (strict-FAR specialist) |
 | M12 R008 (L2-SP) | −0.026 | tied with R006 |
+| M12 R009 | −0.027 | tied with R006 (strict-FAR specialist) |
+| M12 R010 (R007+R009 stack) | −0.030 | tight; mid-FAR + AP champion |
+| M12 R007 (diff-LR) | −0.036 | small widening from higher head LR |
 | M12 R002 | −0.076 | the partial-FT baseline before the cycle |
-| M12 R001 (Phase 1, fully frozen) | −0.089 | low-capacity floor |
 | M12 R003 (SupCon) | −0.080 | aux loss didn't widen the gap |
 | M12 R005 (Phase 5) | −0.084 | per-class aux didn't widen it either |
-| M12 R007 (diff-LR) | −0.036 | small widening from higher head LR |
 | M12 R004 (sampler reseed) | −0.088 | reseed noise |
+| M12 R001 (Phase 1, fully frozen) | −0.089 | low-capacity floor |
 | M11 v4 (M09 + "hard negs") | −0.128 | worst gap in the project (full-FT + ineffective sampler) |
 | M10 R003 (M09 + top-only) | −0.140 | worst trained gap |
 
@@ -260,30 +324,29 @@ For the TCC text:
 
 These remain open but were not pursued in the cycle:
 
-1. **R010 candidate — Stack R007 + R009** (differential LR +
-   comparison-only fusion). Both moved strict-FAR in the same
-   direction; combining might compound (strict-FAR could reach
-   6-7 %). Highest-EV remaining M12 run if continuing.
-
-2. **R011 candidate — L2-SP at higher λ** (1e-2 or 1e-1).
+1. **R011 candidate — L2-SP at higher λ** (1e-2 or 1e-1).
    Distinguishes the two R008 interpretations (λ too small vs gap
    already closed). Lower EV.
 
-3. **Lower relation_aux λ** (0.02 or 0.03) — small probability of
+2. **Lower relation_aux λ** (0.02 or 0.03) — small probability of
    recovering some precision without losing per-class gains.
 
-4. **ROI Align tokenizer** (proposal §15 Strategy 1) — replaces 5
+3. **ROI Align tokenizer** (proposal §15 Strategy 1) — replaces 5
    AdaFace forwards with one feature-map forward + ROI pool.
    Halves training time; architectural change of larger scope.
 
-5. **Fix the `relation_matched` sampler** and re-run Phase 6 — the
+4. **Fix the `relation_matched` sampler** and re-run Phase 6 — the
    only intervention that has genuinely never been tested under a
-   correct implementation. Lower priority than 1-4 above.
+   correct implementation. Lower priority than 1-3 above.
 
-6. **Reproducibility under different seeds** — every result here is
+5. **Reproducibility under different seeds** — every result here is
    at seed=42 with negative-sampler offset 200. Multiple seeds would
    tighten the noise-floor estimate and give variance bands on each
    reported Test AUC.
+
+6. **Different stacks** — R010 showed mid-FAR superadditivity from
+   R007+R009. Other pairs (e.g., R005+R007, R008+R009) have not
+   been tested as stacks. EV is uncertain given R010's mixed result.
 
 ---
 
@@ -298,6 +361,7 @@ The per-run reviews are:
 - [run-007.md](run-007.md) — differential LR
 - [run-008.md](run-008.md) — L2-SP regulariser λ=1e-3
 - [run-009.md](run-009.md) — comparison-only fusion (strict-FAR champion)
+- [run-010.md](run-010.md) — R007 + R009 stack (mid-FAR + AP champion)
 - [run-004.md](run-004.md) — hard-negatives Errata
 
 The full run-by-run history is in `RUN_LOG.md` and the cross-run

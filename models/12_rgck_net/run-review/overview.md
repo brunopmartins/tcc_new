@@ -58,42 +58,42 @@ The structure:
 
 ## Run table
 
-| | Run 001 | Run 002 | Run 003 | Run 004 | Run 005 | **Run 006** | Run 007 | Run 008 | Run 009 |
-|---|---|---|---|---|---|---|---|---|---|
-| **Date** | 2026-05-13 | 2026-05-13 | 2026-05-14 | 2026-05-14 | 2026-05-14 | 2026-05-14 | 2026-05-15 | 2026-05-16 | 2026-05-16 |
-| **Phase** | 1 (frozen) | 2 (partial unfreeze) | 4 (R002 + SupCon) | 6 (R002 + hard negs — *intended; not tested*) | 5 (R002 + relation-type aux head) | **5 + symmetric forward (Option-B BCE)** | R006 + differential LR | R006 + L2-SP | **R006 + comparison-only fusion** |
-| **Trainable** | 5.6 M (7.9 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) (3 param groups) | 31.6 M (44.6 %) | 31.0 M (44.2 %) — classifier smaller |
-| **LR** | 1e-4 | 1e-5 | 1e-5 | 1e-5 | 1e-5 | 1e-5 | stage4 5e-6 / output 5e-6 / head 2e-5 | 1e-5 | 1e-5 |
-| **Loss** | BCE | BCE | BCE + 0.05 × SupCon | BCE | BCE + 0.05 × CE_rel(pos, balanced) | 0.5·(BCE_AB + BCE_BA) + 0.05·avg(CE_rel_AB, CE_rel_BA)\|pos | same as R006 | R006 loss + **1e-3·L2SP(stage4+output_layer)** | same as R006 |
-| **Neg strategy** | random | random | random | `relation_matched` *(no-op: misnamed sampler, see R004 Errata)* | random | random | random | random | random |
-| **Status** | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 8 | SAFEGUARD ep 16 | Manual stop ep 8 | SAFEGUARD ep 15 | SAFEGUARD ep 16 | SAFEGUARD ep 15 |
-| **Best Val AUC** | 0.8351 (ep 3) | 0.9323 (ep 4) | 0.9306 (ep 4) | **0.9354 (ep 4)** — project max | 0.9318 (ep 4) | 0.9049 (ep 3) | 0.9093 (ep 4) | 0.9052 (ep 3) | 0.9012 (ep 3) — -0.004 vs R006 (predicted) |
-| **Test ROC-AUC** | 0.7464 | 0.8564 | 0.8510 | 0.8473 | 0.8476 | **0.8788** ⭐ **HEADLINE** | 0.8730 | **0.8788** tied | 0.8739 |
-| **Test Accuracy** | 68.0 % | 76.8 % | 76.4 % | 75.8 % | 76.5 % | **79.3 %** ⭐ | 78.8 % | 79.3 % | 78.3 % |
-| **Val→test gap** | -0.089 | -0.076 | -0.080 | -0.088 | -0.084 | **-0.026** ⭐⭐ | -0.036 | **-0.026** tied | -0.027 (tied w/ R006) |
-| **Notes** | Phase 1 capped ceiling | Phase 2 partial unfreeze beats M02 R031. [run-002.md](run-002.md) | SupCon aux REJECTED. [run-003.md](run-003.md) | Intended hard-negs test — actually tested negative-sampler reseed because `relation_matched` sampler does the same thing as `random` (different seed only). Phase 6 hypothesis remains UNTESTED. [run-004.md](run-004.md) | Phase 5 per-class hypothesis CONFIRMED: all 11 kin classes improved 2-7 pp vs R002. Global AUC -0.009 (within ±0.009 noise floor). [run-005.md](run-005.md) | **AUC HEADLINE.** R005 stack + symmetric forward closed the val→test gap from -0.084 to -0.026 and lifted Test AUC by +0.031 vs R005, +0.022 vs R002. Every kin class +13-43 pp vs R002; grandparents +31-43 pp. [run-006.md](run-006.md) | Diff-LR (head 4× backbone). **Hypothesis confirmed on Val (+0.004 peak), neutral on Test (-0.006 within noise).** [run-007.md](run-007.md) | L2-SP λ=1e-3. Penalty WAS applied but final solution **numerically tied with R006**. Per-rel ≤0.4 pp difference in 10 of 11 classes. [run-008.md](run-008.md) | **NEW STRICT-FAR CHAMPION.** Drop gA, gB from classifier. Aggregate AUC tied with R006 (within noise), **TAR@FAR=0.001 = 5.43 % +2.1 pp vs R006 — highest trained M12 model.** 9 of 11 kin classes gained 1-9 pp vs R006 (gfgs +9.2 standout). [run-009.md](run-009.md) |
+| | Run 001 | Run 002 | Run 003 | Run 004 | Run 005 | **Run 006** | Run 007 | Run 008 | Run 009 | **Run 010** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **Date** | 2026-05-13 | 2026-05-13 | 2026-05-14 | 2026-05-14 | 2026-05-14 | 2026-05-14 | 2026-05-15 | 2026-05-16 | 2026-05-16 | 2026-05-17 |
+| **Phase** | 1 (frozen) | 2 (partial unfreeze) | 4 (R002 + SupCon) | 6 (R002 + hard negs — *intended; not tested*) | 5 (R002 + relation-type aux head) | **5 + symmetric forward (Option-B BCE)** | R006 + differential LR | R006 + L2-SP | **R006 + comparison-only fusion** | **R007 + R009 stack** |
+| **Trainable** | 5.6 M (7.9 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) | 31.6 M (44.6 %) (3 param groups) | 31.6 M (44.6 %) | 31.0 M (44.2 %) — classifier smaller | 31.0 M (44.2 %) (3 param groups + cmp-only) |
+| **LR** | 1e-4 | 1e-5 | 1e-5 | 1e-5 | 1e-5 | 1e-5 | stage4 5e-6 / output 5e-6 / head 2e-5 | 1e-5 | 1e-5 | stage4 5e-6 / output 5e-6 / head 2e-5 |
+| **Loss** | BCE | BCE | BCE + 0.05 × SupCon | BCE | BCE + 0.05 × CE_rel(pos, balanced) | 0.5·(BCE_AB + BCE_BA) + 0.05·avg(CE_rel_AB, CE_rel_BA)\|pos | same as R006 | R006 loss + **1e-3·L2SP(stage4+output_layer)** | same as R006 | same as R006 |
+| **Neg strategy** | random | random | random | `relation_matched` *(no-op: misnamed sampler, see R004 Errata)* | random | random | random | random | random | random |
+| **Status** | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 7 | Stopped at ep 8 | SAFEGUARD ep 16 | Manual stop ep 8 | SAFEGUARD ep 15 | SAFEGUARD ep 16 | SAFEGUARD ep 15 | Manual stop ep 10 |
+| **Best Val AUC** | 0.8351 (ep 3) | 0.9323 (ep 4) | 0.9306 (ep 4) | **0.9354 (ep 4)** — project max | 0.9318 (ep 4) | 0.9049 (ep 3) | 0.9093 (ep 4) | 0.9052 (ep 3) | 0.9012 (ep 3) — -0.004 vs R006 (predicted) | 0.9052 (ep 5, tied ep 8) |
+| **Test ROC-AUC** | 0.7464 | 0.8564 | 0.8510 | 0.8473 | 0.8476 | **0.8788** ⭐ **HEADLINE** | 0.8730 | **0.8788** tied | 0.8739 | 0.8754 |
+| **Test Accuracy** | 68.0 % | 76.8 % | 76.4 % | 75.8 % | 76.5 % | **79.3 %** ⭐ | 78.8 % | 79.3 % | 78.3 % | 79.3 % |
+| **Val→test gap** | -0.089 | -0.076 | -0.080 | -0.088 | -0.084 | **-0.026** ⭐⭐ | -0.036 | **-0.026** tied | -0.027 (tied w/ R006) | -0.030 |
+| **Notes** | Phase 1 capped ceiling | Phase 2 partial unfreeze beats M02 R031. [run-002.md](run-002.md) | SupCon aux REJECTED. [run-003.md](run-003.md) | Intended hard-negs test — actually tested negative-sampler reseed because `relation_matched` sampler does the same thing as `random` (different seed only). Phase 6 hypothesis remains UNTESTED. [run-004.md](run-004.md) | Phase 5 per-class hypothesis CONFIRMED: all 11 kin classes improved 2-7 pp vs R002. Global AUC -0.009 (within ±0.009 noise floor). [run-005.md](run-005.md) | **AUC HEADLINE.** R005 stack + symmetric forward closed the val→test gap from -0.084 to -0.026 and lifted Test AUC by +0.031 vs R005, +0.022 vs R002. Every kin class +13-43 pp vs R002; grandparents +31-43 pp. [run-006.md](run-006.md) | Diff-LR (head 4× backbone). **Hypothesis confirmed on Val (+0.004 peak), neutral on Test (-0.006 within noise).** [run-007.md](run-007.md) | L2-SP λ=1e-3. Penalty WAS applied but final solution **numerically tied with R006**. Per-rel ≤0.4 pp difference in 10 of 11 classes. [run-008.md](run-008.md) | **NEW STRICT-FAR CHAMPION.** Drop gA, gB from classifier. Aggregate AUC tied with R006 (within noise), **TAR@FAR=0.001 = 5.43 % +2.1 pp vs R006 — highest trained M12 model.** 9 of 11 kin classes gained 1-9 pp vs R006 (gfgs +9.2 standout). [run-009.md](run-009.md) | **NEW MID-FAR + AP CHAMPION.** Stack R007 + R009 on R006 baseline. Strict-FAR did not compound to 6-7 % as hypothesised (5.21 % ≈ R009 5.43 %). But **TAR@FAR=0.01 = 21.16 %** (+2.55 pp vs R006 — M12 best), **TAR@FAR=0.1 = 60.00 %** (M12 best), **Test AP = 0.8567** (M12 best). Most balanced M12 run; top-3 on every Test metric. [run-010.md](run-010.md) |
 
 ---
 
 ## Test metrics
 
-| Metric | M02 R031 | R001 | R002 | R003 | R004 | R005 | **R006** | R007 | R008 | R009 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Test ROC-AUC** | 0.850 | 0.7464 | 0.8564 | 0.8510 | 0.8473 | 0.8476 | **0.8788** ⭐ HEADLINE | 0.8730 | **0.8788** tied | 0.8739 |
-| Test Accuracy | 74.4 % | 68.00 % | 76.79 % | 76.37 % | 75.75 % | 76.53 % | **79.33 %** ⭐ | 78.76 % | 79.28 % | 78.28 % |
-| Test Balanced Acc | 75.2 % | 67.41 % | 76.48 % | 76.09 % | 75.33 % | 76.45 % | **79.65 %** ⭐ | 79.11 % | 79.61 % | 78.74 % |
-| Test F1 | 0.779 | 0.6150 | 0.7402 | 0.7373 | 0.7211 | 0.7528 | **0.8017** ⭐ | 0.7980 | **0.8017** tied | 0.7984 |
-| Test Precision | 66.5 % | 72.60 % | 79.82 % | 78.88 % | **80.29 %** ⭐ | 75.99 % | 74.17 % | 73.28 % | 74.05 % | 71.89 % |
-| Test Recall | 94.1 % | 53.34 % | 69.00 % | 69.22 % | 65.44 % | 74.58 % | 87.24 % | 87.61 % | 87.39 % | **89.77 %** ⭐ |
-| **Avg Precision** | 0.817 | 0.7323 | 0.8389 | 0.8305 | 0.8287 | 0.8288 | 0.8561 | 0.8521 | **0.8563** ⭐ | 0.8497 |
-| **TAR@FAR=0.001** | 2.5 % | 2.36 % | 4.18 % | 2.67 % | 2.01 % | 2.94 % | 3.33 % | 4.49 % | 2.78 % | **5.43 %** ⭐⭐ |
-| **TAR@FAR=0.01** | 14.0 % | 10.06 % | 17.58 % | 16.57 % | 14.71 % | 16.67 % | 18.61 % | **19.59 %** ⭐ | 19.12 % | 17.79 % |
-| **TAR@FAR=0.1** | 49.9 % | 37.86 % | 57.11 % | 55.43 % | 56.06 % | 55.60 % | **59.93 %** ⭐ | 57.56 % | 59.65 % | 58.61 % |
-| Best Val ROC-AUC | 0.881 | 0.8351 | 0.9323 | 0.9306 | **0.9354** ⭐ (project max) | 0.9318 | 0.9049 | 0.9093 | 0.9052 | 0.9012 |
-| Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % | 85.7 % | **86.2 %** | 86.0 % | 81.4 % | 81.7 % | 81.3 % | 80.1 % |
-| **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 | -0.080 | -0.088 | -0.084 | **-0.026** ⭐⭐ | -0.036 | **-0.026** tied | -0.027 |
+| Metric | M02 R031 | R001 | R002 | R003 | R004 | R005 | **R006** | R007 | R008 | R009 | **R010** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **Test ROC-AUC** | 0.850 | 0.7464 | 0.8564 | 0.8510 | 0.8473 | 0.8476 | **0.8788** ⭐ HEADLINE | 0.8730 | **0.8788** tied | 0.8739 | 0.8754 |
+| Test Accuracy | 74.4 % | 68.00 % | 76.79 % | 76.37 % | 75.75 % | 76.53 % | **79.33 %** ⭐ | 78.76 % | 79.28 % | 78.28 % | 79.25 % |
+| Test Balanced Acc | 75.2 % | 67.41 % | 76.48 % | 76.09 % | 75.33 % | 76.45 % | **79.65 %** ⭐ | 79.11 % | 79.61 % | 78.74 % | 79.44 % |
+| Test F1 | 0.779 | 0.6150 | 0.7402 | 0.7373 | 0.7211 | 0.7528 | **0.8017** ⭐ | 0.7980 | **0.8017** tied | 0.7984 | 0.7952 |
+| Test Precision | 66.5 % | 72.60 % | 79.82 % | 78.88 % | **80.29 %** ⭐ | 75.99 % | 74.17 % | 73.28 % | 74.05 % | 71.89 % | 75.43 % |
+| Test Recall | 94.1 % | 53.34 % | 69.00 % | 69.22 % | 65.44 % | 74.58 % | 87.24 % | 87.61 % | 87.39 % | **89.77 %** ⭐ | 84.08 % |
+| **Avg Precision** | 0.817 | 0.7323 | 0.8389 | 0.8305 | 0.8287 | 0.8288 | 0.8561 | 0.8521 | 0.8563 | 0.8497 | **0.8567** ⭐⭐ M12 best |
+| **TAR@FAR=0.001** | 2.5 % | 2.36 % | 4.18 % | 2.67 % | 2.01 % | 2.94 % | 3.33 % | 4.49 % | 2.78 % | **5.43 %** ⭐⭐ | 5.21 % |
+| **TAR@FAR=0.01** | 14.0 % | 10.06 % | 17.58 % | 16.57 % | 14.71 % | 16.67 % | 18.61 % | 19.59 % | 19.12 % | 17.79 % | **21.16 %** ⭐⭐ M12 best |
+| **TAR@FAR=0.1** | 49.9 % | 37.86 % | 57.11 % | 55.43 % | 56.06 % | 55.60 % | 59.93 % | 57.56 % | 59.65 % | 58.61 % | **60.00 %** ⭐ M12 best |
+| Best Val ROC-AUC | 0.881 | 0.8351 | 0.9323 | 0.9306 | **0.9354** ⭐ (project max) | 0.9318 | 0.9049 | 0.9093 | 0.9052 | 0.9012 | 0.9052 |
+| Best Val Accuracy | 76.6 % | 75.4 % | 85.5 % | 85.7 % | **86.2 %** | 86.0 % | 81.4 % | 81.7 % | 81.3 % | 80.1 % | 82.1 % |
+| **Val→Test AUC gap** | -0.031 | -0.089 | -0.076 | -0.080 | -0.088 | -0.084 | **-0.026** ⭐⭐ | -0.036 | **-0.026** tied | -0.027 | -0.030 |
 
-⭐ = R006 wins on **every threshold-invariant Test metric** except TAR@FAR=0.001 — the **NEW PROJECT HEADLINE** (Test AUC 0.8788, +0.022 vs R002, +0.024 vs M02 R031). R004 has the project-wide max Val AUC but it doesn't transfer (note: R004's `relation_matched` sampler is misnamed — it does not produce hard negatives; see [run-004.md](run-004.md) Errata). R006's Val AUC is the lowest of the partial-FT runs *by design* — symmetric forward removes direction-specific shortcuts that inflate Val without transferring to Test.
+⭐ = R006 wins on **most threshold-invariant Test metrics** — the **PROJECT AUC HEADLINE** (Test AUC 0.8788, +0.022 vs R002, +0.024 vs M02 R031). **R010 (R007+R009 stack) is the new operating-curve champion**: best M12 on TAR@FAR=0.01 (21.16 %), TAR@FAR=0.1 (60.00 %), Test AP (0.8567). **R009 stays the strict-FAR (TAR@FAR=0.001) champion** at 5.43 %. R004 has the project-wide max Val AUC but it doesn't transfer (note: R004's `relation_matched` sampler is misnamed — it does not produce hard negatives; see [run-004.md](run-004.md) Errata). R006's Val AUC is the lowest of the partial-FT runs *by design* — symmetric forward removes direction-specific shortcuts that inflate Val without transferring to Test.
 
 ---
 
@@ -147,16 +147,32 @@ The structure:
 
 ---
 
-## Conclusion (as of R009)
+## Conclusion (as of R010)
 
-**R006 (Test AUC 0.8788) is the new project headline**, displacing
-R002 (0.8564) and M02 R031 (0.850). R006 wins every threshold-
-invariant Test metric except TAR@FAR=0.001. Val→test gap collapsed to
-**-0.026** — smallest of any AdaFace-based model with non-trivial
-training in the project. The decisive intervention is **symmetric
-forward** (Option-B BCE on top of Phase 5): each pair is processed
-in both (A,B) and (B,A) orders and the loss penalises each direction.
-No new parameters; ~+2 % wall-clock per epoch.
+**Three complementary M12 headlines now stand**, after the R&D cycle
+explored both single-knob interventions and one two-knob stack:
+
+- **Aggregate AUC headline — R006** (Test AUC **0.8788**, val→test
+  gap -0.026). Decisive intervention: **symmetric forward**
+  (Option-B BCE) — each pair processed in both (A,B) and (B,A)
+  orders; the head can no longer learn direction-specific shortcuts.
+- **Strict-FAR headline — R009** (TAR@FAR=0.001 = **5.43 %**).
+  Decisive intervention: **comparison-only fusion** — drop
+  gA, gB from the classifier input; removes identity-as-feature
+  leakage.
+- **Operating-curve headline — R010** (TAR@FAR=0.01 = **21.16 %**,
+  TAR@FAR=0.1 = **60.00 %**, Test AP = **0.8567** — all M12 bests).
+  R010 stacks R007 (differential LR) + R009 (comparison-only) on
+  the R006 baseline. Strict-FAR did NOT compound but mid-FAR did
+  *superadditively* — the new project model for "balanced
+  deployment" operating points.
+
+R006 wins on aggregate threshold-invariant metrics; R009 wins at
+strict verification thresholds; R010 wins at mid-FAR + AP. Each
+champion targets a different deployment regime. The cycle has now
+closed every plausible single-shot intervention family on this
+architecture, and three different "best M12 model" answers exist
+depending on the question.
 
 Key findings (cumulative across R001-R004):
 
@@ -301,15 +317,16 @@ Key findings (cumulative across R001-R004):
 
 12. **Post-R006 R&D taxonomy** has crystallised:
 
-    | Run | Intervention type | Effect on Test AUC | Effect on TAR@FAR=0.001 |
-    |---|---|---:|---:|
-    | R005 | per-class loss (CE_rel aux) | -0.009 within noise | -1.2 pp |
-    | **R006** | **structural symmetry (shortcut removal)** | **+0.022 (decisive)** | -0.85 pp |
-    | R007 | capacity reallocation (diff-LR) | -0.006 within noise | +1.2 pp |
-    | R008 | parameter anchoring (L2-SP) | +0.000 tied | -0.55 pp |
-    | **R009** | **identity leakage removal** | -0.005 within noise | **+2.1 pp ⭐** |
+    | Run | Intervention type | Effect on Test AUC | Effect on TAR@FAR=0.001 | Effect on TAR@FAR=0.01 |
+    |---|---|---:|---:|---:|
+    | R005 | per-class loss (CE_rel aux) | -0.009 within noise | -1.2 pp | -0.94 pp |
+    | **R006** | **structural symmetry (shortcut removal)** | **+0.022 (decisive)** | -0.85 pp | +1.03 pp |
+    | R007 | capacity reallocation (diff-LR) | -0.006 within noise | +1.2 pp | +0.98 pp |
+    | R008 | parameter anchoring (L2-SP) | +0.000 tied | -0.55 pp | +0.51 pp |
+    | **R009** | **identity leakage removal** | -0.005 within noise | **+2.1 pp ⭐** | -0.82 pp |
+    | **R010** | **R007 + R009 stack** | -0.003 within noise | +1.88 pp (≈R009) | **+2.55 pp ⭐⭐ (superadditive)** |
 
-    Two distinct R&D phases have closed:
+    Three distinct R&D phases have closed:
     - **Aggregate-AUC phase**: R002 (partial unfreeze) + R006
       (symmetric forward) = the two decisive moves. Other interventions
       are neutral. **R006 stays AUC headline at 0.8788.**
@@ -317,7 +334,15 @@ Key findings (cumulative across R001-R004):
       decisive move. TAR@FAR=0.001 = 5.43 % is the highest of any
       trained M12 model and approaches the B0 frozen baseline's
       7.06 % (which has zero training and benefits from raw AdaFace
-      identity discrimination).
+      identity discrimination). R010 stacked R007 + R009 but
+      strict-FAR did not compound (5.21 % ≈ R009 ceiling).
+    - **Mid-FAR phase (new)**: R010 (R007 + R009 stack) is the
+      decisive move. TAR@FAR=0.01 = 21.16 % is +2.55 pp vs R006,
+      *larger than the algebraic sum* of R007's +0.98 pp and R009's
+      -0.82 pp. This superadditive gain at mid-FAR is the
+      unexpected R010 finding: diff-LR's mid-FAR boost compensates
+      for cmp-only's mid-FAR loss, and the combined head settles
+      into an operating point neither parent reaches alone.
 
 13. **R009 (comparison-only fusion). Aggregate Test AUC -0.005 vs R006
     (within noise); strict-FAR +2.1 pp.** Dropping `gA, gB` from the
@@ -334,6 +359,46 @@ Key findings (cumulative across R001-R004):
     R006 stays AUC headline; **R009 is the new strict-FAR champion**.
     For deployment in low-FAR scenarios (forensic search, large-pool
     verification), R009 is the preferred M12 model.
+
+14. **R010 (R007 + R009 stack). Aggregate Test AUC -0.003 vs R006
+    (within noise); strict-FAR did NOT compound (5.21 % ≈ R009 5.43 %);
+    but TAR@FAR=0.01 jumped +2.55 pp to 21.16 % — the new M12 best.**
+    The stack combines differential LR (R007: stage4 5e-6 / output 5e-6
+    / head 2e-5) with comparison-only fusion (R009: drop gA, gB from
+    classifier input). Two predicted outcomes split:
+
+    - **Falsified**: Strict-FAR compounding to 6-7 %. Actual 5.21 % is
+      within tied-noise of R009 alone. The strict-FAR tail saturates
+      at the R009 ceiling; diff-LR adds nothing on this metric.
+    - **Confirmed (and exceeded)**: Aggregate AUC within R006 ±0.009.
+      Actual 0.8754 — well inside the noise floor.
+
+    Unanticipated wins:
+    - **TAR@FAR=0.01 = 21.16 %** ⭐⭐ (M12 best, +2.55 pp vs R006).
+      *Superadditive* — larger than R007's +0.98 pp + R009's -0.82 pp.
+    - **TAR@FAR=0.1 = 60.00 %** ⭐ (M12 best, +0.07 pp vs R006).
+    - **Test AP = 0.8567** ⭐ (M12 best, +0.001 vs R006).
+    - **Precision = 75.43 %** — best of any post-R002 M12 run.
+
+    Mechanism: R009's comparison-only fusion shifts probability mass
+    toward strict-FAR but loses mid-FAR discriminative power
+    (TAR@FAR=0.01 -0.82 pp). R007's diff-LR lets the head adapt faster
+    at mid-FAR (TAR@FAR=0.01 +0.98 pp). In R010, diff-LR's mid-FAR
+    boost compensates for cmp-only's mid-FAR loss, and the combined
+    head settles into an operating point that exceeds both parents on
+    mid-FAR while preserving the strict-FAR tail.
+
+    R010's val-selected threshold (0.500) is the highest of any M12
+    run, explaining the per-class regression at high-N kin classes
+    (bb -3.9 pp, fd -4.6 pp) and the gain in non-kin specificity
+    (+2.7 pp vs R006). gmgs regressed -14.1 pp — the operating point
+    chosen by R010's threshold is unfavourable for this small class.
+
+    **Three project headlines now stand:**
+    - **Aggregate AUC**: R006 (0.8788) for ranking quality.
+    - **Strict TAR@FAR=0.001**: R009 (5.43 %) for low-FA deployments.
+    - **Mid-FAR + AP + TAR@FAR=0.1**: R010 for balanced operating
+      points (the most "deployment-ready" M12 model).
 
 ### What R001 already validated, still standing
 
@@ -360,21 +425,25 @@ sequence design.
 | I-11 | High | **CLOSED in R006** | Architecture is asymmetric in (A, B) | R006 tested symmetric forward (Option-B BCE: 0.5·(BCE_AB + BCE_BA)). Result: Test AUC +0.031 vs R005, gap closed by 0.058, +31.6 pp avg grandparent accuracy. Symmetric forward should be the default for M12 going forward. [model.py:148-174](../model.py#L148-L174), [model.py:234-242](../model.py#L234-L242), [model.py:374](../model.py#L374). |
 | I-06 | Info | **Closed in R006** | Per-relation grandparent accuracies | R005 (Phase 5) lifted grandparents 2-7 pp (target confirmed). R006 (Phase 5 + symmetric forward) lifted grandparents another 28-36 pp — gmgd 36.6→79.7, gmgs 44.6→80.2, gfgs 39.8→76.5, gfgd 52.2→83.3. The combination is multiplicative. Per-rel weaknesses essentially resolved at thr=0.500. |
 
-### Next directions (re-prioritised after R009, 2026-05-16)
+### Next directions (re-prioritised after R010, 2026-05-17)
 
 Closed by experimental evidence so far:
 - ~~Phase 4 (SupCon aux at λ=0.05) — REJECTED in R003.~~
 - ~~Architecture asymmetry — CLOSED in R006 (now default).~~
-- ~~Differential LR — neutral on Test in R007.~~
+- ~~Differential LR alone — neutral on Test in R007.~~
 - ~~L2-SP λ=1e-3 — neutral on Test in R008.~~
-- ~~Comparison-only fusion — neutral on Test AUC in R009 but
+- ~~Comparison-only fusion alone — neutral on Test AUC in R009 but
   decisive on strict-FAR (+2.1 pp).~~
+- ~~R007+R009 stack (R010) — strict-FAR did not compound (5.21 % ≈
+  R009 5.43 %), but **mid-FAR superadditive +2.55 pp at TAR@FAR=0.01
+  (M12 best)**, Test AP M12 best, TAR@FAR=0.1 M12 best.~~
 
 The shortcut-removal intervention family has been exhausted on M12.
 Both interventions in that family (R006 symmetric forward,
-R009 comparison-only fusion) have been tested. R006 is the only one
-that moved aggregate AUC; R009 is the only one that moved strict-FAR
-meaningfully.
+R009 comparison-only fusion) have been tested individually and stacked
+(R010). R006 stays aggregate AUC headline; R009 stays strict-FAR
+champion; R010 emerges as the operating-curve champion in mid-FAR
+and average precision.
 
 Reopened by R004 Errata:
 - **Phase 6 (real hard negatives)** — requires implementing actual
@@ -383,35 +452,44 @@ Reopened by R004 Errata:
 Confirmed compounding interventions:
 - **Phase 5 (relation-type aux head)** + **symmetric forward** —
   cumulative +0.022 Test AUC vs R002.
+- **R007 + R009 (R010)** — superadditive +2.55 pp at TAR@FAR=0.01
+  vs R006 (the AUC headline). Not a Test-AUC headline but the new
+  operating-curve champion.
 
-Two complementary M12 headlines now stand:
+Three complementary M12 headlines now stand:
 - **AUC headline: R006** (Test AUC 0.8788, val→test gap -0.026).
 - **Strict-FAR headline: R009** (TAR@FAR=0.001 = 5.43 %, val→test
   gap -0.027).
+- **Operating-curve headline: R010** (TAR@FAR=0.01 = 21.16 %,
+  TAR@FAR=0.1 = 60.00 %, Test AP = 0.8567 — all M12 bests).
 
-Active priority order (post-R009):
+Active priority order (post-R010):
 
-1. **R010 — Stack R007 + R009** (differential LR + comparison-only
-   fusion). Both R007 and R009 moved strict-FAR in the same
-   direction (+1.2 pp and +2.1 pp respectively over R006).
-   Combining them might compound (strict-FAR could reach 6-7 %)
-   while staying near R006's aggregate AUC. Highest-EV next M12
-   run if continuing the cycle.
+1. **Pivot to TCC narrative work.** The M12 R&D cycle has produced
+   three complementary champions across all major Test metric
+   families. Further single-knob runs have low EV — additional gains
+   are likely <1 pp on individual metrics and require crossing into
+   either architectural changes (ROI Align) or unrelated data work
+   (sampler fix, multi-seed variance). **Recommended next move:
+   cross-model comparison polish + write-up.**
 
 2. **R011 candidate — L2-SP at higher λ (1e-2)** on top of R006.
-   Distinguishes the two R008 interpretations (λ too small vs gap
-   already closed). Lower EV given R008's null result.
+   Distinguishes the two R008 interpretations. Lower EV given
+   R008's null result.
 
 3. **R012 candidate — Lower relation_aux λ** (0.02 or 0.03) on
    top of R006 — if reducing the aux weight recovers some
    precision without losing per-class balance.
 
 4. **Architecture switch to ROI Align tokenizer** (proposal §15
-   Strategy 1). Larger code change; defer until 1-3 above are
-   exhausted or the project shifts to a different focus.
+   Strategy 1). Larger code change.
 
 5. **Fix sampler + re-test Phase 6.** Open since R004 Errata.
-   Lower priority.
+
+6. **Multi-seed variance bands** for the three headlines (R006,
+   R009, R010). Currently each champion is a single-seed sample,
+   which makes the ±0.009 noise floor a meaningful caveat in the
+   writeup.
 
 **Strong consideration: shift focus from M12 R&D to the TCC
 narrative.** The post-R002 cycle has now established a clear

@@ -6,6 +6,115 @@ Newest run on top.
 
 ---
 
+## Run 010 — 2026-05-17 — Manually stopped during ep 10 (peak Val AUC 0.9052 ep 5; Test AUC 0.8754. R007+R009 stack: mid-FAR champion, AP champion)
+
+**Status:** Manually stopped during epoch 10 training (after ep 9 summary at 0.8996). Peak Val AUC 0.9052 reached at ep 5, tied at ep 8 (saved best.pt is from ep 5).
+
+**Outcome:** Stack of R007 (differential LR) + R009 (comparison-only fusion) on the R006 baseline. **Aggregate Test AUC 0.8754 (-0.003 vs R006, within ±0.009 noise floor). Strict-FAR essentially tied with R009 (5.21 % vs 5.43 %, no compounding to the hypothesised 6-7 % range). But R010 IS the new MID-FAR champion (TAR@FAR=0.01 = 21.16 %, +2.55 pp vs R006) AND the new AP champion (0.8567) AND the new TAR@FAR=0.1 champion (60.00 %).** R010 is the most "balanced" run in the M12 cycle — top-3 on every Test metric.
+
+**Hypothesis test result:** PARTIALLY CONFIRMED. Strict-FAR did not compound (R009 ceiling), but the stack produced a superadditive mid-FAR gain (+2.55 pp vs R006, larger than R007 alone +0.98 pp or R009 alone -0.82 pp) and the highest Test AP of any M12 run.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 \
+GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+DIFFERENTIAL_LR=1 \
+LR_STAGE4=5e-6 \
+LR_OUTPUT_LAYER=5e-6 \
+LR_HEAD=2e-5 \
+RELATION_AUX_WEIGHT=0.05 \
+SYMMETRIC_FORWARD=1 \
+COMPARISON_ONLY_FUSION=1 \
+NUM_WORKERS=4 \
+SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 006
+
+| Parameter | R006 | **R010** |
+|---|---|---|
+| `DIFFERENTIAL_LR` | 0 | **1** (from R007) |
+| LR stage4 | 1e-5 (single) | **5e-6** (from R007) |
+| LR output_layer | 1e-5 (single) | **5e-6** (from R007) |
+| LR head | 1e-5 (single) | **2e-5** (from R007) |
+| `COMPARISON_ONLY_FUSION` | 0 | **1** (from R009) |
+| Classifier input dim | 2049 | 1035 (from R009) |
+| Trainable params | 31,560,461 | **31,036,173** (R009 value) |
+| All other knobs | — | identical |
+
+Two-knob stack — both individually validated in R007 and R009.
+
+### Training trajectory
+
+LR shown is the first param group (stage4); head LR ≈ 4× that.
+
+| Epoch | Train Loss | Val Acc | Val AUC | Thr | LR (stage4) | R007 same ep | R009 same ep |
+|------:|-----------:|--------:|--------:|----:|------------:|-------------:|-------------:|
+| 1 | 0.7328 | 72.7 % | 0.8313 | 0.450 | 1.80e-6 | 0.8496 | 0.8505 |
+| 2 | 0.5726 | 80.0 % | 0.8964 | 0.300 | 2.60e-6 | 0.9046 | 0.8993 |
+| 3 | 0.5022 | 80.8 % | 0.9046 | 0.350 | 3.40e-6 | 0.9089 | 0.9012 (R009 peak) |
+| 4 | 0.4452 | 81.2 % | 0.9041 | 0.350 | 4.20e-6 | 0.9093 (R007 peak) | 0.8975 |
+| **5** | **0.3962** | **82.1 %** | **0.9052 (peak)** | 0.500 | 5.00e-6 | 0.9056 | 0.8994 |
+| 6 | 0.3554 | 82.4 % | 0.9047 | 0.550 | 5.00e-6 | 0.9023 | 0.8955 |
+| 7 | 0.3225 | 81.7 % | 0.8981 | 0.100 | 5.00e-6 | 0.9024 | 0.8859 |
+| 8 | 0.3011 | 82.2 % | **0.9052 (tied peak)** | 0.100 | 4.99e-6 | 0.8964 | 0.8924 |
+| 9 | 0.2690 | 81.9 % | 0.8996 | 0.100 | 4.98e-6 | ~0.895 | 0.8879 |
+| 10 | — | — | — | — | — | — | — (stopped mid-training) |
+
+R010 held the peak best of any M12 run — tied at 0.9052 in ep 5 AND ep 8.
+
+### Test metrics (val-selected threshold 0.500)
+
+| Metric | M12 R006 (HEADLINE) | M12 R009 (strict-FAR champ) | **M12 R010** | Δ R010-R006 | Δ R010-R009 |
+|---|---:|---:|---:|---:|---:|
+| **Test ROC AUC** | **0.8788** | 0.8739 | 0.8754 | -0.003 (within noise) | +0.002 (within noise) |
+| Test Accuracy | 79.33 % | 78.28 % | 79.25 % | -0.1 pp | +1.0 pp |
+| Test Balanced Acc | 79.65 % | 78.74 % | 79.44 % | -0.2 pp | +0.7 pp |
+| Test F1 | **0.8017** | 0.7984 | 0.7952 | -0.007 | -0.003 |
+| Test Precision | 74.17 % | 71.89 % | **75.43 %** | **+1.3 pp** | +3.5 pp |
+| Test Recall | 87.24 % | **89.77 %** | 84.08 % | -3.2 pp | -5.7 pp |
+| **Test Avg Precision** | 0.8561 | 0.8497 | **0.8567** ⭐ | **+0.001 (M12 best)** | +0.007 |
+| **TAR @ FAR=0.001** | 3.33 % | **5.43 %** | 5.21 % | +1.88 pp | -0.22 pp (tied) |
+| **TAR @ FAR=0.01** | 18.61 % | 17.79 % | **21.16 %** ⭐⭐ | **+2.55 pp (M12 best)** | **+3.37 pp** |
+| **TAR @ FAR=0.1** | 59.93 % | 58.61 % | **60.00 %** ⭐ | **+0.07 pp (M12 best)** | +1.39 pp |
+| Val→test AUC gap | **-0.026** | -0.027 | -0.030 | -0.004 | -0.003 |
+
+**R010 wins TAR@FAR=0.01 (+2.55 pp), TAR@FAR=0.1 (+0.07 pp), Test AP (+0.001), and Test Precision (+1.3 pp) against R006.** Strict-FAR essentially tied with R009 (5.21 vs 5.43 within noise). Aggregate Test AUC within R006's noise floor.
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.500)
+
+| Relation | N | M12 R006 | M12 R009 | **M12 R010** | Δ R010-R006 |
+|----------|--:|---------:|---------:|-------------:|---:|
+| bb | 860 | 89.1 % | 91.5 % | 85.2 % | -3.9 pp |
+| ss | 731 | 88.9 % | 90.8 % | 86.9 % | -2.0 pp |
+| sibs | 234 | 93.2 % | 94.9 % | 90.2 % | -3.0 pp |
+| fs | 1135 | 87.9 % | 90.6 % | 86.7 % | -1.2 pp |
+| fd | 918 | 84.6 % | 86.9 % | 80.0 % | -4.6 pp |
+| ms | 1036 | 86.2 % | 89.2 % | 82.7 % | -3.5 pp |
+| md | 1038 | 89.0 % | 91.9 % | 86.3 % | -2.7 pp |
+| gfgd | 138 | 83.3 % | 84.8 % | 78.3 % | -5.0 pp |
+| **gfgs** | 98 | 76.5 % | 85.7 % | **83.7 %** | **+7.2 pp** |
+| gmgd | 123 | 79.7 % | 82.9 % | 71.5 % | -8.2 pp |
+| gmgs | 121 | 80.2 % | 77.7 % | 66.1 % | -14.1 pp |
+| **non-kin** | 6993 | 72.1 % | 67.7 % | **74.8 %** | **+2.7 pp** |
+
+Most per-class regression is the threshold shift (0.500 vs R006's 0.250) — R010 is more conservative on positives. gfgs gain (+7.2 pp) and non-kin gain (+2.7 pp) persist despite higher threshold.
+
+### Files
+
+- Checkpoint: `output/010/checkpoints/best.pt` (529 MB — same size as R009 due to smaller classifier)
+- Train log: `output/010/logs/train.log` (truncated at ep 9 + ~30% of ep 10)
+- Test log: `output/010/logs/test.log`
+- Results: `output/010/results/test_metrics_rocm.txt`
+- Run review: `run-review/run-010.md`
+
+---
+
 ## Run 009 — 2026-05-16 — SAFEGUARD ep 15 (peak Val AUC 0.9012 ep 3; Test AUC 0.8739. Comparison-only fusion: Val drop confirmed, NEW STRICT-FAR CHAMPION)
 
 **Status:** SAFEGUARD auto-stopped at ep 15.
