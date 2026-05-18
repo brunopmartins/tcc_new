@@ -1,0 +1,107 @@
+\chapter[Resultados Experimentais]{Resultados Experimentais}
+\label{cap:resultados}
+
+Este capítulo apresenta os resultados finais obtidos no benchmark Families in the Wild (FIW), avaliado por validação cruzada de cinco dobras em nível de família. A comparação principal envolve cinco modelos: a linha de base sem treinamento B0, o Modelo 02 com Vision Transformer e atenção cruzada bidirecional, o Modelo 05 com DINOv2 e LoRA, o Modelo 06 aumentado por recuperação, e o Modelo 12, proposta autoral deste trabalho. A unidade experimental reportada é a média sobre as dobras de teste, com limiar escolhido exclusivamente em validação.
+
+A métrica principal é o ROC AUC, por ser independente do limiar de decisão. Average Precision e TAR@FAR complementam essa leitura ao avaliar, respectivamente, a curva precisão-revocação e regimes de baixa falsa aceitação. A acurácia aparece principalmente na análise por tipo de relação, pois ajuda a identificar quais vínculos familiares permanecem mais difíceis para o modelo.
+
+\section{Resultados gerais em FIW}
+
+A Tabela~\ref{tab:fiw_main} resume os resultados dos cinco modelos centrais em FIW. Para o Modelo 12, são incluídas as três configurações mais relevantes porque elas representam regimes operacionais distintos: R006 maximiza AUC, R009 melhora o regime de falsa aceitação extremamente baixa, e R010 apresenta o melhor equilíbrio em Average Precision e TAR@FAR=0,01.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\caption{Resultados gerais em FIW sob validação cruzada de cinco dobras em nível de família.}
+\label{tab:fiw_main}
+\begin{tabular}{lrrrrr}
+\hline
+\textbf{Modelo} & \textbf{AUC médio} & \textbf{Avg Prec.} & \textbf{TAR@FAR=0,001} & \textbf{TAR@FAR=0,01} & \textbf{TAR@FAR=0,1} \\
+\hline
+M12 R006 & \textbf{0{,}879} & 0{,}856          & 0{,}033          & 0{,}186          & 0{,}599 \\
+M12 R009 & 0{,}874          & 0{,}850          & 0{,}054          & 0{,}178          & 0{,}586 \\
+M12 R010 & 0{,}875          & \textbf{0{,}857} & 0{,}052          & 0{,}212          & \textbf{0{,}600} \\
+M02 R031 & 0{,}850          & 0{,}817          & 0{,}025          & 0{,}140          & 0{,}499 \\
+M05 R005 & 0{,}822          & ---              & ---              & 0{,}100          & --- \\
+B0       & 0{,}799          & 0{,}809          & \textbf{0{,}071} & \textbf{0{,}218} & 0{,}524 \\
+M06 R001 & 0{,}776          & ---              & ---              & 0{,}062          & --- \\
+\hline
+\end{tabular}
+\end{table}
+
+O Modelo 12 R006 obteve o maior AUC médio do estudo, com 0,879. O ganho em relação ao Modelo 02, melhor arquitetura supervisionada anterior do projeto, é de +0,029 AUC. Em relação à linha de base B0, que usa AdaFace congelado com similaridade cosseno e não recebe treinamento específico para parentesco, o ganho é de +0,080 AUC. Esse resultado indica que a proposta regional do Modelo 12 agrega informação relevante ao sinal de reconhecimento facial já presente no AdaFace.
+
+A leitura das métricas TAR@FAR exige cuidado adicional. Embora o Modelo 12 R006 lidere em AUC, o B0 ainda apresenta os maiores valores absolutos em TAR@FAR=0,001 e TAR@FAR=0,01. Isso mostra que o extrator facial pronto permanece forte em regimes de falsa aceitação muito baixa. Em contrapartida, as variantes R009 e R010 do Modelo 12 reduzem essa distância: R009 é a melhor variante treinada em TAR@FAR=0,001, enquanto R010 lidera Average Precision, TAR@FAR=0,01 e TAR@FAR=0,1 dentro da família do Modelo 12.
+
+O Modelo 05 alcança AUC 0,822, desempenho intermediário entre a linha de base B0 e o Modelo 02. Seu principal mérito está na adaptação eficiente em parâmetros, especialmente nas configurações com LoRA. O Modelo 06, por sua vez, obtém AUC menor (0,776), mas apresenta comportamento relevante na análise por relação, pois sua recuperação de pares positivos tende a suavizar diferenças entre classes raras e frequentes.
+
+\section{Análise por tipo de relação}
+
+A análise por tipo de relação permite observar se o ganho global do Modelo 12 ocorre de forma homogênea ou se se concentra em determinados vínculos familiares. A Tabela~\ref{tab:per_rel_compare} compara quatro variantes do Modelo 12. A R002 representa a primeira configuração competitiva com descongelamento parcial; a R006 adiciona cabeça auxiliar de relação e passagem simétrica; a R009 remove os vetores globais crus da fusão final; e a R010 combina a fusão apenas comparativa com taxas de aprendizado diferenciadas.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\caption{Acurácia por tipo de relação em FIW para as principais variantes do Modelo 12.}
+\label{tab:per_rel_compare}
+\begin{tabular}{lrrrrr}
+\hline
+\textbf{Relação} & \textbf{N pares} & \textbf{R002} & \textbf{R006} & \textbf{R009} & \textbf{R010} \\
+\hline
+fs (pai-filho)      & 1.135 & 68{,}6\% & 87{,}9\% & \textbf{90{,}6\%} & 86{,}7\% \\
+fd (pai-filha)      & 918   & 68{,}4\% & 84{,}6\% & \textbf{86{,}9\%} & 80{,}0\% \\
+ms (mãe-filho)      & 1.036 & 69{,}4\% & 86{,}2\% & \textbf{89{,}2\%} & 82{,}7\% \\
+md (mãe-filha)      & 1.038 & 68{,}7\% & 89{,}0\% & \textbf{91{,}9\%} & 86{,}3\% \\
+bb (irmão-irmão)    & 860   & 75{,}4\% & 89{,}1\% & \textbf{91{,}5\%} & 85{,}2\% \\
+ss (irmã-irmã)      & 731   & 75{,}9\% & 88{,}9\% & \textbf{90{,}8\%} & 86{,}9\% \\
+sibs (irmãos misto) & 234   & 79{,}5\% & 93{,}2\% & \textbf{94{,}9\%} & 90{,}2\% \\
+\hline
+gfgs (avô-neto)     & 98  & 39{,}8\% & 76{,}5\% & \textbf{85{,}7\%} & 83{,}7\% \\
+gfgd (avô-neta)     & 138 & 52{,}2\% & 83{,}3\% & \textbf{84{,}8\%} & 78{,}3\% \\
+gmgs (avó-neto)     & 121 & 44{,}6\% & \textbf{80{,}2\%} & 77{,}7\% & 66{,}1\% \\
+gmgd (avó-neta)     & 123 & 36{,}6\% & 79{,}7\% & \textbf{82{,}9\%} & 71{,}5\% \\
+\hline
+non-kin             & 6.993 & \textbf{84{,}0\%} & 72{,}1\% & 67{,}7\% & 74{,}8\% \\
+\hline
+\end{tabular}
+\end{table}
+
+Nas relações entre pais e filhos, o Modelo 12 apresenta salto consistente após a passagem simétrica. Em R002, as quatro classes de pai/mãe e filho/filha ficam próximas de 68\% a 69\%. Em R006, sobem para a faixa de 84{,}6\% a 89{,}0\%. A R009 obtém os maiores valores nessas relações, chegando a 91{,}9\% em mãe-filha. Esse comportamento sugere que a simetrização da ordem do par e a cabeça auxiliar ajudam o modelo a abandonar atalhos ligados à posição da imagem e a capturar melhor o padrão familiar.
+
+Nas relações entre irmãos, o desempenho também melhora de forma clara. As classes bb, ss e sibs passam da faixa de 75{,}4\% a 79{,}5\% em R002 para 88{,}9\% a 93{,}2\% em R006. A R009 novamente atinge os maiores valores, com 94{,}9\% em irmãos de gêneros distintos. Esse é o grupo em que o Modelo 12 apresenta desempenho mais estável, possivelmente porque irmãos tendem a ter menor diferença geracional do que pares de pais e filhos ou avós e netos.
+
+O avanço mais importante ocorre nas relações de avós e netos. Na R002, essas classes eram o principal gargalo do Modelo 12, com acurácias entre 36{,}6\% e 52{,}2\%. Após a combinação de cabeça auxiliar de relação e passagem simétrica, a R006 eleva essas classes para a faixa de 76{,}5\% a 83{,}3\%. A R009 melhora três das quatro relações de segundo grau e leva gfgs, antes uma das classes mais frágeis, a 85{,}7\%.
+
+O ponto ainda problemático é a classe non-kin. A R002 apresenta 84{,}0\% nessa classe, mas as variantes que melhoram as classes positivas reduzem a acurácia em não-parentes, chegando a 67{,}7\% em R009. Esse resultado indica um deslocamento do ponto operacional em direção à revocação dos pares positivos. A R010 recupera parte da especificidade em non-kin (74{,}8\%) e melhora TAR@FAR=0,01, mas perde desempenho em algumas classes positivas. Assim, o melhor regime depende do custo relativo entre falso positivo e falso negativo.
+
+\section{Linhas de base com modelos multimodais}
+
+Além dos modelos supervisionados, dois VLMs foram avaliados em uma tarefa complementar: classificação multiclasse das onze relações positivas do FIW. Essa tarefa não é equivalente à verificação binária de parentesco e, por isso, os resultados não são comparados diretamente com os modelos supervisionados.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{Resultados das linhas de base com VLMs em classificação multiclasse de onze relações positivas.}
+\label{tab:vlm_resultados}
+\begin{tabular}{lllr}
+\hline
+\textbf{Modelo} & \textbf{Regime} & \textbf{Amostra} & \textbf{Acurácia} \\
+\hline
+Codex gpt-5.4-mini & Zero-shot                          & 750 pares balanceados & 33{,}1\% \\
+Codex gpt-5.4-mini & Adaptação por prompt (7-shot)      & 750 pares (mesmos)    & 26{,}7\% \\
+Codex gpt-5.4-mini & Prompts direcionados por treino    & 750 pares (mesmos)    & 28{,}4\% \\
+Claude Sonnet 4.6  & Zero-shot direto                   & 75 pares              & 37{,}3\% \\
+\hline
+\end{tabular}
+\end{table}
+
+O Codex em zero-shot obteve 33{,}1\% de acurácia. As estratégias de adaptação por prompt não melhoraram esse resultado, ficando em 26{,}7\% e 28{,}4\%. O Claude Sonnet atingiu 37{,}3\% no recorte de 75 pares, valor que deve ser lido apenas como indicação complementar, devido ao tamanho menor da amostra. O padrão mais relevante é que os VLMs falham de forma consistente nas relações de avós e netos, justamente o grupo em que o Modelo 12 apresenta a maior recuperação após a passagem simétrica. Esse contraste reforça que pistas visuais gerais de idade e gênero não bastam para resolver relações genealógicas finas sem treinamento específico.
+
+\section{Síntese dos resultados}
+
+Os resultados indicam que o Modelo 12 é a melhor arquitetura do estudo em AUC médio no FIW. O ganho de +0,080 AUC sobre B0 mostra que a proposta aprende informação específica de parentesco além da similaridade facial genérica do AdaFace. O ganho de +0,029 AUC sobre o Modelo 02 mostra que a combinação entre backbone facial especializado, tokens regionais, cabeça auxiliar e passagem simétrica supera o ViT com atenção cruzada bidirecional sob o protocolo adotado.
+
+A análise por relação qualifica esse resultado. O maior avanço não está apenas no AUC global, mas na recuperação das relações de avós e netos, historicamente mais instáveis no FIW. Ao mesmo tempo, a queda em non-kin mostra que o modelo ainda exige escolha cuidadosa de ponto operacional quando falsos positivos têm custo alto. Por fim, a avaliação exploratória dos VLMs mostra que modelos multimodais generalistas ainda ficam abaixo dos supervisionados especializados para esse domínio, sobretudo nas relações de segundo grau.

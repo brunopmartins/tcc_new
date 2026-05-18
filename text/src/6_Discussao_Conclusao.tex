@@ -1,0 +1,46 @@
+\chapter[Discussão e Conclusão]{Discussão e Conclusão}
+\label{cap:conclusao}
+
+Este capítulo interpreta os resultados apresentados no Capítulo~\ref{cap:resultados}, explicita as contribuições do trabalho e discute as limitações metodológicas, práticas e éticas da verificação visual de parentesco facial. A análise retoma o problema de pesquisa formulado na introdução: avaliar em que medida uma arquitetura supervisionada especializada, baseada em backbone facial, descongelamento parcial e tokens regionais anatômicos, supera uma linha de base sem treinamento e arquiteturas supervisionadas alternativas no FIW.
+
+\section{Discussão dos achados}
+
+O principal achado experimental é que o Modelo 12 R006 obteve o maior AUC médio do estudo, com 0,879. Esse valor supera o Modelo 02 R031 em +0,029 AUC e a linha de base B0 em +0,080 AUC. A diferença para B0 é especialmente importante porque o B0 já usa um extrator facial forte, AdaFace IR-101, treinado em reconhecimento de identidade. Portanto, o ganho do Modelo 12 não decorre apenas de usar um backbone facial especializado, mas de adaptar esse backbone à tarefa de parentesco por meio de descongelamento parcial, comparação regional e passagem simétrica.
+
+A passagem simétrica foi a intervenção mais decisiva do ciclo de ablações. Antes dela, o Modelo 12 R002 já alcançava AUC competitivo (0,856), mas apresentava fragilidade nas classes de avós e netos. A R006 reduz a diferença validação-teste e eleva essas relações de segundo grau para a faixa de 76{,}5\% a 83{,}3\%. Esse resultado sugere que parte do erro anterior estava associada a atalhos dependentes da ordem do par, e não apenas à dificuldade visual intrínseca das relações de segundo grau.
+
+O resultado também mostra que não há um único melhor modelo para todos os regimes de uso. A R006 lidera o AUC médio, a R009 melhora o regime de TAR@FAR=0,001 entre as variantes treinadas do Modelo 12, e a R010 lidera Average Precision e TAR@FAR=0,01 dentro da família. Em aplicações nas quais falso positivo tem custo elevado, como triagem forense ou humanitária, essa distinção é relevante: AUC global alto não substitui a escolha explícita de um ponto operacional adequado.
+
+O comportamento do B0 reforça esse cuidado. Mesmo sem treinamento específico para parentesco, ele apresenta os maiores valores absolutos em TAR@FAR=0,001 e TAR@FAR=0,01. Isso mostra que embeddings de reconhecimento facial carregam sinal útil para parentesco e continuam fortes em regimes de falsa aceitação muito baixa. A contribuição do Modelo 12, portanto, não é tornar o B0 irrelevante, mas superar sua ordenação global e melhorar classes positivas difíceis, especialmente avós e netos.
+
+\section{Contribuições do trabalho}
+
+A primeira contribuição é o protocolo comparativo uniforme. O trabalho compara cinco modelos supervisionados sob a mesma formulação de verificação binária, com validação cruzada de cinco dobras em nível de família no FIW, seleção de limiar em validação e métricas independentes de limiar. Essa uniformização reduz uma fragilidade recorrente na literatura de parentesco facial: a comparação direta de números obtidos sob partições, métricas e critérios de decisão diferentes.
+
+A segunda contribuição é a proposta arquitetônica do Modelo 12. O modelo combina AdaFace IR-101 parcialmente descongelado, cinco tokens regionais anatômicos, atenção cruzada entre regiões, gate sigmoide, cabeça auxiliar de relação e passagem simétrica. O resultado não é apenas uma variação incremental de backbone: a arquitetura introduz uma forma explícita de comparar regiões faciais e força consistência entre as duas ordens do par, aspecto importante para uma tarefa que deveria ser simétrica.
+
+A terceira contribuição é a análise por relação. Em vez de reportar apenas métricas globais, o trabalho mostra como o desempenho varia entre pais e filhos, mães e filhos, irmãos, avós e netos, além da classe non-kin. Essa análise evidencia que o ganho mais relevante do Modelo 12 ocorre nas relações de segundo grau, que são justamente as mais difíceis e menos estáveis no FIW. Também mostra o custo operacional das variantes que favorecem pares positivos: melhora em classes de parentes pode vir acompanhada de queda em não-parentes.
+
+A quarta contribuição é a avaliação exploratória de VLMs. Codex e Claude Sonnet foram avaliados em classificação multiclasse das onze relações positivas do FIW, tarefa diferente da verificação binária dos modelos supervisionados. Ainda assim, os resultados ajudam a delimitar o alcance atual de modelos multimodais generalistas nesse domínio. O desempenho baixo, especialmente nas relações de avós e netos, indica que modelos zero-shot não substituem treinamento supervisionado específico para parentesco facial.
+
+\section{Limitações}
+
+Os resultados devem ser interpretados dentro do escopo dos bancos avaliados. A validação cruzada de cinco dobras em FIW reduz a dependência de uma única partição, mas não garante generalização para bases externas, imagens de baixa qualidade, populações demograficamente distintas ou cenários operacionais reais. A literatura sobre reconhecimento facial e parentesco facial registra perdas relevantes em generalização entre bases, e esse risco permanece mesmo quando o desempenho interno em FIW é alto.
+
+Outra limitação está na interpretação causal das ablações. O trabalho mostra que o conjunto formado por descongelamento parcial, estrutura regional, cabeça auxiliar e passagem simétrica melhora o desempenho do Modelo 12. No entanto, o efeito isolado de cada componente deve ser lido com cautela, porque algumas variantes combinam mais de uma mudança arquitetônica ou de treinamento. A conclusão mais defensável é que a combinação proposta melhora o desempenho sob o protocolo adotado, e que a passagem simétrica aparece como a intervenção mais consistente dentro das ablações realizadas.
+
+A avaliação com VLMs também possui escopo restrito. Ela mede classificação multiclasse de relações positivas, não verificação binária de parentesco, e por isso não deve ser tratada como competição direta com os modelos supervisionados. Seu papel é exploratório: indicar se modelos multimodais generalistas conseguem reconhecer relações familiares finas a partir de imagens pareadas. Os resultados sugerem que essa capacidade ainda é limitada.
+
+\section{Implicações práticas e éticas}
+
+A verificação visual de parentesco facial pode ter utilidade como ferramenta auxiliar em contextos de triagem, busca familiar e apoio investigativo. No entanto, os resultados deste trabalho não autorizam uso decisório isolado. Mesmo o melhor AUC obtido ainda implica falsos positivos e falsos negativos, e esses erros têm custo elevado em contextos forenses, humanitários e envolvendo populações vulneráveis.
+
+O uso responsável exige que a análise facial seja tratada como apoio à decisão humana qualificada, nunca como substituto de DNA, documentação oficial, investigação social ou avaliação especializada. Também exige registro das decisões, possibilidade de contestação, controle de acesso aos dados e avaliação contínua de erro por grupo demográfico. Como se trata de biometria facial, consentimento, privacidade e base legal são condições centrais para qualquer aplicação fora do ambiente experimental.
+
+\section{Conclusão}
+
+O objetivo geral do trabalho foi avaliar uma proposta supervisionada especializada para verificação visual de parentesco facial e compará-la com linhas de base e arquiteturas alternativas sob um protocolo comum. Esse objetivo foi atendido. O Modelo 12 R006 alcançou o maior AUC médio em FIW (0,879), superando o Modelo 02 em +0,029 AUC e a linha de base B0 em +0,080 AUC.
+
+A resposta ao problema de pesquisa é, portanto, positiva dentro do escopo experimental definido: uma arquitetura que combina backbone facial especializado, descongelamento parcial, tokens regionais anatômicos, cabeça auxiliar de relação e passagem simétrica supera a linha de base sem treinamento e as arquiteturas supervisionadas alternativas avaliadas no FIW. O ganho é mais expressivo quando observado por tipo de relação, sobretudo nas classes de avós e netos.
+
+O trabalho também mostra que o avanço em AUC não elimina a necessidade de leitura operacional. Em regimes de falsa aceitação muito baixa, o B0 permanece competitivo; em classes positivas raras, o Modelo 12 apresenta ganhos substanciais; e em VLMs zero-shot, o desempenho ainda é insuficiente para substituir modelos supervisionados. Assim, a principal contribuição do TCC é metodológica e experimental: organizar uma comparação controlada, propor uma arquitetura regional eficaz e demonstrar, por análise global e por relação, onde a verificação visual de parentesco facial avança e onde ainda exige cautela.
