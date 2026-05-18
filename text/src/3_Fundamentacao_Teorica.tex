@@ -1,5 +1,5 @@
 \chapter[Fundamentação Teórica]{Fundamentação Teórica}
-\label{cap:Fundamentação Teórica}
+\label{cap:fundamentacao-teorica}
 
 Os conceitos apresentados aqui cobrem o mínimo necessário para entender as escolhas metodológicas do Capítulo~\ref{cap:Metodologia}, sem incluir tutoriais gerais de aprendizado profundo.
 
@@ -50,7 +50,7 @@ Cross-attention é uma variante da self-attention em que as queries vêm de uma 
 
 onde $W_Q$, $W_K$ e $W_V$ são matrizes aprendíveis. A versão bidirecional alterna o papel das duas faces ao longo de camadas sucessivas, e o efeito prático é que o modelo aprende quais regiões da face $a$ comparar com quais regiões da face $b$, em vez de operar só sobre embeddings globais. Este é o módulo central do FaCoR \cite{su2023facornet} e do Modelo 02 deste trabalho.
 
-Uma variante recente reduz drasticamente o número de tokens envolvidos na cross-attention ao trocar patches densos por regiões anatômicas fixas. Em vez de 196 tokens espaciais como no ViT base, define-se um pequeno conjunto de regiões da face (por exemplo, global, olhos, nariz, boca e mandíbula) e cada região vira um único token. A cross-region attention opera sobre uma matriz pequena, da ordem de cinco por cinco no caso anatômico, e fornece um prior estrutural ao restringir explicitamente onde o modelo compara as duas faces. O Modelo 12 deste trabalho usa essa abordagem regional combinada com um mecanismo de gate sigmoide que aprende pesos por região, permitindo que múltiplas regiões sejam salientes ao mesmo tempo.
+Uma variante explorada por este trabalho reduz drasticamente o número de tokens envolvidos na cross-attention ao trocar patches densos por regiões anatômicas fixas. Em vez de 196 tokens espaciais como no ViT base, define-se um pequeno conjunto de regiões da face (por exemplo, global, olhos, nariz, boca e mandíbula) e cada região vira um único token. A cross-region attention opera sobre uma matriz pequena, da ordem de cinco por cinco no caso anatômico, e fornece um prior estrutural ao restringir explicitamente onde o modelo compara as duas faces. A formulação completa, descrita no Capítulo~\ref{cap:Metodologia}, combina os tokens regionais com um mecanismo de gate sigmoide aprendido por região, permitindo que múltiplas regiões sejam salientes simultaneamente. Esta é a contribuição arquitetônica do Modelo 12 deste trabalho, e na literatura consultada não foi encontrada combinação equivalente aplicada a verificação de parentesco facial.
 
 Uma variante mais recente, a atenção diferencial \cite{ye2024differential},
 divide cada cabeça de atenção em duas metades e computa a atenção como diferença entre dois mapas softmax,
@@ -76,7 +76,7 @@ onde $A \in \mathbb{R}^{r \times d}$ e $B \in \mathbb{R}^{d \times r}$ são as m
 
 \section{Fusão de features multibackbone}
 
-Modelos com mais de um backbone, como o híbrido ConvNeXt mais ViT do Modelo 03, precisam combinar as representações de cada ramo em um único embedding antes da projeção final. As estratégias de fusão variam em expressividade. A mais simples é a concatenação direta dos vetores de cada ramo, seguida de uma projeção linear. O gating multiplicativo aprende um vetor de pesos por dimensão que pondera as contribuições de cada ramo. A fusão bilinear computa o produto externo entre os dois vetores e captura interações em todas as combinações de features. A fusão por atenção trata cada vetor como um token e aprende pesos de mistura por meio de um mecanismo de atenção sobre os dois ramos. Em geral, fusões mais expressivas têm mais parâmetros e mais risco de overfitting, e a literatura mostra que a concatenação simples é difícil de superar quando os dados de treino são limitados.
+Modelos com mais de um backbone, como o híbrido ConvNeXt mais ViT do Modelo 03, precisam combinar as representações de cada ramo em um único embedding antes da projeção final. As estratégias de fusão variam em expressividade. A mais simples é a concatenação direta dos vetores de cada ramo, seguida de uma projeção linear. O gating multiplicativo aprende um vetor de pesos por dimensão que pondera as contribuições de cada ramo. A fusão bilinear computa o produto externo entre os dois vetores e captura interações em todas as combinações de features. A fusão por atenção trata cada vetor como um token e aprende pesos de mistura por meio de um mecanismo de atenção sobre os dois ramos. Em geral, fusões mais expressivas têm mais parâmetros e mais risco de overfitting, e a concatenação simples costuma ser competitiva quando os dados de treino são limitados, padrão observado em diversos estudos comparativos de fusão multimodal e replicado no presente trabalho no Modelo 03.
 
 \section{Modelos retrieval-augmented}
 
@@ -86,7 +86,7 @@ A formulação básica para verificação de parentesco é direta. Dado um par d
 
 \section{Funções de perda}
 
-A função de perda mais simples para verificação binária é a entropia cruzada binária, BCE, aplicada sobre o logit produzido pela cabeça final do modelo. BCE não impõe nenhuma estrutura sobre o espaço de embeddings e por isso é insuficiente quando o objetivo é manter pares positivos próximos e pares negativos distantes no embedding. Para isso usa-se uma família de perdas baseadas em metric learning.
+A função de perda mais simples para verificação binária é a entropia cruzada binária, BCE, aplicada sobre o logit produzido pela cabeça final do modelo. BCE funciona como critério de classificação direta, mas não impõe explicitamente uma restrição geométrica sobre o espaço de embeddings, e por isso é usada em conjunto com uma família de perdas de metric learning quando o objetivo é manter pares positivos próximos e pares negativos distantes no embedding.
 
 A Contrastive Loss clássica, proposta por \citeonline{hadsell2006contrastive}, trabalha sobre pares de imagens e aproxima positivos enquanto afasta negativos até uma margem $m$. Em sua versão com distância cosseno,
 
@@ -99,7 +99,7 @@ em que $y$ é o rótulo do par, com 1 para parente e 0 para não-parente, $z_a$ 
 
 Em vez de pares, a Triplet Loss \citeonline{schroff2015facenet} opera sobre trios formados por uma âncora $z_a$, um positivo $z_p$ que pertence à mesma classe da âncora, e um negativo $z_n$ que pertence a classe diferente. A perda força a distância entre âncora e positivo a ser menor que a distância entre âncora e negativo por uma margem mínima.
 
-A perda escolhida nos melhores runs deste trabalho é a Supervised Contrastive Loss \cite{khosla2020supervised}, que generaliza a Contrastive Loss para múltiplos positivos por amostra no batch e estende o efeito de regularização do contraste para classificação supervisionada. A versão adotada usa distância cosseno e margem $m = 0{,}3$, e é a referência citada como Supervised Contrastive no Capítulo~\ref{cap:Metodologia}.
+A Supervised Contrastive Loss \cite{khosla2020supervised} generaliza a Contrastive Loss para múltiplos positivos por amostra no batch e estende o efeito de regularização do contraste para classificação supervisionada. A formulação canônica dos autores usa similaridade cosseno escalada por temperatura e soma sobre todos os positivos no batch, sem margem explícita. A versão implementada nas execuções referenciadas como Supervised Contrastive no Capítulo~\ref{cap:Metodologia} é uma adaptação operacional do conceito, com distância cosseno entre pares e margem $m = 0{,}3$, mais próxima da Contrastive Loss clássica do que da formulação canônica de Khosla. A escolha foi guiada por estabilidade empírica em FIW e por simplicidade de implementação no pipeline binário dos modelos avaliados.
 
 A escolha entre essas perdas afeta diretamente a geometria do espaço de embeddings aprendido. Perdas com margem produzem clusters mais compactos e mais separáveis, o que é útil tanto para verificação quanto para classificação de relação.
 
@@ -107,7 +107,7 @@ A escolha entre essas perdas afeta diretamente a geometria do espaço de embeddi
 
 A diferença de idade entre pais e filhos é um confundidor conhecido em verificação de parentesco. Quando o pai aparece com 50 anos e o filho com 20, a similaridade facial é parcialmente mascarada por mudanças associadas ao envelhecimento. Métodos de síntese de idade tentam neutralizar esse efeito, gerando variantes etárias da face de cada indivíduo antes da comparação.
 
-O SAM, sigla em inglês para Style-based Age Manipulation \cite{alaluf2022sam}, é uma implementação dessa ideia baseada em StyleGAN. O método aprende um mapeamento entre o espaço latente do gerador e a idade alvo, e produz, a partir de uma única imagem, variantes do mesmo rosto em diferentes idades. Neste trabalho, três variantes etárias por face (criança, jovem e idosa) servem de entrada para um esquema de invariância geracional aplicado aos cinco modelos supervisionados, descrito no Capítulo~\ref{cap:Metodologia}. A decisão final combina o par original com os três pares etários por uma média convexa, com peso maior na comparação original. A limitação prática é que o SAM exige pesos pré-treinados específicos de cerca de 4,5 GB e nem todos os runs puderam ativá-lo.
+O SAM, sigla em inglês para Style-based Age Manipulation \cite{alaluf2022sam}, é uma implementação dessa ideia baseada em StyleGAN. O método aprende um mapeamento entre o espaço latente do gerador e a idade alvo, e produz, a partir de uma única imagem, variantes do mesmo rosto em diferentes idades. Como linha de pesquisa parcialmente executada neste trabalho, foi formulado um esquema de invariância geracional baseado em três variantes etárias por face (criança, jovem e idosa) que poderia, em princípio, ser aplicado de forma uniforme aos modelos supervisionados. Na prática, apenas o Modelo 01 teve o SAM integrado ao pipeline, e mesmo nele apenas parte das execuções operou com o módulo ativo devido ao requisito de pesos pré-treinados específicos de cerca de 4,5 GB. Os Modelos 02, 05, 06 e 12 não usam síntese de idade, e a invariância geracional fica registrada como direção exploratória futura. A descrição completa do esquema e da sua aplicação parcial está no Capítulo~\ref{cap:Metodologia}.
 
 \section{Modelos multimodais visão-linguagem}
 
