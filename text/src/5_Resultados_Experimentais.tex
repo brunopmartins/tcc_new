@@ -1,40 +1,124 @@
 \chapter[Resultados Experimentais]{Resultados Experimentais}
 \label{cap:resultados}
 
-Este capítulo apresenta os resultados finais obtidos no benchmark Families in the Wild (FIW), avaliado por validação cruzada de cinco dobras em nível de família. A comparação principal envolve cinco modelos: a linha de base sem treinamento B0, o Modelo 02 com Vision Transformer e atenção cruzada bidirecional, o Modelo 05 com DINOv2 e LoRA, o Modelo 06 aumentado por recuperação, e o Modelo 12, proposta autoral deste trabalho. A unidade experimental reportada é a média sobre as dobras de teste, com limiar escolhido exclusivamente em validação.
+Este capítulo apresenta os resultados obtidos no benchmark Families in the Wild (FIW). O protocolo final de comparação em FIW usa validação cruzada de cinco dobras em nível de família, com limiar escolhido exclusivamente em validação e métricas reportadas como média e desvio padrão. Como as execuções de validação cruzada ainda estão em consolidação nesta versão do texto, as tabelas numéricas em FIW registram a execução família-disjunta já consolidada que serviu de referência experimental. Na versão final da submissão, esses valores devem ser substituídos pelas médias e desvios das cinco dobras.
 
 A métrica principal é o ROC AUC, por ser independente do limiar de decisão. Average Precision e TAR@FAR complementam essa leitura ao avaliar, respectivamente, a curva precisão-revocação e regimes de baixa falsa aceitação. A acurácia aparece principalmente na análise por tipo de relação, pois ajuda a identificar quais vínculos familiares permanecem mais difíceis para o modelo.
 
 \section{Resultados gerais em FIW}
 
-A Tabela~\ref{tab:fiw_main} resume os resultados dos cinco modelos centrais em FIW. Para o Modelo 12, são incluídas as três configurações mais relevantes porque elas representam regimes operacionais distintos: R006 maximiza AUC, R009 melhora o regime de falsa aceitação extremamente baixa, e R010 apresenta o melhor equilíbrio em Average Precision e TAR@FAR=0,01.
+A Tabela~\ref{tab:fiw_main} resume os resultados de referência dos cinco modelos centrais em FIW, obtidos na execução família-disjunta já consolidada. Para o Modelo 12, são incluídas as três configurações mais relevantes porque elas representam regimes operacionais distintos: R006 maximiza AUC, R009 melhora o regime de falsa aceitação extremamente baixa, e R010 apresenta o melhor equilíbrio em Average Precision e TAR@FAR=0,01.
 
 \begin{table}[h]
 \centering
 \small
 \setlength{\tabcolsep}{3pt}
-\caption{Resultados gerais em FIW sob validação cruzada de cinco dobras em nível de família.}
+\caption{Resultados gerais de referência em FIW na execução família-disjunta consolidada. A tabela final deve reportar média e desvio padrão sobre cinco dobras.}
 \label{tab:fiw_main}
 \begin{tabular}{lrrrrr}
 \hline
-\textbf{Modelo} & \textbf{AUC médio} & \textbf{Avg Prec.} & \textbf{TAR@FAR=0,001} & \textbf{TAR@FAR=0,01} & \textbf{TAR@FAR=0,1} \\
+\textbf{Modelo} & \textbf{AUC ref.} & \textbf{Avg Prec.} & \textbf{TAR@FAR=0,001} & \textbf{TAR@FAR=0,01} & \textbf{TAR@FAR=0,1} \\
 \hline
 M12 R006 & \textbf{0{,}879} & 0{,}856          & 0{,}033          & 0{,}186          & 0{,}599 \\
 M12 R009 & 0{,}874          & 0{,}850          & 0{,}054          & 0{,}178          & 0{,}586 \\
 M12 R010 & 0{,}875          & \textbf{0{,}857} & 0{,}052          & 0{,}212          & \textbf{0{,}600} \\
 M02 R031 & 0{,}850          & 0{,}817          & 0{,}025          & 0{,}140          & 0{,}499 \\
-M05 R005 & 0{,}822          & ---              & ---              & 0{,}100          & --- \\
+M05 R005 & 0{,}822          & 0{,}798          & 0{,}007          & 0{,}100          & 0{,}511 \\
 B0       & 0{,}799          & 0{,}809          & \textbf{0{,}071} & \textbf{0{,}218} & 0{,}524 \\
-M06 R001 & 0{,}776          & ---              & ---              & 0{,}062          & --- \\
+M06 R001 & 0{,}776          & 0{,}735          & 0{,}006          & 0{,}062          & 0{,}388 \\
 \hline
 \end{tabular}
 \end{table}
 
-O Modelo 12 R006 obteve o maior AUC médio do estudo, com 0,879. O ganho em relação ao Modelo 02, melhor arquitetura supervisionada anterior do projeto, é de +0,029 AUC. Em relação à linha de base B0, que usa AdaFace congelado com similaridade cosseno e não recebe treinamento específico para parentesco, o ganho é de +0,080 AUC. Esse resultado indica que a proposta regional do Modelo 12 agrega informação relevante ao sinal de reconhecimento facial já presente no AdaFace.
+Todos os valores da Tabela~\ref{tab:fiw_main} foram calculados na mesma partição de teste do FIW e, portanto, funcionam como referência preliminar, não como resultado final de validação cruzada. Diferenças pequenas devem ser interpretadas com cautela até que as cinco dobras estejam consolidadas. A auditoria do ciclo R004 do Modelo 12 indicou uma variação de cerca de 0,009 AUC associada apenas à reamostragem de negativos, valor que serve como referência prática para evitar conclusões fortes sobre diferenças marginais.
+
+O Modelo 12 R006 é a configuração principal do estudo, com AUC de referência 0,879. O ganho em relação ao Modelo 02, melhor arquitetura supervisionada anterior do projeto, é de +0,029 AUC nessa execução. Em relação à linha de base B0, que usa AdaFace congelado com similaridade cosseno e não recebe treinamento específico para parentesco, o ganho é de +0,080 AUC. Esse resultado indica que a proposta regional do Modelo 12 agrega informação relevante ao sinal de reconhecimento facial já presente no AdaFace, hipótese que deve ser confirmada pela média das cinco dobras.
 
 A leitura das métricas TAR@FAR exige cuidado adicional. Embora o Modelo 12 R006 lidere em AUC, o B0 ainda apresenta os maiores valores absolutos em TAR@FAR=0,001 e TAR@FAR=0,01. Isso mostra que o extrator facial pronto permanece forte em regimes de falsa aceitação muito baixa. Em contrapartida, as variantes R009 e R010 do Modelo 12 reduzem essa distância: R009 é a melhor variante treinada em TAR@FAR=0,001, enquanto R010 lidera Average Precision, TAR@FAR=0,01 e TAR@FAR=0,1 dentro da família do Modelo 12.
 
 O Modelo 05 alcança AUC 0,822, desempenho intermediário entre a linha de base B0 e o Modelo 02. Seu principal mérito está na adaptação eficiente em parâmetros, especialmente nas configurações com LoRA. O Modelo 06, por sua vez, obtém AUC menor (0,776), mas apresenta comportamento relevante na análise por relação, pois sua recuperação de pares positivos tende a suavizar diferenças entre classes raras e frequentes.
+
+\section{Ablações dos modelos exploratórios}
+
+O Modelo 05 foi avaliado em sete execuções, cobrindo regimes de plasticidade e variantes de treinamento. A Tabela~\ref{tab:m05_ablation} mostra que o melhor AUC da família ocorre no descongelamento completo do DINOv2 (R005), mas o melhor regime de TAR@FAR=0,01 ocorre na configuração LoRA-only inicial (R001). Isso impede uma leitura simplista de que a execução mais plástica é sempre superior.
+
+\begin{table}[h]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\caption{Ablações do Modelo 05 em FIW.}
+\label{tab:m05_ablation}
+\begin{tabular}{llrrrrr}
+\hline
+\textbf{Run} & \textbf{Regime} & \textbf{Params} & \textbf{AUC} & \textbf{Acc.} & \textbf{TAR@0,01} & \textbf{Gap val-teste} \\
+\hline
+R001 & LoRA-only                     & 8{,}5M  & 0{,}806 & 72{,}6\% & \textbf{0{,}152} & -0{,}105 \\
+R002 & regularização mais forte      & 8{,}5M  & 0{,}799 & 72{,}4\% & 0{,}095          & -0{,}106 \\
+R003 & sampler estratificado         & 8{,}5M  & 0{,}809 & 71{,}0\% & 0{,}098          & -0{,}100 \\
+R004 & descongelamento parcial       & 36{,}8M & 0{,}812 & 72{,}9\% & 0{,}119          & -0{,}099 \\
+R005 & descongelamento completo      & 93{,}5M & \textbf{0{,}822} & 72{,}0\% & 0{,}100 & \textbf{-0{,}071} \\
+R006 & perda contrastiva dominante   & 8{,}5M  & 0{,}814 & 72{,}9\% & 0{,}094          & -0{,}100 \\
+R007 & DINOv2 + ViT do M02           & 11{,}6M & 0{,}810 & 71{,}9\% & 0{,}136          & -0{,}097 \\
+\hline
+\end{tabular}
+\end{table}
+
+A leitura do Modelo 05 é negativa para a hipótese de que DINOv2 congelado com LoRA e atenção diferencial bastaria para superar o ViT com FaCoR. O teto observado permanece na faixa de 0,81 a 0,82 AUC, abaixo do Modelo 02. O descongelamento completo melhora o AUC e reduz o gap validação-teste, mas perde o regime de baixa falsa aceitação em que R001 era mais forte. A variante híbrida com pesos do ViT do Modelo 02 também não transfere o desempenho do sistema original, sugerindo que o ganho do Modelo 02 depende do conjunto backbone, atenção cruzada, perda e calibração, e não apenas do encoder isolado.
+
+O ciclo do Modelo 12 foi mais extenso porque nele está a contribuição autoral do trabalho. A Tabela~\ref{tab:m12_ablation} resume as principais execuções na partição de referência. R006 é a primeira execução que desloca o AUC de teste de forma substantiva em relação à R002, enquanto R009 e R010 ajustam o ponto operacional para regimes de falsa aceitação mais baixa.
+
+\begin{table}[h]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\caption{Ablações do Modelo 12 em FIW.}
+\label{tab:m12_ablation}
+\begin{tabular}{llrrrrr}
+\hline
+\textbf{Run} & \textbf{Intervenção principal} & \textbf{AUC} & \textbf{AP} & \textbf{TAR@0,001} & \textbf{TAR@0,01} & \textbf{Gap val-teste} \\
+\hline
+R001 & AdaFace congelado               & 0{,}746 & 0{,}732 & 0{,}024 & 0{,}101 & -0{,}089 \\
+R002 & descongelamento parcial          & 0{,}856 & 0{,}839 & 0{,}042 & 0{,}176 & -0{,}076 \\
+R003 & R002 + SupCon                    & 0{,}851 & 0{,}831 & 0{,}027 & 0{,}166 & -0{,}080 \\
+R004 & reamostragem de negativos        & 0{,}847 & 0{,}829 & 0{,}020 & 0{,}147 & -0{,}088 \\
+R005 & cabeça auxiliar de relação       & 0{,}848 & 0{,}829 & 0{,}029 & 0{,}167 & -0{,}084 \\
+R006 & passagem simétrica               & \textbf{0{,}879} & 0{,}856 & 0{,}033 & 0{,}186 & \textbf{-0{,}026} \\
+R007 & taxas de aprendizado diferenciadas & 0{,}873 & 0{,}852 & 0{,}045 & 0{,}196 & -0{,}036 \\
+R008 & regularização L2-SP              & \textbf{0{,}879} & 0{,}856 & 0{,}028 & 0{,}191 & \textbf{-0{,}026} \\
+R009 & fusão apenas comparativa         & 0{,}874 & 0{,}850 & \textbf{0{,}054} & 0{,}178 & -0{,}027 \\
+R010 & R007 + R009                      & 0{,}875 & \textbf{0{,}857} & 0{,}052 & \textbf{0{,}212} & -0{,}030 \\
+\hline
+\end{tabular}
+\end{table}
+
+A R004 deve ser interpretada com restrição metodológica: a auditoria posterior mostrou que o amostrador chamado \texttt{relation\_matched} não preservava efetivamente papel ou relação e, portanto, não testou a hipótese de negativos difíceis. Na prática, R004 mede uma variação de semente do amostrador. Já a passagem simétrica da R006 é a intervenção com evidência mais forte na partição de referência: aumenta o AUC em +0,022 sobre R002 e reduz o gap validação-teste de -0,076 para -0,026. A R008 empata numericamente com R006 em AUC arredondado, mas adiciona uma regularização que não trouxe ganho mensurável. R007, R009 e R010 não superam R006 em AUC, mas mostram que a escolha do melhor modelo depende do ponto operacional: R009 lidera TAR@FAR=0,001 entre as variantes treinadas, e R010 lidera Average Precision e TAR@FAR=0,01.
+
+\section{Resultado complementar em KinFaceW-I}
+
+O KinFaceW-I foi usado apenas como leitura complementar do Modelo 02, sob validação cruzada de cinco dobras. A Tabela~\ref{tab:kinface_m02} registra esse resultado separadamente porque o banco, as relações avaliadas e a unidade de particionamento diferem do FIW.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Modelo 02 em KinFaceW-I com validação cruzada de cinco dobras.}
+\label{tab:kinface_m02}
+\begin{tabular}{lrr}
+\hline
+\textbf{Métrica} & \textbf{Média} & \textbf{Desvio padrão} \\
+\hline
+Acurácia & 73{,}56\% & 5{,}84\% \\
+Precisão & 69{,}41\% & 6{,}29\% \\
+Revocação & 87{,}79\% & 6{,}15\% \\
+F1 & 0{,}771 & 0{,}028 \\
+ROC AUC & 0{,}842 & 0{,}012 \\
+Average Precision & 0{,}831 & 0{,}029 \\
+TAR@FAR=0{,}01 & 16{,}12\% & 10{,}75\% \\
+TAR@FAR=0{,}1 & 51{,}81\% & 9{,}80\% \\
+\hline
+\end{tabular}
+\end{table}
+
+O resultado em KinFaceW-I confirma que o Modelo 02 mantém capacidade discriminativa em um banco menor, mas também expõe instabilidade de limiar: a acurácia tem desvio de 5,84 pontos percentuais, enquanto o AUC varia apenas 0,012. Isso reforça a escolha de AUC como métrica principal e impede tratar acurácia isolada como medida robusta de comparação.
 
 \section{Análise por tipo de relação}
 
@@ -82,26 +166,47 @@ Além dos modelos supervisionados, dois VLMs foram avaliados em uma tarefa compl
 
 \begin{table}[h]
 \centering
-\small
-\setlength{\tabcolsep}{4pt}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
 \caption{Resultados das linhas de base com VLMs em classificação multiclasse de onze relações positivas.}
 \label{tab:vlm_resultados}
-\begin{tabular}{lllr}
+\begin{tabular}{lllrrrr}
 \hline
-\textbf{Modelo} & \textbf{Regime} & \textbf{Amostra} & \textbf{Acurácia} \\
+\textbf{Modelo} & \textbf{Regime} & \textbf{N} & \textbf{Acc.} & \textbf{Macro-P} & \textbf{Macro-R} & \textbf{Macro-F1} \\
 \hline
-Codex gpt-5.4-mini & Zero-shot                          & 750 pares balanceados & 33{,}1\% \\
-Codex gpt-5.4-mini & Adaptação por prompt (7-shot)      & 750 pares (mesmos)    & 26{,}7\% \\
-Codex gpt-5.4-mini & Prompts direcionados por treino    & 750 pares (mesmos)    & 28{,}4\% \\
-Claude Sonnet 4.6  & Zero-shot direto                   & 75 pares              & 37{,}3\% \\
+Codex & Zero-shot                     & 750 & 33{,}1\% & 0{,}245 & 0{,}320 & 0{,}257 \\
+Codex & Adaptação por prompt (7-shot) & 750 & 26{,}7\% & 0{,}203 & 0{,}260 & 0{,}223 \\
+Claude Sonnet & Zero-shot direto        & 75  & 37{,}3\% & 0{,}295 & 0{,}364 & 0{,}324 \\
 \hline
 \end{tabular}
 \end{table}
 
-O Codex em zero-shot obteve 33{,}1\% de acurácia. As estratégias de adaptação por prompt não melhoraram esse resultado, ficando em 26{,}7\% e 28{,}4\%. O Claude Sonnet atingiu 37{,}3\% no recorte de 75 pares, valor que deve ser lido apenas como indicação complementar, devido ao tamanho menor da amostra. O padrão mais relevante é que os VLMs falham de forma consistente nas relações de avós e netos, justamente o grupo em que o Modelo 12 apresenta a maior recuperação após a passagem simétrica. Esse contraste reforça que pistas visuais gerais de idade e gênero não bastam para resolver relações genealógicas finas sem treinamento específico.
+O Codex em zero-shot obteve 33{,}1\% de acurácia e macro-F1 de 0,257. A adaptação por prompt não melhorou esse resultado: caiu para 26{,}7\% de acurácia e macro-F1 de 0,223. O Claude Sonnet atingiu 37{,}3\% e macro-F1 de 0,324 no recorte de 75 pares, valor que deve ser lido apenas como indicação complementar, devido ao tamanho menor da amostra. O padrão mais relevante é que os VLMs falham de forma consistente nas relações de avós e netos, justamente o grupo em que o Modelo 12 apresenta a maior recuperação após a passagem simétrica. Esse contraste reforça que pistas visuais gerais de idade e gênero não bastam para resolver relações genealógicas finas sem treinamento específico.
+
+Os prompts direcionados por treinamento não foram executados sobre os 750 pares do teste completo. Eles foram avaliados apenas em um recorte diagnóstico de 12 pares das quatro relações de avós e netos, apresentado na Tabela~\ref{tab:vlm_grandparent}. Por isso, não entram como quarta linha na Tabela~\ref{tab:vlm_resultados}.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\caption{Recorte diagnóstico dos VLMs em doze pares de avós e netos.}
+\label{tab:vlm_grandparent}
+\begin{tabular}{lrrr}
+\hline
+\textbf{Regime} & \textbf{Acurácia exata} & \textbf{Bucket avós-netos} & \textbf{Macro-F1 ativo} \\
+\hline
+Zero-shot original & 0{,}0\% & 8{,}3\% & 0{,}000 \\
+Adaptação 7-shot & 0{,}0\% & 16{,}7\% & 0{,}000 \\
+Prompt direcionado 11 classes & 0{,}0\% & 33{,}3\% & 0{,}000 \\
+Oráculo restrito a 4 classes & 8{,}3\% & 100{,}0\% & 0{,}071 \\
+\hline
+\end{tabular}
+\end{table}
+
+O recorte diagnóstico mostra que orientar explicitamente o prompt para relações de duas gerações aumenta a tendência de prever o bucket correto de avós e netos, mas praticamente não resolve a classe exata. O resultado com oráculo de quatro classes não é comparável ao teste multiclasse, porque remove sete alternativas de resposta; ele serve apenas para mostrar que mesmo sob restrição artificial o VLM ainda confunde o sexo e o papel genealógico das pessoas no par.
 
 \section{Síntese dos resultados}
 
-Os resultados indicam que o Modelo 12 é a melhor arquitetura do estudo em AUC médio no FIW. O ganho de +0,080 AUC sobre B0 mostra que a proposta aprende informação específica de parentesco além da similaridade facial genérica do AdaFace. O ganho de +0,029 AUC sobre o Modelo 02 mostra que a combinação entre backbone facial especializado, tokens regionais, cabeça auxiliar e passagem simétrica supera o ViT com atenção cruzada bidirecional sob o protocolo adotado.
+Os resultados de referência indicam que o Modelo 12 é a melhor arquitetura do estudo em AUC na execução consolidada do FIW. O ganho de +0,080 AUC sobre B0 mostra que a proposta aprende informação específica de parentesco além da similaridade facial genérica do AdaFace. O ganho de +0,029 AUC sobre o Modelo 02 mostra que a combinação entre backbone facial especializado, tokens regionais, cabeça auxiliar e passagem simétrica supera o ViT com atenção cruzada bidirecional nessa execução. A conclusão final deve ser reavaliada após a consolidação das cinco dobras.
 
-A análise por relação qualifica esse resultado. O maior avanço não está apenas no AUC global, mas na recuperação das relações de avós e netos, historicamente mais instáveis no FIW. Ao mesmo tempo, a queda em non-kin mostra que o modelo ainda exige escolha cuidadosa de ponto operacional quando falsos positivos têm custo alto. Por fim, a avaliação exploratória dos VLMs mostra que modelos multimodais generalistas ainda ficam abaixo dos supervisionados especializados para esse domínio, sobretudo nas relações de segundo grau.
+A análise por relação qualifica esse resultado. O maior avanço não está apenas no AUC global, mas na recuperação das relações de avós e netos, historicamente mais instáveis no FIW. Ao mesmo tempo, a queda em non-kin mostra que o modelo ainda exige escolha cuidadosa de ponto operacional quando falsos positivos têm custo alto. Por fim, a avaliação exploratória dos VLMs mostra baixo desempenho em classificação fina de relações, sobretudo nas relações de segundo grau, e não fornece evidência de que inferência zero-shot substitua treinamento supervisionado específico para esse domínio.

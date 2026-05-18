@@ -13,10 +13,29 @@ A função do Modelo 01 no trabalho é histórica e didática. Ele ancora a evol
 
 O Modelo 03 combina dois backbones distintos, ConvNeXt-B \cite{liu2022convnet} e vit\_base\_patch16\_224, sob a hipótese de que atributos locais convolucionais e atributos globais de Transformer são complementares no domínio facial. Os dois backbones operam em paralelo sobre a mesma imagem e produzem representações que são fundidas em um módulo aprendível antes da projeção final. A fusão suporta quatro modos. O padrão é a atenção, com alternativas em concatenação, gating multiplicativo e fusão bilinear. A saída final é um embedding de 512 dimensões com normalização $L^2$. O modelo total tem cerca de 176 milhões de parâmetros, mais que o dobro do Modelo 02, e essa expansão de capacidade é a motivação central de mantê-lo como estudo de ablação.
 
-O Modelo 03 atinge AUC 0,850 em FIW, valor idêntico ao do Modelo 02 R031 com 86 milhões de parâmetros. A leitura central desse resultado é que dobrar a capacidade do backbone não traz ganho proporcional em AUC neste banco, o que confere ao Modelo 03 papel argumentativo no Capítulo~\ref{cap:resultados} sem necessidade de ocupar lugar no eixo central de comparação.
+O Modelo 03 atinge AUC 0,850 em FIW, valor idêntico ao do Modelo 02 R031 com 86 milhões de parâmetros. A leitura central desse resultado é que dobrar a capacidade do backbone não traz ganho proporcional em AUC neste banco, o que confere ao Modelo 03 papel argumentativo periférico sem necessidade de ocupar lugar no eixo central de comparação.
 
 \section{Estudo de congelamento do Modelo 03}
 
 O Modelo 03, por ter 176 milhões de parâmetros e dois backbones grandes, oferece um caso natural para investigar como o congelamento de pesos pré-treinados afeta o desempenho final. As quatro estratégias consideradas são tratadas como variantes do mesmo modelo. A variante mais permissiva treina todos os pesos desde o início, sem congelamento. No outro extremo, os dois backbones permanecem congelados durante todo o treino e a otimização atinge só a fusão e a cabeça, o que reduz bastante o custo computacional por época. Entre os dois extremos, uma variante começa com backbones congelados e libera todos os pesos depois de algumas épocas, treinando até saturar a métrica de validação. A última descongela apenas as camadas superiores de cada backbone, em geral os dois últimos estágios do ConvNeXt e os quatro últimos blocos do ViT, com taxa de aprendizado reduzida por um fator entre 1e-2 e 1e-3 em relação à cabeça.
 
-As sete execuções do Modelo 03 cobrem essas estratégias em diferentes combinações, e os resultados completos aparecem no Capítulo~\ref{cap:resultados}, na tabela de estudo de congelamento e descongelamento. O melhor desempenho do modelo (AUC 0,850 na Execução 002) ocorreu sem congelamento, confirmando para esta arquitetura que descongelar profundidade considerável dos dois ramos é necessário para que a fusão tire proveito das representações complementares.
+As execuções consolidadas do Modelo 03 cobrem essas estratégias em diferentes combinações. A Tabela~\ref{tab:m03_freeze_appendix} resume os resultados usados apenas como estudo periférico. O melhor desempenho do modelo (AUC 0,850 na Execução 002) ocorreu sem congelamento, confirmando para esta arquitetura que aumentar a capacidade do backbone não trouxe ganho sobre o Modelo 02, apesar de quase dobrar o número de parâmetros.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Resumo do estudo de congelamento do Modelo 03.}
+\label{tab:m03_freeze_appendix}
+\begin{tabular}{llll}
+\hline
+\textbf{Run} & \textbf{Estratégia} & \textbf{AUC teste} & \textbf{Interpretação} \\
+\hline
+R002 & sem congelamento & 0{,}850 & melhor resultado da família \\
+R003 & sem congelamento & 0{,}845 & confirma teto próximo ao R002 \\
+R004 & backbones congelados & 0{,}823 & cabeça sozinha insuficiente \\
+R005 & congelar e descongelar tudo & 0{,}813 & execução interrompida por OOM \\
+R006 & congelar e descongelar tudo, lote menor & 0{,}848 & quase empata, mas com sobreajuste após descongelamento \\
+R007 & descongelamento parcial & 0{,}828 & taxa do backbone conservadora demais \\
+\hline
+\end{tabular}
+\end{table}
