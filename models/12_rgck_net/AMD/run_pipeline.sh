@@ -81,18 +81,37 @@ GPU_ID="${GPU_ID:-0}"
 SEED="${SEED:-42}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
 
+# K-fold cross-validation. When FOLD is set, the run output is nested under
+# fold_${FOLD}/ inside the existing run dir (set via RUN_OVERRIDE) or a fresh
+# run id. NUM_FOLDS controls the partition cardinality.
+FOLD="${FOLD:-}"
+NUM_FOLDS="${NUM_FOLDS:-5}"
+RUN_OVERRIDE="${RUN_OVERRIDE:-}"
+
 # Determine next run id
 OUTPUT_BASE="${MODEL_ROOT}/output"
 mkdir -p "${OUTPUT_BASE}"
-RUN_ID=1
-while [ -d "${OUTPUT_BASE}/$(printf '%03d' ${RUN_ID})" ]; do
-    RUN_ID=$((RUN_ID + 1))
-done
-RUN_LABEL="$(printf '%03d' ${RUN_ID})"
-RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
-CKPT_DIR="${RUN_DIR}/checkpoints"
-RESULTS_DIR="${RUN_DIR}/results"
-LOGS_DIR="${RUN_DIR}/logs"
+if [ -n "${RUN_OVERRIDE}" ]; then
+    RUN_LABEL="${RUN_OVERRIDE}"
+    RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
+    mkdir -p "${RUN_DIR}"
+else
+    RUN_ID=1
+    while [ -d "${OUTPUT_BASE}/$(printf '%03d' ${RUN_ID})" ]; do
+        RUN_ID=$((RUN_ID + 1))
+    done
+    RUN_LABEL="$(printf '%03d' ${RUN_ID})"
+    RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
+fi
+
+if [ -n "${FOLD}" ]; then
+    SUBRUN_DIR="${RUN_DIR}/fold_${FOLD}"
+else
+    SUBRUN_DIR="${RUN_DIR}"
+fi
+CKPT_DIR="${SUBRUN_DIR}/checkpoints"
+RESULTS_DIR="${SUBRUN_DIR}/results"
+LOGS_DIR="${SUBRUN_DIR}/logs"
 mkdir -p "${CKPT_DIR}" "${RESULTS_DIR}" "${LOGS_DIR}"
 
 # Sanity: venv + python
@@ -138,6 +157,9 @@ echo "Patience:            ${PATIENCE}"
 echo "Dataset:             ${TRAIN_DATASET}"
 echo "Data root:           ${DATA_ROOT}"
 echo "Seed:                ${SEED}"
+if [ -n "${FOLD}" ]; then
+    echo "K-fold CV:           fold ${FOLD}/${NUM_FOLDS}  (output -> ${SUBRUN_DIR})"
+fi
 echo "ROCm device:         ${GPU_ID}"
 echo "Python:              ${PYTHON}"
 echo '============================================'
@@ -197,6 +219,9 @@ fi
 TRAIN_ARGS+=(--l2sp_weight "${L2SP_WEIGHT}")
 if [ "${COMPARISON_ONLY_FUSION}" = "1" ]; then
     TRAIN_ARGS+=(--comparison_only_fusion)
+fi
+if [ -n "${FOLD}" ]; then
+    TRAIN_ARGS+=(--fold "${FOLD}" --num_folds "${NUM_FOLDS}")
 fi
 
 TEST_ARGS=(

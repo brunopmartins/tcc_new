@@ -706,6 +706,129 @@ def create_dataloaders(
     return train_loader, val_loader, test_loader
 
 
+def create_fiw_5fold_train_val_loaders(
+    config: DataConfig,
+    fold_k: int,
+    n_folds: int = 5,
+    batch_size: int = 32,
+    num_workers: Optional[int] = None,
+    train_negative_ratio: Optional[float] = None,
+    eval_negative_ratio: Optional[float] = None,
+    train_negative_sampling_strategy: str = "random",
+    eval_negative_sampling_strategy: str = "random",
+    split_seed: int = 42,
+    aligned_root: Optional[str] = None,
+) -> Tuple[DataLoader, DataLoader, DataLoader]:
+    """K-fold family-disjoint split over RFIW Track-I train-pairs.csv families.
+
+    The official RFIW Track-I test set (test-pairs.csv) is preserved as the
+    test loader in every fold — only train/val are repartitioned. Each fold
+    holds a different ~1/n_folds slice of training families as val; the
+    remaining ~(n_folds - 1)/n_folds families train. Family disjointness is
+    guaranteed by construction.
+
+    Args:
+        fold_k: which fold to materialise (0 ≤ fold_k < n_folds).
+        n_folds: total number of folds (default 5).
+        split_seed: deterministically orders the families before the modulo
+            partition. Must be identical across all folds of the same study
+            for fold disjointness to hold.
+    """
+    if not 0 <= fold_k < n_folds:
+        raise ValueError(f"fold_k must be in [0, {n_folds}), got {fold_k}")
+
+    root_dir = config.fiw_root
+    num_workers = config.num_workers if num_workers is None else num_workers
+    train_negative_ratio = (
+        config.negative_ratio if train_negative_ratio is None else train_negative_ratio
+    )
+    eval_negative_ratio = (
+        config.negative_ratio if eval_negative_ratio is None else eval_negative_ratio
+    )
+
+    track_dir = Path(root_dir) / "track-I"
+    train_csv = track_dir / "train-pairs.csv"
+    if not train_csv.exists():
+        raise FileNotFoundError(
+            f"RFIW Track-I train-pairs.csv not found at {train_csv}. "
+            "5-fold CV requires the official RFIW Track-I pair lists."
+        )
+
+    train_df = pd.read_csv(train_csv)
+    all_train_fids = sorted(
+        set(train_df["fid1"].unique()) | set(train_df["fid2"].unique())
+    )
+    ordered = _shuffled_ids(all_train_fids, split_seed)
+
+    val_fids = {fid for i, fid in enumerate(ordered) if i % n_folds == fold_k}
+    train_fids = {fid for i, fid in enumerate(ordered) if i % n_folds != fold_k}
+
+    print(
+        f"  FIW 5-fold CV: fold {fold_k}/{n_folds} | "
+        f"train families: {len(train_fids)} | val families: {len(val_fids)} | "
+        f"split_seed: {split_seed}"
+    )
+
+    train_transform = get_transforms(config, train=True)
+    eval_transform = get_transforms(config, train=False)
+
+    train_dataset = KinshipPairDataset(
+        root_dir=root_dir,
+        dataset_type="fiw",
+        split="train",
+        transform=train_transform,
+        negative_ratio=train_negative_ratio,
+        negative_sampling_strategy=train_negative_sampling_strategy,
+        split_seed=split_seed,
+        aligned_root=aligned_root,
+        explicit_group_ids=train_fids,
+    )
+    val_dataset = KinshipPairDataset(
+        root_dir=root_dir,
+        dataset_type="fiw",
+        split="val",
+        transform=eval_transform,
+        negative_ratio=eval_negative_ratio,
+        negative_sampling_strategy=eval_negative_sampling_strategy,
+        split_seed=split_seed,
+        aligned_root=aligned_root,
+        explicit_group_ids=val_fids,
+    )
+    test_dataset = KinshipPairDataset(
+        root_dir=root_dir,
+        dataset_type="fiw",
+        split="test",
+        transform=eval_transform,
+        negative_ratio=eval_negative_ratio,
+        negative_sampling_strategy=eval_negative_sampling_strategy,
+        split_seed=split_seed,
+        aligned_root=aligned_root,
+    )
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+    return train_loader, val_loader, test_loader
+
+
 def get_kinface_pair_ids(
     root_dir: str,
     relation_types: Optional[List[str]] = None,
