@@ -32,30 +32,53 @@ propuseram a Fair Contrastive Loss, que adiciona termos para mitigar viés demog
 
 A introdução do Vision Transformer \cite{dosovitskiy2020image}
 reabriu a questão de qual é o melhor backbone para parentesco facial. Os resultados mais recentes do FIW vêm de modelos que substituem o backbone convolucional pelo ViT pré-treinado. \citeonline{su2023facornet}
-propuseram o FaCoR, que adiciona um módulo de cross-attention bidirecional entre os tokens de patch de duas faces, permitindo que o modelo aprenda quais regiões comparar em vez de só comparar embeddings globais. O ganho relatado foi de 4,6\% sobre o melhor resultado anterior. O FaCoR é a inspiração direta do Modelo 02 deste trabalho.
+propuseram o FaCoR, que adiciona um módulo de atenção cruzada bidirecional entre os tokens de patch de duas faces, permitindo que o modelo aprenda quais regiões comparar em vez de só comparar embeddings globais. O ganho relatado foi de 4,6\% sobre o melhor resultado anterior. O FaCoR é a inspiração direta do Modelo 02 deste trabalho.
 
 \section{Fusões híbridas e síntese de idade}
 
 Outra linha tenta combinar os indutivos convolucionais do ConvNeXt \cite{liu2022convnet}
-com a atenção global do ViT, em modelos de duplo backbone que produzem features locais e globais e as fundem por concatenação, gating ou atenção. Essa estratégia motivou o Modelo 03 deste trabalho, e a literatura recente aponta que aumentar capacidade total de backbone não traz, em geral, ganho proporcional em verificação de parentesco quando os dados de treino são limitados.
+com a atenção global do ViT, em modelos de duplo backbone que produzem atributos locais e globais e os fundem por concatenação, gating ou atenção. Essa estratégia motivou o Modelo 03 deste trabalho, e a literatura recente aponta que aumentar capacidade total de backbone não traz, em geral, ganho proporcional em verificação de parentesco quando os dados de treino são limitados.
 
-Uma terceira linha ataca diretamente a assimetria etária entre pais e filhos. Métodos baseados em síntese de idade, em particular o SAM (Style-based Age Manipulation) \cite{alaluf2022sam},
+Uma terceira linha aborda diretamente a assimetria etária entre pais e filhos. Métodos baseados em síntese de idade, em particular o SAM (Style-based Age Manipulation) \cite{alaluf2022sam},
 geram variantes do mesmo rosto em diferentes idades antes da comparação, com a hipótese de que pares com idades parecidas são mais fáceis de classificar. O Modelo 01 deste trabalho explora essa ideia, embora o módulo SAM não tenha sido plenamente ativado nos experimentos por restrições de hardware.
 
-\section{Generalização cross-dataset e fairness}
+\section{Generalização cross-dataset e equidade}
 
-Apesar dos números altos relatados na literatura, generalização entre datasets continua um problema aberto. Modelos treinados em FIW e testados em KinFaceW costumam perder entre 15\% e 30\% de acurácia \cite{robinson2022survey}, e o problema é ainda mais grave em subgrupos demográficos sub-representados nos conjuntos de treino. Em reconhecimento facial em geral, estudos de fairness apontam diferenças de 5\% a 10\% na taxa de erro entre faces de subgrupos demográficos distintos \cite{buolamwini2018gender}, e por analogia direta espera-se efeito semelhante em verificação de parentesco facial, embora medições específicas no domínio sejam menos comuns.
-Esses dois eixos não são atacados frontalmente neste trabalho, mas aparecem como limitação explícita na conclusão.
+Apesar dos números altos relatados na literatura, generalização entre datasets continua um problema aberto. Modelos treinados em FIW e testados em KinFaceW costumam perder entre 15\% e 30\% de acurácia \cite{robinson2022survey}, e o problema é ainda mais grave em subgrupos demográficos sub-representados nos conjuntos de treino. Em reconhecimento facial em geral, estudos de equidade apontam diferenças de 5\% a 10\% na taxa de erro entre faces de subgrupos demográficos distintos \cite{buolamwini2018gender}, e por analogia direta espera-se efeito semelhante em verificação de parentesco facial, embora medições específicas no domínio sejam menos comuns.
+Esses dois eixos não compõem o foco experimental deste trabalho, mas orientam a interpretação das limitações.
 
-\section{Modelos multimodais como baselines}
+\section{Modelos multimodais como linhas de base}
 
 Modelos multimodais generalistas, em particular VLMs treinados em grandes coleções de pares imagem-texto, ganharam tração no fim da década, abrindo a pergunta sobre se essa classe consegue resolver verificação de parentesco em zero-shot, sem treino específico no domínio. O CLIP \cite{radford2021learning}
-foi um dos primeiros nesse formato, e modelos posteriores, como GPT-4V e Claude Sonnet, ampliaram o escopo para tarefas mais variadas. Avaliações sistemáticas de VLMs especificamente em verificação de parentesco facial não foram encontradas na literatura consultada para este trabalho, e a maior parte das referências sobre desempenho de VLMs em tarefas faciais cobre identificação ou descrição genérica de atributos. Os resultados parciais reportados em avaliações ad hoc sugerem que esses modelos exploram bem pistas de idade ou gênero, porém falham em distinções genealógicas mais finas como avós e netos.
+foi um dos primeiros nesse formato, e modelos posteriores, como GPT-4V e Claude Sonnet, ampliaram o escopo para tarefas mais variadas. Na revisão realizada para este trabalho, não foram identificadas avaliações sistemáticas de VLMs especificamente em verificação de parentesco facial; a maior parte das referências sobre desempenho de VLMs em tarefas faciais cobre identificação ou descrição genérica de atributos. Os resultados parciais reportados em avaliações ad hoc sugerem que esses modelos exploram bem pistas de idade ou gênero, porém falham em distinções genealógicas mais finas como avós e netos.
 
-Por isso, neste trabalho, os VLMs entram apenas como baselines complementares, não como competidores dos modelos supervisionados, e são avaliados em três regimes (zero-shot, adaptação por prompt e prompts direcionados por treinamento) descritos no Capítulo 4.
+Por isso, neste trabalho, os VLMs entram apenas como linhas de base complementares, não como competidores dos modelos supervisionados, e são avaliados em três regimes (zero-shot, adaptação por prompt e prompts direcionados por treinamento) descritos no Capítulo 4.
+
+\section{Síntese comparativa da literatura}
+
+A Tabela~\ref{tab:trabalhos_relacionados_resumo} resume os trabalhos que delimitam diretamente o posicionamento deste TCC. A tabela não pretende comparar percentuais de forma absoluta, porque os artigos variam em banco, partição, métrica e regra de escolha de limiar; sua função é explicitar a família metodológica e a limitação que motiva a comparação controlada deste trabalho.
+
+\begin{table}[h]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\caption{Síntese dos trabalhos relacionados mais diretamente ligados ao escopo deste TCC.}
+\label{tab:trabalhos_relacionados_resumo}
+\begin{tabular}{p{2.8cm}p{1.8cm}p{3.8cm}p{3.9cm}}
+\hline
+\textbf{Trabalho} & \textbf{Base} & \textbf{Ideia central} & \textbf{Limitação para comparação} \\
+\hline
+\citeonline{fang2010towards} & Base própria & Atributos manuais + SVM & Conjunto pequeno e protocolo próprio \\
+\citeonline{lu2014kinface} & KinFaceW & Metric learning & Banco menor e relações restritas \\
+\citeonline{robinson2018visual} & FIW & Redes siamesas com backbones faciais & Marco do benchmark, sem cobrir VLMs \\
+\citeonline{lyu2023kfc} & FIW & Perda contrastiva com equidade & Foco específico em viés e multitarefa \\
+\citeonline{su2023facornet} & FIW & ViT com atenção cruzada entre faces & Resultado dependente do protocolo reportado \\
+\hline
+\end{tabular}
+\end{table}
 
 \section{Posicionamento deste trabalho}
 
-A combinação de famílias presente neste trabalho cobre cinco eixos da literatura citada. O baseline mínimo usa AdaFace pré-treinado em reconhecimento facial com cosseno e threshold em validação, sem qualquer adaptação ao domínio de parentesco, e mede o desempenho de referência da tarefa. O caminho do ViT com cross-attention bidirecional no estilo FaCoR liga-se à linha de \citeonline{su2023facornet} e segue como ponto de referência forte entre os métodos treinados. Como direção exploratória, um DINOv2 ajustado por LoRA com cross-attention diferencial explora adaptação parameter-efficient sobre backbone self-supervised, e um modelo retrieval-augmented mantém uma galeria de pares positivos do treino e recupera vizinhos similares em inferência. A proposta principal combina backbone facial especializado AdaFace, partial unfreeze do último estágio e cinco tokens regionais anatômicos com cross-region attention bidirecional e gate sigmoide, na linha recente de modelos que substituem patches densos por regiões para reduzir o tamanho da matriz de atenção e introduzir prior anatômico. O Modelo 01 com síntese de idade do pré-projeto e o Modelo 03 com fusão híbrida ConvNeXt e ViT ficam registrados como referência histórica e estudo de capacidade, respectivamente.
+A combinação de famílias presente neste trabalho cobre cinco eixos da literatura citada. A linha de base mínima usa AdaFace pré-treinado em reconhecimento facial com cosseno e limiar em validação, sem qualquer adaptação ao domínio de parentesco, e mede o desempenho de referência da tarefa. O caminho do ViT com atenção cruzada bidirecional no estilo FaCoR liga-se à linha de \citeonline{su2023facornet} e segue como ponto de referência forte entre os métodos treinados. Como direção exploratória, um DINOv2 ajustado por LoRA com atenção cruzada diferencial explora adaptação eficiente em parâmetros sobre backbone auto-supervisionado, e um modelo aumentado por recuperação mantém uma galeria de pares positivos do treino e recupera vizinhos similares em inferência. A proposta principal combina backbone facial especializado AdaFace, descongelamento parcial do último estágio e cinco tokens regionais anatômicos com atenção cruzada entre regiões e gate sigmoide, na linha recente de modelos que substituem patches densos por regiões para reduzir o tamanho da matriz de atenção e introduzir prior anatômico. O Modelo 01 com síntese de idade do pré-projeto e o Modelo 03 com fusão híbrida ConvNeXt e ViT ficam registrados como referência histórica e estudo de capacidade, respectivamente.
 
-A diferença em relação à maioria dos trabalhos citados é metodológica. Em vez de propor um único modelo novo e compará-lo a resultados isolados da literatura, este trabalho aplica o mesmo protocolo de avaliação aos cinco modelos supervisionados, com threshold selecionado em validação e aplicado sem reajuste no teste. A avaliação complementar dos modelos multimodais sobre a tarefa multiclasse de classificação de relações é apresentada em separado, sem pretensão de comparação direta às métricas binárias.
+A diferença em relação à maioria dos trabalhos citados é metodológica. Em vez de propor um único modelo novo e compará-lo a resultados isolados da literatura, este trabalho aplica o mesmo protocolo de avaliação aos cinco modelos supervisionados, com limiar selecionado em validação e aplicado sem reajuste no teste. A avaliação complementar dos modelos multimodais sobre a tarefa multiclasse de classificação de relações é apresentada em separado, sem pretensão de comparação direta às métricas binárias.
