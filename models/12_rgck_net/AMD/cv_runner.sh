@@ -39,22 +39,26 @@ run_fold() {
     echo "[${started}] START ${label}" | tee -a "/tmp/cv_runner.log"
     echo "==========================================" | tee -a "/tmp/cv_runner.log"
 
-    SKIP_INSTALL=1 \
-    ALIGNED_ROOT="${PROJECT_ROOT}/datasets/FIW_aligned" \
-    BATCH_SIZE=8 \
-    GRAD_ACCUM=4 \
-    UNFREEZE_LAST_STAGE=1 \
-    LEARNING_RATE=1e-5 \
-    RELATION_AUX_WEIGHT=0.05 \
-    SYMMETRIC_FORWARD=1 \
-    NUM_WORKERS=4 \
-    SEED=42 \
-    RUN_OVERRIDE="${run_id}" \
-    FOLD="${fold}" \
-    NUM_FOLDS="${NUM_FOLDS}" \
-    ${extra_env} \
-    bash "${SCRIPT_DIR}/run_pipeline.sh" \
-        > "/tmp/cv_${label}.log" 2>&1
+    # Use `env` so the variable-assignment prefixes from ${extra_env} are
+    # parsed at runtime by env (which accepts VAR=VAL args), instead of being
+    # interpreted by bash as shell-prefix assignments (which must be literal
+    # in the source and don't accept expansion of VAR=VAL tokens).
+    env ${extra_env} \
+        SKIP_INSTALL=1 \
+        ALIGNED_ROOT="${PROJECT_ROOT}/datasets/FIW_aligned" \
+        BATCH_SIZE=8 \
+        GRAD_ACCUM=4 \
+        UNFREEZE_LAST_STAGE=1 \
+        LEARNING_RATE=1e-5 \
+        RELATION_AUX_WEIGHT=0.05 \
+        SYMMETRIC_FORWARD=1 \
+        NUM_WORKERS=4 \
+        SEED=42 \
+        RUN_OVERRIDE="${run_id}" \
+        FOLD="${fold}" \
+        NUM_FOLDS="${NUM_FOLDS}" \
+        bash "${SCRIPT_DIR}/run_pipeline.sh" \
+            > "/tmp/cv_${label}.log" 2>&1
     local rc=$?
 
     local finished=$(date '+%Y-%m-%d %H:%M:%S')
