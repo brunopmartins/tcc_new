@@ -147,32 +147,55 @@ The structure:
 
 ---
 
-## Conclusion (as of R010)
+## Conclusion (as of R010 + 5-fold CV)
 
 **Three complementary M12 headlines now stand**, after the R&D cycle
-explored both single-knob interventions and one two-knob stack:
+explored single-knob interventions, one two-knob stack, and a 5-fold
+family-disjoint CV of R006 and R010:
 
-- **Aggregate AUC headline — R006** (Test AUC **0.8788**, val→test
-  gap -0.026). Decisive intervention: **symmetric forward**
-  (Option-B BCE) — each pair processed in both (A,B) and (B,A)
-  orders; the head can no longer learn direction-specific shortcuts.
-- **Strict-FAR headline — R009** (TAR@FAR=0.001 = **5.43 %**).
-  Decisive intervention: **comparison-only fusion** — drop
+- **Aggregate AUC headline — R006** (single-run Test AUC 0.8788; **CV
+  mean 0.8733 ± 0.0038**, n=5). Decisive intervention: **symmetric
+  forward** (Option-B BCE) — each pair processed in both (A,B) and
+  (B,A) orders; the head can no longer learn direction-specific shortcuts.
+- **Strict-FAR headline — R009** (TAR@FAR=0.001 = **5.43 %**, single
+  run). Decisive intervention: **comparison-only fusion** — drop
   gA, gB from the classifier input; removes identity-as-feature
-  leakage.
-- **Operating-curve headline — R010** (TAR@FAR=0.01 = **21.16 %**,
-  TAR@FAR=0.1 = **60.00 %**, Test AP = **0.8567** — all M12 bests).
+  leakage. **Not CV'd**, but R010's CV strict-FAR (5.91 ± 1.22 %)
+  suggests R010 in expectation is at least equal to R009 on this
+  metric.
+- **Operating-curve headline — R010** (single-run TAR@FAR=0.01 = 21.16 %,
+  TAR@FAR=0.1 = 60.00 %, Test AP = 0.8567; **CV means: TAR@FAR=0.01
+  19.24 ± 1.40 %, TAR@FAR=0.1 58.92 ± 1.46 %, AP 0.8532 ± 0.0050**).
   R010 stacks R007 (differential LR) + R009 (comparison-only) on
-  the R006 baseline. Strict-FAR did NOT compound but mid-FAR did
-  *superadditively* — the new project model for "balanced
-  deployment" operating points.
+  the R006 baseline. **5-fold CV confirms R010 > R006 on strict
+  and mid-FAR at p<0.1** (Welch's t=2.13 and 2.28 respectively).
+
+**5-fold CV findings** ([run-review/cv_5x_R006_R010.md](cv_5x_R006_R010.md)):
+
+- **R006 vs R010 on aggregate AUC is statistically indistinguishable**
+  (Δ +0.0005, |t|=0.21, ns). The original +0.0034 single-run
+  difference was within fold variance.
+- **R010 wins on operating-curve metrics at p<0.1:** TAR@FAR=0.001
+  +1.69 pp (4.22 → 5.91 %), TAR@FAR=0.01 +1.86 pp (17.38 → 19.24 %).
+- **R010 trades recall for precision** (Recall −2.49 pp, Precision
+  +1.46 pp, both borderline-significant). The comparison-only head
+  shifts the operating point to a strict-FAR regime.
+- **R006 single-run 0.8788 was an upper-tail draw** (+1.45 σ above
+  CV mean 0.8733). The "true" expected R006 AUC under family-disjoint
+  evaluation is closer to 0.8730.
+- **σ_AUC ≈ 0.004 per fold for both recipes**, matching the
+  sampler-reseed noise floor measured in R004 (±0.009 ≈ 2σ). Any
+  single-run M12 AUC difference < 0.008 is essentially indistinguishable
+  from noise. **The CV-based recommendation for the TCC text is to
+  quote `mean ± std` for the two CV'd models and acknowledge the
+  single-run R009 number is provisional.**
 
 R006 wins on aggregate threshold-invariant metrics; R009 wins at
-strict verification thresholds; R010 wins at mid-FAR + AP. Each
-champion targets a different deployment regime. The cycle has now
-closed every plausible single-shot intervention family on this
-architecture, and three different "best M12 model" answers exist
-depending on the question.
+strict verification thresholds (single-run); R010 wins at mid-FAR +
+AP. Each champion targets a different deployment regime. The cycle
+has now closed every plausible single-shot intervention family on
+this architecture, and three different "best M12 model" answers
+exist depending on the question.
 
 Key findings (cumulative across R001-R004):
 

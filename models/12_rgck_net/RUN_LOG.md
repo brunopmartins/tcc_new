@@ -6,6 +6,98 @@ Newest run on top.
 
 ---
 
+## 5-fold CV study — 2026-05-18 → 2026-05-21 — Family-disjoint CV of R006 and R010
+
+**Status:** Completed. 10 fold trainings + tests (5 × R006 + 5 × R010), ~63 h GPU wall-clock total.
+
+**Outcome:**
+- **R006 5-fold mean Test AUC: 0.8733 ± 0.0038** (single-run 0.8788 was +1.45σ above mean).
+- **R010 5-fold mean Test AUC: 0.8739 ± 0.0038** (single-run 0.8754 was +0.40σ above mean).
+- **R006 vs R010 AUC: indistinguishable** (Δ +0.0005, Welch t=0.21, ns).
+- **R010 wins strict-FAR + mid-FAR at p<0.1:** TAR@FAR=0.001 +1.69 pp (4.22 → 5.91 %, t=2.13), TAR@FAR=0.01 +1.86 pp (17.38 → 19.24 %, t=2.28).
+- **R010 trades recall for precision** (Recall −2.49 pp, Precision +1.46 pp; borderline p<0.1).
+- σ_AUC per fold = 0.004 — matches R004 sampler-reseed σ. Any M12 single-run AUC difference < 0.008 is within noise.
+
+### Setup
+
+Family-disjoint 5-fold over RFIW Track-I `train-pairs.csv` (571 unique families → 5 disjoint groups of 114-115). Official RFIW Track-I `test-pairs.csv` preserved unchanged across folds (13,425 face-level pairs).
+
+Implementation: [models/shared/dataset.py `create_fiw_5fold_train_val_loaders`](../../shared/dataset.py) and per-fold checkpoints/results in `output/011/fold_{0..4}/` (R006) and `output/012/fold_{0..4}/` (R010).
+
+Pipeline plumbing: `train.py --fold K --num_folds 5`; `run_pipeline.sh` accepts `FOLD`, `NUM_FOLDS`, `RUN_OVERRIDE` env vars. Runner: `models/12_rgck_net/AMD/cv_runner.sh` (10-fold sequential with 15-min cooldowns, resumable via skip-if-results-exist).
+
+### Launch commands
+
+Per fold (run via `cv_runner.sh`):
+
+```bash
+# R006 fold K (K = 0..4)
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=$PROJECT_ROOT/datasets/FIW_aligned \
+BATCH_SIZE=8 GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 LEARNING_RATE=1e-5 \
+RELATION_AUX_WEIGHT=0.05 SYMMETRIC_FORWARD=1 \
+NUM_WORKERS=4 SEED=42 \
+RUN_OVERRIDE=011 FOLD=$K NUM_FOLDS=5 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+
+# R010 fold K (K = 0..4) — adds DIFFERENTIAL_LR + COMPARISON_ONLY_FUSION
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=$PROJECT_ROOT/datasets/FIW_aligned \
+BATCH_SIZE=8 GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 LEARNING_RATE=1e-5 \
+RELATION_AUX_WEIGHT=0.05 SYMMETRIC_FORWARD=1 \
+DIFFERENTIAL_LR=1 LR_STAGE4=5e-6 LR_OUTPUT_LAYER=5e-6 LR_HEAD=2e-5 \
+COMPARISON_ONLY_FUSION=1 \
+NUM_WORKERS=4 SEED=42 \
+RUN_OVERRIDE=012 FOLD=$K NUM_FOLDS=5 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Per-fold Test ROC AUC
+
+| Fold | Train fids | Val fids | R006 AUC | R006 Val peak (ep) | R010 AUC | R010 Val peak (ep) |
+|---:|---:|---:|---:|---|---:|---|
+| 0 | 456 | 115 | 0.8742 | 0.9087 (3) | 0.8776 | 0.9119 (4) |
+| 1 | 457 | 114 | 0.8717 | 0.8774 (3) | 0.8704 | 0.8802 (4) |
+| 2 | 457 | 114 | 0.8726 | 0.8742 (3) | 0.8733 | 0.8748 (4) |
+| 3 | 457 | 114 | 0.8793 | 0.8970 (3) | 0.8780 | 0.8987 (4) |
+| 4 | 457 | 114 | 0.8689 | 0.8895 (3) | 0.8700 | 0.8910 (4) |
+| **Mean** | — | — | **0.8733** | — | **0.8739** | — |
+| **Std** | — | — | **0.0038** | — | **0.0038** | — |
+
+R010 peaks consistently at ep 4 (differential LR's slower warmup); R006 at ep 3.
+
+### Statistical comparison (Welch's t-test, two-tailed, df≈8)
+
+| Metric | R006 mean±std | R010 mean±std | Δ | Welch t | p-tier |
+|---|---|---|---|---:|---|
+| Test ROC AUC | 0.8733 ± 0.0038 | 0.8739 ± 0.0038 | +0.0005 | 0.21 | ns |
+| Test Accuracy | 0.7814 ± 0.0061 | 0.7842 ± 0.0096 | +0.0028 | 0.55 | ns |
+| Test F1 | 0.7972 ± 0.0031 | 0.7960 ± 0.0024 | -0.0012 | 0.72 | ns |
+| Test AP | 0.8483 ± 0.0042 | 0.8532 ± 0.0050 | +0.0049 | 1.69 | ns (p≈0.13) |
+| Test Precision | 0.7179 ± 0.0136 | 0.7325 ± 0.0172 | +0.0146 | 1.49 | ns |
+| Test Recall | 0.8968 ± 0.0198 | 0.8719 ± 0.0213 | -0.0249 | 1.92 | **p<0.1** |
+| **TAR@FAR=0.001** | 0.0422 ± 0.0128 | 0.0591 ± 0.0122 | **+0.0169** | **2.13** | **p<0.1** |
+| **TAR@FAR=0.01** | 0.1738 ± 0.0116 | 0.1924 ± 0.0140 | **+0.0186** | **2.28** | **p<0.1** |
+| TAR@FAR=0.1 | 0.5768 ± 0.0089 | 0.5892 ± 0.0146 | +0.0125 | 1.63 | ns |
+
+Full breakdown in [run-review/cv_5x_R006_R010.md](run-review/cv_5x_R006_R010.md).
+
+### Files
+
+- Per-fold checkpoints + results: `output/011/fold_{0..4}/` (R006), `output/012/fold_{0..4}/` (R010)
+- Per-fold logs: `/tmp/cv_r006_fold{0..4}.log`, `/tmp/cv_r010_fold{0..4}.log` (cleaned post-aggregation)
+- Runner schedule: `/tmp/cv_runner.log`
+- Aggregator + Welch's t-test: ran inline (Python `statistics` stdlib).
+
+### Implementation notes
+
+- Bug found mid-cycle: `${extra_env}` was not parsed as VAR=VAL prefixes by bash word-splitting (R010 fold 0 hit `rc=127` with `DIFFERENTIAL_LR=1: command not found`). Fixed by wrapping with `env` (commit `a7747c9`).
+- LEARNING_RATE=1e-5 must be explicit; pipeline default is 1e-4 which would diverge for R006/R010 recipe.
+
+---
+
 ## Run 010 — 2026-05-17 — Manually stopped during ep 10 (peak Val AUC 0.9052 ep 5; Test AUC 0.8754. R007+R009 stack: mid-FAR champion, AP champion)
 
 **Status:** Manually stopped during epoch 10 training (after ep 9 summary at 0.8996). Peak Val AUC 0.9052 reached at ep 5, tied at ep 8 (saved best.pt is from ep 5).
