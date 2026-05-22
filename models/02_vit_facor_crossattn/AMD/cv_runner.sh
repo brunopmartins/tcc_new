@@ -58,7 +58,7 @@ run_fold() {
         VIT_MODEL=vit_base_patch16_224 \
         CROSS_ATTN_LAYERS=2 \
         CROSS_ATTN_HEADS=8 \
-        LOSS=cosine_contrastive \
+        LOSS=contrastive \
         TEMPERATURE=0.3 \
         MARGIN=0.3 \
         DROPOUT=0.2 \
