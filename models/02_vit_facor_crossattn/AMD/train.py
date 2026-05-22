@@ -34,7 +34,7 @@ from rocm_utils import (
     clear_rocm_cache,
 )
 from config import DataConfig, TrainConfig
-from dataset import create_dataloaders, KinshipPairDataset, get_transforms
+from dataset import create_dataloaders, create_fiw_5fold_train_val_loaders, KinshipPairDataset, get_transforms
 from losses import ContrastiveLoss, CosineContrastiveLoss, RelationGuidedContrastiveLoss, get_loss
 from trainer import ROCmTrainer
 from evaluation import print_metrics, KinshipMetrics
@@ -136,6 +136,16 @@ def parse_args():
                         help="Path to MTCNN-aligned FIW crops (e.g. datasets/FIW_aligned). "
                              "Image paths are remapped at load time with silent fallback "
                              "to the original under root_dir if an aligned file is missing.")
+
+    # K-fold cross-validation (FIW only). When --fold is set, the loader
+    # ignores the default 85/15 family-disjoint split and instead partitions
+    # FIW training families into --num_folds groups; fold_k families become
+    # the val set, the rest the train set. The official RFIW Track-I test
+    # set is unchanged across folds.
+    parser.add_argument("--fold", type=int, default=None,
+                        help="K-fold CV fold index (0-indexed). Omit for no CV.")
+    parser.add_argument("--num_folds", type=int, default=5,
+                        help="Total number of folds when --fold is set.")
 
     return parser.parse_args()
 
@@ -298,18 +308,41 @@ def main():
 
     # Create training dataloaders
     print(f"\nLoading {args.train_dataset} dataset for training...")
-    train_loader, val_loader, _ = create_dataloaders(
-        config=train_data_config,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        dataset_type=args.train_dataset,
-        train_negative_ratio=args.negative_ratio,
-        eval_negative_ratio=args.eval_negative_ratio,
-        train_negative_sampling_strategy=args.train_negative_strategy,
-        eval_negative_sampling_strategy=args.eval_negative_strategy,
-        split_seed=args.seed,
-        aligned_root=args.aligned_root,
-    )
+    if args.fold is not None:
+        if args.train_dataset != "fiw":
+            raise ValueError(
+                f"--fold is only supported for FIW; got {args.train_dataset}"
+            )
+        print(
+            f"  K-fold CV active: fold {args.fold}/{args.num_folds} "
+            f"(family-disjoint over RFIW Track-I train families)"
+        )
+        train_loader, val_loader, _ = create_fiw_5fold_train_val_loaders(
+            config=train_data_config,
+            fold_k=args.fold,
+            n_folds=args.num_folds,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            train_negative_ratio=args.negative_ratio,
+            eval_negative_ratio=args.eval_negative_ratio,
+            train_negative_sampling_strategy=args.train_negative_strategy,
+            eval_negative_sampling_strategy=args.eval_negative_strategy,
+            split_seed=args.seed,
+            aligned_root=args.aligned_root,
+        )
+    else:
+        train_loader, val_loader, _ = create_dataloaders(
+            config=train_data_config,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            dataset_type=args.train_dataset,
+            train_negative_ratio=args.negative_ratio,
+            eval_negative_ratio=args.eval_negative_ratio,
+            train_negative_sampling_strategy=args.train_negative_strategy,
+            eval_negative_sampling_strategy=args.eval_negative_strategy,
+            split_seed=args.seed,
+            aligned_root=args.aligned_root,
+        )
     print(f"Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
 
     # Create test dataloader

@@ -154,27 +154,44 @@ if [ ! -x "${PYTHON}" ]; then
     exit 1
 fi
 
+# ---------- K-fold cross-validation env vars ---------------------------------
+FOLD="${FOLD:-}"
+NUM_FOLDS="${NUM_FOLDS:-5}"
+RUN_OVERRIDE="${RUN_OVERRIDE:-}"
+
 # ---------- numbered output folder --------------------------------------------
 OUTPUT_BASE="${MODEL_ROOT}/output"
 mkdir -p "${OUTPUT_BASE}"
-RUN_ID=0
-for existing_dir in "${OUTPUT_BASE}"/*; do
-    [ -d "${existing_dir}" ] || continue
-    dir_name="$(basename "${existing_dir}")"
-    case "${dir_name}" in
-        ''|*[!0-9]*) continue ;;
-    esac
-    dir_num=$((10#${dir_name}))
-    if [ "${dir_num}" -gt "${RUN_ID}" ]; then
-        RUN_ID="${dir_num}"
-    fi
-done
-RUN_ID=$((RUN_ID + 1))
-RUN_LABEL="$(printf '%03d' ${RUN_ID})"
-RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
-CKPT_DIR="${RUN_DIR}/checkpoints"
-RESULTS_DIR="${RUN_DIR}/results"
-LOGS_DIR="${RUN_DIR}/logs"
+if [ -n "${RUN_OVERRIDE}" ]; then
+    RUN_LABEL="${RUN_OVERRIDE}"
+    RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
+    mkdir -p "${RUN_DIR}"
+else
+    RUN_ID=0
+    for existing_dir in "${OUTPUT_BASE}"/*; do
+        [ -d "${existing_dir}" ] || continue
+        dir_name="$(basename "${existing_dir}")"
+        case "${dir_name}" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        dir_num=$((10#${dir_name}))
+        if [ "${dir_num}" -gt "${RUN_ID}" ]; then
+            RUN_ID="${dir_num}"
+        fi
+    done
+    RUN_ID=$((RUN_ID + 1))
+    RUN_LABEL="$(printf '%03d' ${RUN_ID})"
+    RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
+fi
+
+if [ -n "${FOLD}" ]; then
+    SUBRUN_DIR="${RUN_DIR}/fold_${FOLD}"
+else
+    SUBRUN_DIR="${RUN_DIR}"
+fi
+CKPT_DIR="${SUBRUN_DIR}/checkpoints"
+RESULTS_DIR="${SUBRUN_DIR}/results"
+LOGS_DIR="${SUBRUN_DIR}/logs"
 mkdir -p "${CKPT_DIR}" "${RESULTS_DIR}" "${LOGS_DIR}"
 
 echo '============================================'
@@ -210,6 +227,9 @@ echo "Patience:          ${PATIENCE}"
 echo "CV folds:          $([ "${CV_FOLDS}" -gt 0 ] 2>/dev/null && echo "${CV_FOLDS}" || echo "disabled")"
 echo "Dataset:           ${TRAIN_DATASET}"
 echo "Seed:              ${SEED}"
+if [ -n "${FOLD}" ]; then
+    echo "K-fold CV:         fold ${FOLD}/${NUM_FOLDS}  (output -> ${SUBRUN_DIR})"
+fi
 echo "ROCm device:       ${GPU_ID}"
 echo "Python:            ${PYTHON}"
 echo '============================================'
@@ -250,6 +270,7 @@ SHARED_TRAIN_ARGS=(
 [ "${FREEZE_VIT}" = "1" ] && SHARED_TRAIN_ARGS+=(--freeze_vit)
 [ "${USE_CLASSIFIER_HEAD}" = "1" ] && SHARED_TRAIN_ARGS+=(--use_classifier_head)
 [ -n "${ALIGNED_ROOT}" ] && SHARED_TRAIN_ARGS+=(--aligned_root "${ALIGNED_ROOT}")
+[ -n "${FOLD}" ] && SHARED_TRAIN_ARGS+=(--fold "${FOLD}" --num_folds "${NUM_FOLDS}")
 
 TEST_ARGS=(
     --checkpoint  "${CKPT_DIR}/best.pt"
