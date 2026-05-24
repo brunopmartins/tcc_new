@@ -114,7 +114,7 @@ The structure:
 | Model | Test ROC-AUC | Test Acc | Backbone | Architecture / Recipe | Notes |
 |---|---:|---:|---|---|---|
 | **M12 R002** | **0.8564** ⭐ | **76.8 %** | **AdaFace IR-101 (stages 1-3 frozen, stage 4 unfrozen)** | **5 region tokens + cross-attn + gate, BCE, LR 1e-5** | **NEW PROJECT HEADLINE** |
-| M02 R031 | 0.850 | 74.4 % | ViT-B/16 ImageNet (full FT) | FaCoR top-only + cosine_contrastive (works on ViT) | prior project best |
+| M02 R031 | 0.850 (single) / **0.8462 ± 0.0040 (5-fold CV)** | 74.4 % / 74.66 % ± 1.08 % | ViT-B/16 ImageNet (full FT) | FaCoR top-only + supervised contrastive (margin 0.3, T 0.3) | prior project best. **M12 R006/R010 CV beat M02 R031 CV by +0.027 AUC (~7σ).** See [m02 cv doc](../../02_vit_facor_crossattn/run-review/cv_5x_R031.md) |
 | M05 R007 | 0.810 | — | hybrid (DINOv2 + LoRA + diff-attn) | — | partial freeze |
 | M09 R001 | 0.7982 | 71.9 % | AdaFace IR-101 (full FT) | Multistage + BCE + classifier head + random negs | best AdaFace full-FT |
 | M09 R002 | 0.7824 | 71.6 % | M09 R001 + balanced sampler | balanced positives | val→test gap widened |
