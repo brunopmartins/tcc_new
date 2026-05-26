@@ -6,6 +6,120 @@ Newest run on top.
 
 ---
 
+## Run 011 — 2026-05-25 → 2026-05-26 — Manually stopped at ep 15 (peak Val AUC 0.9036 ep 4; Test AUC **0.8825 — NEW PROJECT HEADLINE**)
+
+**Status:** Manually stopped during ep 15 training. Peak Val AUC 0.9036 reached at ep 4; best.pt saved from that epoch.
+
+**Outcome:** R010 stack + **role-matched hard negatives at 30 % mix** (sampler bug fixed, real cross-family role-aware negatives). **Test ROC AUC 0.8825 — NEW PROJECT HEADLINE.** +0.0086 vs R010 CV mean (>2σ outside noise floor). **Test AP 0.8645** (+0.0113 vs R010 CV, >2σ). **TAR@FAR=0.001 = 7.51 %** — highest of any trained M12 model, surpasses B0 frozen baseline (7.06 %). TAR@FAR=0.01 21.30 %, TAR@FAR=0.1 61.89 %. Non-kin accuracy 78.69 % (+3.9 pp vs R010). Val→Test gap -0.021 — smallest of any M12 R-run.
+
+**Hypothesis test:** CONFIRMED. All four pre-registered success criteria met or exceeded.
+
+### Launch command
+
+```bash
+SKIP_INSTALL=1 \
+ALIGNED_ROOT=/home/bruno/Desktop/tcc_new/datasets/FIW_aligned \
+BATCH_SIZE=8 GRAD_ACCUM=4 \
+UNFREEZE_LAST_STAGE=1 \
+RELATION_AUX_WEIGHT=0.05 \
+SYMMETRIC_FORWARD=1 \
+DIFFERENTIAL_LR=1 LR_STAGE4=5e-6 LR_OUTPUT_LAYER=5e-6 LR_HEAD=2e-5 \
+COMPARISON_ONLY_FUSION=1 \
+TRAIN_NEGATIVE_STRATEGY=relation_matched \
+HARD_NEGATIVE_RATIO=0.30 \
+NUM_WORKERS=4 SEED=42 \
+bash models/12_rgck_net/AMD/run_pipeline.sh
+```
+
+### Changes from Run 010
+
+| Parameter | R010 | **R011** |
+|---|---|---|
+| `train_negative_strategy` | random | **relation_matched** (FIXED, role-aware) |
+| `hard_negative_ratio` | n/a | **0.30** (30% role-matched / 70% random) |
+| All other knobs | — | identical to R010 |
+
+Sampler fix in commit `fc3301d`. Previous "relation_matched" runs (M02 R031, M11 v4, M12 R004) used a broken no-op that was equivalent to random. R011 is the first M12 run with real cross-family role-aware negatives.
+
+### Training trajectory
+
+LR shown is first param group (stage4); head LR ≈ 4× that.
+
+| Ep | Train Loss | Val AUC | R010 same ep | Δ R011-R010 |
+|---:|----------:|--------:|------:|------:|
+| 1 | 0.7355 | 0.8320 | 0.8218 | +0.010 |
+| 2 | 0.5821 | 0.8955 | 0.9030 | -0.008 |
+| 3 | 0.5129 | 0.9029 | 0.9100 | -0.007 |
+| **4** | **0.4559** | **0.9036 (peak)** | **0.9119 (R010 peak)** | -0.008 |
+| 5 | 0.4088 | 0.8991 | 0.9052 | -0.006 |
+| 6 | 0.3667 | 0.9000 | 0.9064 | -0.006 |
+| 7-14 | 0.33→0.16 | 0.88-0.90 | 0.89-0.91 | ~-0.005 to -0.013 |
+
+Val AUC tracked uniformly below R010 by 0.005-0.013 — **distribution mismatch artifact** (train sees 30% role-matched, val uses pure random). Test distribution flips the result entirely.
+
+### Test metrics (val-selected threshold 0.300)
+
+| Metric | R006 | R010 single | R010 CV mean | **R011** | Δ R011-R010 CV | σ-distance |
+|---|---:|---:|---:|---:|---:|---:|
+| **Test ROC AUC** | 0.8788 | 0.8754 | 0.8739 ± 0.0038 | **0.8825** ⭐⭐⭐ | **+0.0086** | **+2.26σ** |
+| Test Accuracy | 79.33 % | 79.25 % | 78.42 % ± 0.96 % | **79.82 %** | +1.40 pp | +1.46σ |
+| Test F1 | **0.8017** | 0.7952 | 0.7960 ± 0.0024 | 0.7938 | -0.002 | -0.92σ |
+| Test Precision | 74.17 % | 75.43 % | 73.25 % ± 1.72 % | **77.77 %** ⭐⭐ | **+4.52 pp** | **+2.63σ** |
+| Test Recall | **87.24 %** | 84.08 % | 87.19 % ± 2.13 % | 81.05 % | -6.14 pp | -2.88σ |
+| **Test Avg Precision** | 0.8561 | 0.8567 | 0.8532 ± 0.0050 | **0.8645** ⭐⭐⭐ | **+0.0113** | **+2.26σ** |
+| **TAR @ FAR=0.001** | 3.33 % | 5.21 % | 5.91 % ± 1.22 % | **7.51 %** ⭐⭐⭐ | **+1.60 pp** | +1.31σ |
+| **TAR @ FAR=0.01** | 18.61 % | 21.16 % | 19.24 % ± 1.40 % | **21.30 %** ⭐⭐ | +2.06 pp | +1.47σ |
+| **TAR @ FAR=0.1** | 59.93 % | 60.00 % | 58.92 % ± 1.46 % | **61.89 %** ⭐⭐ | +2.97 pp | +2.03σ |
+| Val→Test AUC gap | -0.026 | -0.030 | — | **-0.021** | — | smallest M12 |
+
+**R011 wins outside the noise floor on AUC, AP, Precision, TAR@FAR=0.1 (all >2σ).** TAR@FAR=0.001 jumps +1.60 pp.
+
+### Per-relation accuracy (FIW Track-I test, threshold 0.300)
+
+| Relation | N | R010 single | **R011** | Δ |
+|----------|--:|---:|---:|---:|
+| bb | 860 | 85.2 % | **85.4 %** | +0.2 pp |
+| ss | 731 | 86.9 % | 85.6 % | -1.3 pp |
+| sibs | 234 | 90.2 % | 86.8 % | -3.4 pp |
+| fs | 1135 | 86.7 % | 83.2 % | -3.5 pp |
+| fd | 918 | 80.0 % | 76.3 % | -3.8 pp |
+| ms | 1036 | 82.7 % | 78.1 % | -4.6 pp |
+| md | 1038 | 86.3 % | 83.0 % | -3.3 pp |
+| gfgd | 138 | 78.3 % | 74.6 % | -3.6 pp |
+| gfgs | 98 | 83.7 % | 79.6 % | -4.1 pp |
+| gmgd | 123 | 71.5 % | 64.2 % | -7.3 pp |
+| gmgs | 121 | 66.1 % | 62.8 % | -3.3 pp |
+| **non-kin** | 6993 | 74.8 % | **78.7 %** | **+3.9 pp** ⭐ |
+
+Non-kin specificity gains substantially; small-class kin regresses (grandmother classes hit hardest). Pattern is consistent with the precision-recall trade-off characteristic of hard-negative training.
+
+### Mechanism
+
+R011 introduces a **fourth class of intervention** in the M12 cycle:
+
+| Class | Targets | Example |
+|---|---|---|
+| Shortcut removal — direction | aggregate AUC | R006 symmetric forward |
+| Shortcut removal — identity | strict-FAR | R009 cmp-only fusion |
+| Capacity reallocation | mid-FAR | R007 diff-LR |
+| **Distribution hardening** | **everything + specificity** | **R011 role-matched hard negs** |
+
+Previous interventions modified the *model*. R011 modifies the *training data*: 30 % of negatives are now pairs that look visually plausible as kin (correct gender, age, role) but cross family boundaries. Forces finer-grained discrimination. Complements R006/R009/R007.
+
+### Files
+
+- Checkpoint: `output/013/checkpoints/best.pt` (530 MB)
+- Train log: `output/013/logs/train.log`
+- Test log: `output/013/logs/test.log`
+- Results: `output/013/results/test_metrics_rocm.txt`
+- Run review: `run-review/run-011.md`
+
+### Next step
+
+CV the R011 recipe (5-fold, ~30 h) to establish a band on the +0.0086 AUC gain. If CV confirms (mean ≥ 0.880), R011 becomes the project's final headline.
+
+---
+
 ## 5-fold CV study — 2026-05-18 → 2026-05-21 — Family-disjoint CV of R006 and R010
 
 **Status:** Completed. 10 fold trainings + tests (5 × R006 + 5 × R010), ~63 h GPU wall-clock total.

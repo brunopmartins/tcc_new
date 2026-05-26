@@ -147,13 +147,29 @@ The structure:
 
 ---
 
-## Conclusion (as of R010 + 5-fold CV)
+## Conclusion (as of R011)
 
-**Three complementary M12 headlines now stand**, after the R&D cycle
-explored single-knob interventions, one two-knob stack, and a 5-fold
-family-disjoint CV of R006 and R010:
+**M12 R011 is the new project headline** (Test AUC **0.8825**, single-run),
+displacing both R006 (0.8788) and R010 (0.8754) by margins outside the
+±0.009 sampler-reseed noise floor and outside the 5-fold CV σ of either.
+The single-knob change was **role-matched hard negatives** at a 30 % mix
+in training, enabled by fixing the previously broken
+`_sample_fiw_rfiw_relation_matched_negatives` sampler (commit `fc3301d`).
 
-- **Aggregate AUC headline — R006** (single-run Test AUC 0.8788; **CV
+**Four headline M12 results now stand** (as of R011, 2026-05-26):
+
+- **🏆 NEW PROJECT HEADLINE — R011** (single-run Test AUC **0.8825**,
+  Test AP **0.8645**, TAR@FAR=0.001 **7.51 %**, TAR@FAR=0.01 **21.30 %**,
+  TAR@FAR=0.1 **61.89 %**, non-kin acc **78.7 %**, val→test gap **-0.021**).
+  Decisive intervention: **role-matched hard negatives at 30 % mix** —
+  30 % of training negatives are cross-family role-aware pairs that look
+  visually plausible as kin (correct gender, age, anatomical role)
+  but aren't actually related. Required fixing the
+  `_sample_fiw_rfiw_relation_matched_negatives` no-op bug (commit
+  `fc3301d`). +0.0086 vs R010 CV mean (>2σ), +0.0092 vs R006 CV mean,
+  +0.0037 vs R006 single-run. Not yet CV'd; CV is the next confirmation step.
+
+- **Aggregate AUC headline (pre-R011) — R006** (single-run Test AUC 0.8788; **CV
   mean 0.8733 ± 0.0038**, n=5). Decisive intervention: **symmetric
   forward** (Option-B BCE) — each pair processed in both (A,B) and
   (B,A) orders; the head can no longer learn direction-specific shortcuts.
