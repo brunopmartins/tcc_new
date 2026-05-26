@@ -187,6 +187,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num_folds", type=int, default=5,
                    help="Total number of folds when --fold is set.")
 
+    # R011: fraction of train negatives that are role-matched (hard) under
+    # negative_sampling_strategy="relation_matched". 0 = pure random,
+    # 1 = pure role-matched. Default 0.0 preserves old behaviour when this
+    # flag is not explicitly set (since relation_matched used to be a no-op
+    # equivalent to random — the fix is opt-in).
+    p.add_argument("--hard_negative_ratio", type=float, default=0.0,
+                   help="Mix of role-matched vs random negatives (R011).")
+
     return p.parse_args()
 
 
@@ -617,6 +625,8 @@ def main() -> None:
             eval_negative_sampling_strategy=args.eval_negative_strategy,
             split_seed=args.seed,
             aligned_root=args.aligned_root,
+            train_hard_negative_ratio=args.hard_negative_ratio,
+            eval_hard_negative_ratio=0.0,
         )
     else:
         train_loader, val_loader, _ = create_dataloaders(
@@ -630,6 +640,8 @@ def main() -> None:
             eval_negative_sampling_strategy=args.eval_negative_strategy,
             split_seed=args.seed,
             aligned_root=args.aligned_root,
+            train_hard_negative_ratio=args.hard_negative_ratio,
+            eval_hard_negative_ratio=0.0,
         )
     print(f"Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
 

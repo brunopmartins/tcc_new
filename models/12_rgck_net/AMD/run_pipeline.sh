@@ -68,6 +68,7 @@ LR_OUTPUT_LAYER="${LR_OUTPUT_LAYER:-5e-6}"         # R007: LR for backbone outpu
 LR_HEAD="${LR_HEAD:-2e-5}"                         # R007: LR for cross_region + gate + classifier + relation_head
 L2SP_WEIGHT="${L2SP_WEIGHT:-0.0}"                  # R008: λ for L2-SP penalty on unfrozen backbone (stage 4 + output_layer)
 COMPARISON_ONLY_FUSION="${COMPARISON_ONLY_FUSION:-0}"  # R009: 1 = drop gA, gB from classifier input
+HARD_NEGATIVE_RATIO="${HARD_NEGATIVE_RATIO:-0.0}"      # R011: fraction of role-matched (hard) train negatives (0 = pure random, 1 = pure hard)
 
 NEGATIVE_RATIO="${NEGATIVE_RATIO:-1.0}"
 EVAL_NEGATIVE_RATIO="${EVAL_NEGATIVE_RATIO:-1.0}"
@@ -220,6 +221,7 @@ TRAIN_ARGS+=(--l2sp_weight "${L2SP_WEIGHT}")
 if [ "${COMPARISON_ONLY_FUSION}" = "1" ]; then
     TRAIN_ARGS+=(--comparison_only_fusion)
 fi
+TRAIN_ARGS+=(--hard_negative_ratio "${HARD_NEGATIVE_RATIO}")
 if [ -n "${FOLD}" ]; then
     TRAIN_ARGS+=(--fold "${FOLD}" --num_folds "${NUM_FOLDS}")
 fi

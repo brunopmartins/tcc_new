@@ -111,6 +111,7 @@ class KinshipPairDataset(Dataset):
         explicit_pair_ids: Optional[set] = None,
         explicit_group_ids: Optional[set] = None,
         aligned_root: Optional[str] = None,
+        hard_negative_ratio: float = 1.0,
     ):
         self.root_dir = Path(root_dir)
         self.dataset_type = dataset_type
@@ -119,6 +120,10 @@ class KinshipPairDataset(Dataset):
         self.negative_ratio = negative_ratio
         self.negative_sampling_strategy = negative_sampling_strategy
         self.split_seed = split_seed
+        # Fraction of negatives that are role-matched (hard) when
+        # negative_sampling_strategy="relation_matched". Default 1.0 = pure
+        # role-matched (R011 v2 semantics). 0.0 = uniform random (legacy).
+        self.hard_negative_ratio = float(hard_negative_ratio)
         self.explicit_group_ids = explicit_group_ids if explicit_group_ids is not None else explicit_pair_ids
         # When set, paths returned by __getitem__ are remapped from root_dir → aligned_root
         # at load time. Pair-building logic still uses root_dir (since it inspects the
@@ -385,6 +390,13 @@ class KinshipPairDataset(Dataset):
         positive_pairs = []
         images_by_family: Dict[str, List[str]] = {}
 
+        # role_images[rel][role][fid] = list of image paths
+        #   role ∈ {"p1", "p2"} (p1 = first MID in train-pairs.csv row, p2 = second)
+        # Used by _sample_fiw_rfiw_relation_matched_negatives (R011 fix) to draw
+        # role-aware hard negatives: e.g. for "fs" pick a p1-role face (father-like)
+        # from family A and a p2-role face (son-like) from family B ≠ A.
+        role_images: Dict[str, Dict[str, Dict[str, List[str]]]] = {}
+
         seen_member_pairs = set()
         for _, row in train_df.iterrows():
             fid = str(row["fid1"])
@@ -412,14 +424,30 @@ class KinshipPairDataset(Dataset):
                 fam_dir = fids_dir / fid
                 images_by_family[fid] = _get_family_images(fam_dir)
 
+            ptype = str(row["ptype"])
+
+            # Track p1/p2 role membership per relation. fid for the p1-side
+            # is row.fid1, and we treat fid2 (when present) as the family
+            # the p2 image really belongs to — in RFIW Track-I positive rows
+            # fid1 == fid2 (intra-family kin), so we use fid for both.
+            role_images.setdefault(ptype, {"p1": {}, "p2": {}})
+            role_images[ptype]["p1"].setdefault(fid, []).extend(imgs1)
+            role_images[ptype]["p2"].setdefault(fid, []).extend(imgs2)
+
             # Expand member pair to face-level pairs
             face_pairs = [(a, b) for a in imgs1 for b in imgs2]
             if len(face_pairs) > max_face_pairs:
                 face_pairs = rng.sample(face_pairs, max_face_pairs)
 
-            ptype = str(row["ptype"])
             for img1, img2 in face_pairs:
                 positive_pairs.append((img1, img2, ptype, fid))
+
+        # Deduplicate per-role image lists so a face that appears in many
+        # pairs is not over-weighted in negative sampling.
+        for ptype, roles in role_images.items():
+            for role, by_fid in roles.items():
+                for fid in list(by_fid.keys()):
+                    by_fid[fid] = sorted(set(by_fid[fid]))
 
         # Ensure all active families have images for negative sampling
         for fid in active_fids:
@@ -433,7 +461,7 @@ class KinshipPairDataset(Dataset):
         # Generate negatives
         if self.negative_sampling_strategy == "relation_matched":
             negative_pairs = self._sample_fiw_rfiw_relation_matched_negatives(
-                positive_pairs, images_by_family
+                positive_pairs, images_by_family, role_images
             )
         else:
             negative_pairs = self._sample_fiw_negatives(
@@ -452,35 +480,93 @@ class KinshipPairDataset(Dataset):
         self,
         positive_records: List[Tuple[str, str, str, str]],
         images_by_family: Dict[str, List[str]],
+        role_images: Optional[Dict[str, Dict[str, Dict[str, List[str]]]]] = None,
     ) -> List[Tuple[str, str, str]]:
-        """Sample relation-matched FIW negatives across families."""
+        """Sample relation-matched FIW negatives across families.
+
+        v2 (M12 R011 fix, 2026-05-25): when ``role_images`` is provided this
+        method generates **role-aware** hard negatives — i.e. for a "fs" pair
+        we pick a p1-role face (father-like) from family A and a p2-role face
+        (son-like) from family B ≠ A. The negative is visually plausible as a
+        fs pair but the two people are not actually related.
+
+        The mix between hard (role-matched) and easy (uniform random) negatives
+        is controlled by ``self.hard_negative_ratio`` (0.0 = pure random,
+        1.0 = pure role-matched). Default is 1.0 to preserve "relation_matched"
+        semantics in this strategy slot.
+
+        Symmetric relations (bb, ss, sibs) treat p1 and p2 as interchangeable.
+
+        Legacy bug (pre-fix): the old implementation discarded the relation
+        choice on the last line (always wrote "non-kin") and sampled images
+        uniformly across families, making it identical to the random sampler
+        modulo a seed offset. M02 R031, M11 v4, M12 R004 all unwittingly used
+        random negatives under this strategy name. See R004 errata.
+        """
         negative_pairs = []
         num_negatives = int(len(positive_records) * self.negative_ratio)
         rng = random.Random(self.split_seed + 270 + _split_offset(self.split))
 
-        # Group images by family for cross-family sampling
         families = [fid for fid, imgs in images_by_family.items() if imgs]
         if len(families) < 2:
             return negative_pairs
 
-        # Track which relation types exist for weighted sampling
-        rel_counts: Dict[str, int] = {}
-        for _, _, rel, _ in positive_records:
-            rel_counts[rel] = rel_counts.get(rel, 0) + 1
-        rel_choices = [rel for _, _, rel, _ in positive_records]
+        symmetric_rels = {"bb", "ss", "sibs"}
+        hard_ratio = float(getattr(self, "hard_negative_ratio", 1.0))
+        hard_ratio = max(0.0, min(1.0, hard_ratio))
 
-        attempts = 0
+        # rel_choices weights the sampled relation type by positive frequency
+        rel_choices = [rel for _, _, rel, _ in positive_records]
+        if not rel_choices:
+            return negative_pairs
+
         seen = set()
-        while len(negative_pairs) < num_negatives and attempts < max(num_negatives * 10, 100):
+        attempts = 0
+        max_attempts = max(num_negatives * 20, 200)
+
+        while len(negative_pairs) < num_negatives and attempts < max_attempts:
             attempts += 1
-            fid1, fid2 = rng.sample(families, 2)
-            img1 = rng.choice(images_by_family[fid1])
-            img2 = rng.choice(images_by_family[fid2])
+            rel = rng.choice(rel_choices)
+
+            use_hard = (
+                role_images is not None
+                and rel in role_images
+                and rng.random() < hard_ratio
+            )
+
+            if use_hard:
+                roles = role_images[rel]
+                if rel in symmetric_rels:
+                    pool_a = "p1" if rng.random() < 0.5 else "p2"
+                    pool_b = "p2" if pool_a == "p1" else "p1"
+                else:
+                    pool_a, pool_b = "p1", "p2"
+
+                fids_a = [fid for fid, imgs in roles[pool_a].items() if imgs]
+                fids_b = [fid for fid, imgs in roles[pool_b].items() if imgs]
+                if len(fids_a) < 1 or len(fids_b) < 1:
+                    # fall back to random for this attempt
+                    use_hard = False
+                else:
+                    fid_a = rng.choice(fids_a)
+                    candidates_b = [f for f in fids_b if f != fid_a]
+                    if not candidates_b:
+                        use_hard = False
+                    else:
+                        fid_b = rng.choice(candidates_b)
+                        img1 = rng.choice(roles[pool_a][fid_a])
+                        img2 = rng.choice(roles[pool_b][fid_b])
+
+            if not use_hard:
+                fid1, fid2 = rng.sample(families, 2)
+                img1 = rng.choice(images_by_family[fid1])
+                img2 = rng.choice(images_by_family[fid2])
+
             key = tuple(sorted((img1, img2)))
-            if key not in seen:
-                seen.add(key)
-                rel = rng.choice(rel_choices)
-                negative_pairs.append((img1, img2, "non-kin"))
+            if key in seen:
+                continue
+            seen.add(key)
+            negative_pairs.append((img1, img2, "non-kin"))
 
         return negative_pairs
 
@@ -632,6 +718,8 @@ def create_dataloaders(
     eval_negative_sampling_strategy: str = "random",
     split_seed: Optional[int] = None,
     aligned_root: Optional[str] = None,
+    train_hard_negative_ratio: float = 1.0,
+    eval_hard_negative_ratio: float = 1.0,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """Create train, validation, and test dataloaders using the shared protocol.
 
@@ -659,6 +747,7 @@ def create_dataloaders(
         negative_sampling_strategy=train_negative_sampling_strategy,
         split_seed=split_seed,
         aligned_root=aligned_root,
+        hard_negative_ratio=train_hard_negative_ratio,
     )
     val_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -669,6 +758,7 @@ def create_dataloaders(
         negative_sampling_strategy=eval_negative_sampling_strategy,
         split_seed=split_seed,
         aligned_root=aligned_root,
+        hard_negative_ratio=eval_hard_negative_ratio,
     )
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -679,6 +769,7 @@ def create_dataloaders(
         negative_sampling_strategy=eval_negative_sampling_strategy,
         split_seed=split_seed,
         aligned_root=aligned_root,
+        hard_negative_ratio=eval_hard_negative_ratio,
     )
 
     train_loader = DataLoader(
@@ -718,6 +809,8 @@ def create_fiw_5fold_train_val_loaders(
     eval_negative_sampling_strategy: str = "random",
     split_seed: int = 42,
     aligned_root: Optional[str] = None,
+    train_hard_negative_ratio: float = 1.0,
+    eval_hard_negative_ratio: float = 1.0,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """K-fold family-disjoint split over RFIW Track-I train-pairs.csv families.
 
@@ -782,6 +875,7 @@ def create_fiw_5fold_train_val_loaders(
         split_seed=split_seed,
         aligned_root=aligned_root,
         explicit_group_ids=train_fids,
+        hard_negative_ratio=train_hard_negative_ratio,
     )
     val_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -793,6 +887,7 @@ def create_fiw_5fold_train_val_loaders(
         split_seed=split_seed,
         aligned_root=aligned_root,
         explicit_group_ids=val_fids,
+        hard_negative_ratio=eval_hard_negative_ratio,
     )
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -803,6 +898,7 @@ def create_fiw_5fold_train_val_loaders(
         negative_sampling_strategy=eval_negative_sampling_strategy,
         split_seed=split_seed,
         aligned_root=aligned_root,
+        hard_negative_ratio=eval_hard_negative_ratio,
     )
 
     train_loader = DataLoader(
