@@ -147,27 +147,26 @@ The structure:
 
 ---
 
-## Conclusion (as of R011)
+## Conclusion (as of R011 CV — 2026-05-27)
 
-**M12 R011 is the new project headline** (Test AUC **0.8825**, single-run),
-displacing both R006 (0.8788) and R010 (0.8754) by margins outside the
-±0.009 sampler-reseed noise floor and outside the 5-fold CV σ of either.
-The single-knob change was **role-matched hard negatives** at a 30 % mix
-in training, enabled by fixing the previously broken
-`_sample_fiw_rfiw_relation_matched_negatives` sampler (commit `fc3301d`).
+**Revised after 5-fold CV of R011 (output/014/, completed 2026-05-27):**
+the single-run R011 (Test AUC 0.8825) was a favorable upper-tail draw.
+R011 **CV mean Test AUC is 0.8761 ± 0.0029**, only +0.0022 above R010 CV
+(z = 0.45, not significant — within the noise floor). The role-matched
+hard-negative intervention does produce a reproducible **low-FAR** lift
+(TAR@FAR=0.001 = 0.0677 ± 0.0147 vs R010 0.0524, +0.015 ~ 1σ), but it
+does **not** beat R010 on aggregate AUC outside the noise floor.
 
-**Four headline M12 results now stand** (as of R011, 2026-05-26):
+**Three CV-validated headline structures now stand** (as of R011 CV,
+2026-05-27):
 
-- **🏆 NEW PROJECT HEADLINE — R011** (single-run Test AUC **0.8825**,
-  Test AP **0.8645**, TAR@FAR=0.001 **7.51 %**, TAR@FAR=0.01 **21.30 %**,
-  TAR@FAR=0.1 **61.89 %**, non-kin acc **78.7 %**, val→test gap **-0.021**).
-  Decisive intervention: **role-matched hard negatives at 30 % mix** —
-  30 % of training negatives are cross-family role-aware pairs that look
-  visually plausible as kin (correct gender, age, anatomical role)
-  but aren't actually related. Required fixing the
-  `_sample_fiw_rfiw_relation_matched_negatives` no-op bug (commit
-  `fc3301d`). +0.0086 vs R010 CV mean (>2σ), +0.0092 vs R006 CV mean,
-  +0.0037 vs R006 single-run. Not yet CV'd; CV is the next confirmation step.
+- **🏆 Low-FAR headline — R011 (CV-validated)**: TAR@FAR=0.001 =
+  **0.0677 ± 0.0147** (+0.015 over R010 ~ 1σ, +0.045 over M02 R031).
+  Test AUC **0.8761 ± 0.0029**, Test AP **0.8562 ± 0.0031**,
+  TAR@FAR=0.01 0.2069 ± 0.0107. n=5 family-disjoint folds in
+  `output/014/`. Decisive intervention: **role-matched hard negatives
+  at 30 % mix** (sampler-fix commit `fc3301d`). Single-run 0.8825 was
+  an upper-tail draw; CV mean is the honest project-level number.
 
 - **Aggregate AUC headline (pre-R011) — R006** (single-run Test AUC 0.8788; **CV
   mean 0.8733 ± 0.0038**, n=5). Decisive intervention: **symmetric
@@ -502,23 +501,35 @@ Three complementary M12 headlines now stand:
 - **Operating-curve headline: R010** (TAR@FAR=0.01 = 21.16 %,
   TAR@FAR=0.1 = 60.00 %, Test AP = 0.8567 — all M12 bests).
 
-Active priority order (post-R010):
+Active priority order (post-R011 CV, 2026-05-27):
 
-1. **Pivot to TCC narrative work.** The M12 R&D cycle has produced
-   three complementary champions across all major Test metric
-   families. Further single-knob runs have low EV — additional gains
-   are likely <1 pp on individual metrics and require crossing into
-   either architectural changes (ROI Align) or unrelated data work
-   (sampler fix, multi-seed variance). **Recommended next move:
-   cross-model comparison polish + write-up.**
+1. **R012 — consistency loss + extended stage-3 unfreeze** (implemented
+   2026-05-27, not yet launched). Adds `λ × (1 - cos(fusion_AB, fusion_BA))`
+   to the loss + unfreezes `body[43:46]` on top of the R011 stack. Highest
+   EV remaining intervention: it directly attacks the only mechanism that
+   could explain three different interventions (R006/R010/R011) hitting
+   the same 0.876 ± 0.003 CV ceiling — direction-specific shortcuts that
+   cancel only on average. See [run-012.md](run-012.md) and
+   [`AMD/run_r012.sh`](../AMD/run_r012.sh).
 
-2. **R011 candidate — L2-SP at higher λ (1e-2)** on top of R006.
-   Distinguishes the two R008 interpretations. Lower EV given
-   R008's null result.
+2. **CV-fold ensemble of R011** (implemented 2026-05-27, not yet
+   launched). Soft ensemble of the 5 R011 CV `best.pt` checkpoints on
+   the same fixed test set; no training, ~30 min inference. Expected
+   +0.005 to +0.010 Test AUC over the per-fold mean (0.8761). The
+   cheapest plausible way to push past the 0.876 ceiling. See
+   [cv_ensemble_r011.md](cv_ensemble_r011.md) and
+   [`AMD/cv_ensemble_r011.sh`](../AMD/cv_ensemble_r011.sh).
 
-3. **R012 candidate — Lower relation_aux λ** (0.02 or 0.03) on
-   top of R006 — if reducing the aux weight recovers some
-   precision without losing per-class balance.
+3. **Pivot to TCC narrative work.** Either of R012 / R011 ensemble
+   succeeding gives the TCC its definitive deployment number; either
+   failing closes off the architectural lever and tells the same story
+   from the other direction.
+
+4. **Legacy lower-EV candidates** (pre-R011 CV):
+   - L2-SP at higher λ (1e-2) on top of R006 — distinguishes the two
+     R008 interpretations. Lower EV given R008's null result.
+   - Lower relation_aux λ (0.02 or 0.03) on top of R006 — if reducing
+     the aux weight recovers precision without losing per-class balance.
 
 4. **Architecture switch to ROI Align tokenizer** (proposal §15
    Strategy 1). Larger code change.

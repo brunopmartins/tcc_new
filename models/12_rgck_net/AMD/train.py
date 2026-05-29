@@ -85,6 +85,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--unfreeze_last_stage", action="store_true", default=False,
                    help="Phase 2: keep backbone frozen except for body[46:49] (stage 4) "
                         "+ output_layer. Effective only when --freeze_backbone is set.")
+    p.add_argument("--unfreeze_extra_stage3_tail", action="store_true", default=False,
+                   help="R012: additionally unfreeze body[43:46] (stage 3 tail) on top "
+                        "of body[46:49] + output_layer. Effective only when "
+                        "--unfreeze_last_stage is set.")
     p.add_argument("--img_size", type=int, default=RGCK_IMG_SIZE)
 
     # RGCK-Net specifics
@@ -124,6 +128,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--relation_aux_unbalanced", dest="relation_aux_balanced",
                    action="store_false",
                    help="Disable class-balancing weights (uniform CE).")
+
+    # R012: cosine-consistency between fusion features in the AB and BA passes
+    p.add_argument("--consistency_weight", type=float, default=0.0,
+                   help="Weight λ for the cosine-consistency loss between "
+                        "fusion_AB and fusion_BA. Only active with --symmetric_forward. "
+                        "0.0 = disabled (R011 baseline). 0.05 = R012 starting value.")
 
     # R006: symmetric forward — process each pair as both (A,B) and (B,A) and
     # combine the two directions in the loss. Same parameter count, ~+15-25%
@@ -225,6 +235,7 @@ class RGCKBCELoss(nn.Module):
         supcon_margin: float = 0.3,
         relation_weight: float = 0.0,
         relation_class_weights: "Optional[torch.Tensor]" = None,
+        consistency_weight: float = 0.0,
     ):
         super().__init__()
         self.loss_type = "bce"
@@ -232,6 +243,9 @@ class RGCKBCELoss(nn.Module):
         self.supcon_weight = float(supcon_weight)
         self.supcon_margin = float(supcon_margin)
         self.relation_weight = float(relation_weight)
+        # R012: cosine-consistency loss between fusion_AB and fusion_BA. Only
+        # active in symmetric_forward mode. Adds λ * (1 - cos(f_AB, f_BA)).
+        self.consistency_weight = float(consistency_weight)
         if relation_class_weights is not None:
             self.register_buffer(
                 "relation_class_weights", relation_class_weights.float()
@@ -334,6 +348,20 @@ class RGCKBCELoss(nn.Module):
                 if ce is not None:
                     total = total + self.relation_weight * ce
 
+        # R012 consistency loss: force fusion_AB ≈ fusion_BA. Only meaningful
+        # when symmetric_forward is on (we need both directions' fusions).
+        if (
+            self.consistency_weight > 0.0
+            and is_symmetric
+            and "fusion_ab" in sym_extras
+            and "fusion_ba" in sym_extras
+        ):
+            f_ab = sym_extras["fusion_ab"].float()
+            f_ba = sym_extras["fusion_ba"].float()
+            cos = nn.functional.cosine_similarity(f_ab, f_ba, dim=-1)
+            consistency = (1.0 - cos).mean()
+            total = total + self.consistency_weight * consistency
+
         return total
 
 
@@ -431,6 +459,11 @@ def build_differential_lr_optimizer_and_scheduler(
     backbone = model.tokenizer.backbone
     stage4_params = [p for p in backbone.body[46:49].parameters() if p.requires_grad]
     output_layer_params = [p for p in backbone.output_layer.parameters() if p.requires_grad]
+    # R012: if body[43:46] was also unfrozen, route it through the same LR as
+    # stage 4 (these tail-of-stage-3 blocks are the closest peer to stage 4).
+    stage3_tail_params = [
+        p for p in backbone.body[43:46].parameters() if p.requires_grad
+    ]
 
     head_modules = [model.cross_region, model.regional_gate, model.classifier]
     if getattr(model, "relation_head", None) is not None:
@@ -444,6 +477,11 @@ def build_differential_lr_optimizer_and_scheduler(
         {"params": output_layer_params, "lr": lr_output_layer, "name": "backbone_output_layer"},
         {"params": head_params, "lr": lr_head, "name": "head"},
     ]
+    if stage3_tail_params:
+        param_groups.insert(
+            0,
+            {"params": stage3_tail_params, "lr": lr_stage4, "name": "backbone_stage3_tail"},
+        )
     optimizer = AdamW(param_groups, weight_decay=weight_decay, eps=1e-8)
 
     warmup = LinearLR(
@@ -681,6 +719,7 @@ def main() -> None:
         dropout=args.dropout,
         freeze_backbone=args.freeze_backbone,
         unfreeze_last_stage=args.unfreeze_last_stage,
+        unfreeze_extra_stage3_tail=args.unfreeze_extra_stage3_tail,
         aux_relation_head=aux_relation_head_enabled,
         num_relation_classes=FIW_NUM_RELATIONS,
         symmetric_forward=args.symmetric_forward,
@@ -713,6 +752,7 @@ def main() -> None:
         supcon_margin=args.supcon_margin,
         relation_weight=args.relation_aux_weight,
         relation_class_weights=relation_class_weights,
+        consistency_weight=args.consistency_weight,
     )
     if args.supcon_weight > 0:
         print(f"  Loss: BCE + {args.supcon_weight:.3f} × SupCon (margin={args.supcon_margin})")
@@ -722,6 +762,13 @@ def main() -> None:
             f"(positives only, {FIW_NUM_RELATIONS} classes, "
             f"{'balanced' if args.relation_aux_balanced else 'uniform'})"
         )
+    if args.consistency_weight > 0:
+        if not args.symmetric_forward:
+            print(
+                "  WARNING: --consistency_weight requires --symmetric_forward; "
+                "the term will be a no-op."
+            )
+        print(f"  Loss: + {args.consistency_weight:.3f} × (1 - cos(fusion_AB, fusion_BA))")
 
     trainer = RGCKROCmTrainer(
         model=model,
@@ -836,6 +883,7 @@ def main() -> None:
         "dropout": args.dropout,
         "freeze_backbone": args.freeze_backbone,
         "unfreeze_last_stage": args.unfreeze_last_stage,
+        "unfreeze_extra_stage3_tail": bool(args.unfreeze_extra_stage3_tail),
         "supcon_weight": args.supcon_weight,
         "supcon_margin": args.supcon_margin,
         "aux_relation_head": aux_relation_head_enabled,
@@ -843,6 +891,7 @@ def main() -> None:
         "relation_aux_balanced": bool(args.relation_aux_balanced),
         "num_relation_classes": FIW_NUM_RELATIONS,
         "symmetric_forward": bool(args.symmetric_forward),
+        "consistency_weight": args.consistency_weight,
         "differential_lr": bool(args.differential_lr),
         "lr_stage4": args.lr_stage4 if args.differential_lr else None,
         "lr_output_layer": args.lr_output_layer if args.differential_lr else None,

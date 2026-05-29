@@ -267,6 +267,7 @@ class RGCKNet(nn.Module):
         dropout: float = 0.2,
         freeze_backbone: bool = True,
         unfreeze_last_stage: bool = False,
+        unfreeze_extra_stage3_tail: bool = False,
         aux_relation_head: bool = False,
         num_relation_classes: int = 11,
         symmetric_forward: bool = False,
@@ -276,6 +277,7 @@ class RGCKNet(nn.Module):
         self.embedding_dim = embedding_dim
         self.freeze_backbone = freeze_backbone
         self.unfreeze_last_stage = unfreeze_last_stage
+        self.unfreeze_extra_stage3_tail = unfreeze_extra_stage3_tail
         self.aux_relation_head = aux_relation_head
         self.num_relation_classes = num_relation_classes
         self.symmetric_forward = symmetric_forward
@@ -303,6 +305,14 @@ class RGCKNet(nn.Module):
                     p.requires_grad = True
                 for p in adaface_backbone.output_layer.parameters():
                     p.requires_grad = True
+
+                # R012: optionally extend the unfreeze into the tail of stage 3
+                # (body[43:46]) to give the backbone more capacity for the
+                # consistency-loss objective. Off by default — only enabled
+                # via the R012 recipe.
+                if unfreeze_extra_stage3_tail:
+                    for p in adaface_backbone.body[43:46].parameters():
+                        p.requires_grad = True
 
         # Cross-region adapter
         self.cross_region = CrossRegionAdapter(
@@ -355,12 +365,14 @@ class RGCKNet(nn.Module):
 
     def _forward_head(
         self, tokens_a: torch.Tensor, tokens_b: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "Optional[torch.Tensor]"]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, "Optional[torch.Tensor]", torch.Tensor]:
         """Run the post-tokenizer stack on a single (tokens_a, tokens_b) order:
         cross-region adapter → regional gate → fusion + classifier (and
         relation_head when enabled). Used twice in the symmetric forward.
 
-        Returns (logit, weights, attn_map, gA_norm, gB_norm, rel_logits).
+        Returns (logit, weights, attn_map, gA_norm, gB_norm, rel_logits, fusion).
+        ``fusion`` is the pre-classifier feature vector exposed for the R012
+        cosine-consistency loss between the AB and BA passes.
         """
         # Cross-region adapter (direction-dependent: attn_ab / attn_ba etc.)
         ctx_a, ctx_b, attn_map = self.cross_region(tokens_a, tokens_b)
@@ -400,7 +412,7 @@ class RGCKNet(nn.Module):
         else:
             rel_logits = None
 
-        return logit, weights, attn_map, gA_norm, gB_norm, rel_logits
+        return logit, weights, attn_map, gA_norm, gB_norm, rel_logits, fusion
 
     def forward(
         self, img_a: torch.Tensor, img_b: torch.Tensor
@@ -431,15 +443,15 @@ class RGCKNet(nn.Module):
         tokens_a = self.tokenizer(img_a)
         tokens_b = self.tokenizer(img_b)
 
-        logit_ab, weights_ab, attn_ab, gA_norm_ab, gB_norm_ab, rel_ab = self._forward_head(
-            tokens_a, tokens_b
+        logit_ab, weights_ab, attn_ab, gA_norm_ab, gB_norm_ab, rel_ab, fusion_ab = (
+            self._forward_head(tokens_a, tokens_b)
         )
 
         if not self.symmetric_forward:
             return logit_ab, weights_ab, attn_ab, gA_norm_ab, gB_norm_ab, rel_ab
 
-        logit_ba, weights_ba, attn_ba, gA_norm_ba, gB_norm_ba, rel_ba = self._forward_head(
-            tokens_b, tokens_a
+        logit_ba, weights_ba, attn_ba, gA_norm_ba, gB_norm_ba, rel_ba, fusion_ba = (
+            self._forward_head(tokens_b, tokens_a)
         )
 
         # Symmetric outputs: averaged for inference; per-direction kept for the
@@ -457,6 +469,9 @@ class RGCKNet(nn.Module):
             "rel_logits_ba": rel_ba,
             "gA_norm_ba": gA_norm_ba,
             "gB_norm_ba": gB_norm_ba,
+            # R012: fusion features per direction for the consistency loss.
+            "fusion_ab": fusion_ab,
+            "fusion_ba": fusion_ba,
         }
 
         return logit, weights_ab, attn_ab, gA_norm_ab, gB_norm_ab, rel_logits, sym_extras
@@ -473,6 +488,7 @@ def build_rgck_net(
     dropout: float = 0.2,
     freeze_backbone: bool = True,
     unfreeze_last_stage: bool = False,
+    unfreeze_extra_stage3_tail: bool = False,
     aux_relation_head: bool = False,
     num_relation_classes: int = 11,
     symmetric_forward: bool = False,
@@ -499,6 +515,7 @@ def build_rgck_net(
         dropout=dropout,
         freeze_backbone=freeze_backbone,
         unfreeze_last_stage=unfreeze_last_stage,
+        unfreeze_extra_stage3_tail=unfreeze_extra_stage3_tail,
         aux_relation_head=aux_relation_head,
         num_relation_classes=num_relation_classes,
         symmetric_forward=symmetric_forward,

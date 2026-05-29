@@ -362,7 +362,24 @@ The per-run reviews are:
 - [run-008.md](run-008.md) — L2-SP regulariser λ=1e-3
 - [run-009.md](run-009.md) — comparison-only fusion (strict-FAR champion)
 - [run-010.md](run-010.md) — R007 + R009 stack (mid-FAR + AP champion)
+- [run-011.md](run-011.md) — role-matched hard negatives (low-FAR champion, CV-validated)
 - [run-004.md](run-004.md) — hard-negatives Errata
 
 The full run-by-run history is in `RUN_LOG.md` and the cross-run
 tables are in `overview.md`.
+
+## Postscript (2026-05-27) — R011 closed the cycle
+
+The R011 candidate that this summary listed as "next" was executed
+(single-run 2026-05-25 → 2026-05-26) and CV-validated (2026-05-26 →
+2026-05-27, `output/014/`). The R011 intervention was *not* L2-SP at
+higher λ — that idea was supplanted by the role-matched hard-negatives
+sampler-fix (`fc3301d`), which had the higher expected value given
+the M02 R031 / M11 v4 / M12 R004 retraction history.
+
+**R011 outcome — CV (n=5):** Test AUC 0.8761 ± 0.0029 (within noise
+floor of R010 CV 0.8739 ± 0.0038, z = 0.45). TAR@FAR=0.001 = 0.0677 ±
+0.0147 (+0.015 over R010 ~ 1σ). The single-run 0.8825 was a favorable
+upper-tail draw; the CV mean is the honest project number. R011 is
+now the **low-FAR** headline; AUC remains tied with R006/R010 at the
+0.876 ± 0.003 noise floor. Full details: [run-011.md](run-011.md).

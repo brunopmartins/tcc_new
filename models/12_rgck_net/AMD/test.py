@@ -70,6 +70,7 @@ def main():
         dropout=model_config.get("dropout", 0.2),
         freeze_backbone=model_config.get("freeze_backbone", True),
         unfreeze_last_stage=model_config.get("unfreeze_last_stage", False),
+        unfreeze_extra_stage3_tail=model_config.get("unfreeze_extra_stage3_tail", False),
         aux_relation_head=model_config.get("aux_relation_head", False),
         num_relation_classes=model_config.get("num_relation_classes", 11),
         symmetric_forward=model_config.get("symmetric_forward", False),

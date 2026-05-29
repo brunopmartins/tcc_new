@@ -6,6 +6,58 @@ Newest run on top.
 
 ---
 
+## Run 012 — 2026-05-27 — Planning doc, NOT YET LAUNCHED — Consistency loss + extended stage-3 unfreeze
+
+**Status:** Implementation complete. GPU is currently running M13 R002 (output/002/).
+Launch wrapper: [`AMD/run_r012.sh`](AMD/run_r012.sh).
+Planning doc: [`run-review/run-012.md`](run-review/run-012.md).
+
+**Recipe (delta vs R011):**
+
+- `CONSISTENCY_WEIGHT=0.05`: adds `0.05 × (1 - cos(fusion_AB, fusion_BA)).mean()` to the loss. Forces order-invariance at the pre-classifier fusion level, not only at the BCE-logit level. Only active with `SYMMETRIC_FORWARD=1` (which R011 already has).
+- `UNFREEZE_EXTRA_STAGE3_TAIL=1`: additionally unfreeze `body[43:46]` (3 BasicBlockIR units in the tail of stage 3) on top of `body[46:49] + output_layer`. ~+3.5 M trainable params (49.24 % of total vs R011's 44.20 %). Routes through the same differential LR group as stage 4 (`LR_STAGE4=5e-6`).
+- Everything else identical to R011.
+
+**Hypothesis:** the R006/R010/R011 CV-AUC ceiling at 0.876 ± 0.003 is partly because the cross-region adapter learns direction-specific shortcuts that cancel only on average (R006 Option-B BCE forces the *average* logit to be order-invariant but each direction's fusion vector is free). An explicit cosine-consistency penalty on `(fusion_AB, fusion_BA)` propagates the constraint back through the adapter weights. The extra-stage-3 capacity is bundled because the harder constraint needs somewhere to go.
+
+**Decision rules:**
+
+- Test AUC ≥ 0.880: launch 5-fold CV; new headline candidate.
+- 0.876 ≤ AUC < 0.880: check low-FAR; CV only if low-FAR clears R011's 0.0677 ± 0.0147 meaningfully.
+- AUC < 0.876: sweep `CONSISTENCY_WEIGHT ∈ {0.01, 0.02}` once before abandoning.
+- Val→test gap > 0.05: extra-stage-3 unfreeze is overfitting; retry with consistency only (`UNFREEZE_EXTRA_STAGE3_TAIL=0`).
+
+**Implementation notes:**
+
+- `_forward_head` now returns a 7-tuple ending with the `fusion` tensor; the symmetric forward stores `fusion_ab` and `fusion_ba` in `sym_extras` for the loss.
+- `RGCKBCELoss` gained a `consistency_weight` parameter and the corresponding loss term.
+- `RGCKNet.__init__` and `build_rgck_net(...)` gained `unfreeze_extra_stage3_tail`.
+- `build_differential_lr_optimizer_and_scheduler` adds a `backbone_stage3_tail` param group (sharing `lr_stage4`).
+- All new flags persist in `model_config` so `test.py` and `cv_ensemble.py` reload correctly.
+- Smoke tests pass: model produces finite loss with consistency_weight=0.05; trainable param count matches expectation.
+
+---
+
+## CV-fold ensemble — R011 — 2026-05-27 — Planning doc, NOT YET RUN
+
+**Status:** Script implemented. Inputs are the 5 R011 CV `best.pt` checkpoints in `output/014/fold_{0..4}/checkpoints/`. Wall-clock estimate ~30 min of pure inference.
+Script: [`AMD/cv_ensemble.py`](AMD/cv_ensemble.py) + [`AMD/cv_ensemble_r011.sh`](AMD/cv_ensemble_r011.sh).
+Planning doc: [`run-review/cv_ensemble_r011.md`](run-review/cv_ensemble_r011.md).
+
+**Idea:** All 5 R011 CV folds evaluate on the *same* 13 425-pair RFIW Track-I test set. The 5 sigmoid prediction vectors are statistically independent (each model saw disjoint families) but on identical test pairs — a clean soft-ensembling setting. Mean of per-fold sigmoid probabilities + mean of per-fold val-selected thresholds gives a single ensemble metric pack with no test-set snooping.
+
+**Expected outcome:** historically CV-fold ensembles give +0.005 to +0.010 AUC over the per-fold mean (0.8761). R011's per-fold TAR@FAR=0.001 swing is 0.051–0.083 — meaningful diversity to exploit at low-FAR.
+
+**Decision rule:**
+
+- Ensemble AUC ≥ 0.880: report as the project's deployment headline; cite per-fold mean ± std for variance.
+- 0.876 ≤ AUC < 0.880: framed as "ensembling recovers ~half the inter-fold variance"; not a breakthrough.
+- AUC < 0.876: ensemble does nothing — folds learned the same function. File and move on.
+
+In all cases the TAR@FAR=0.001 ensemble number is also reported, since R011 is already the low-FAR headline.
+
+---
+
 ## Run 011 — 2026-05-25 → 2026-05-26 — Manually stopped at ep 15 (peak Val AUC 0.9036 ep 4; Test AUC **0.8825 — NEW PROJECT HEADLINE**)
 
 **Status:** Manually stopped during ep 15 training. Peak Val AUC 0.9036 reached at ep 4; best.pt saved from that epoch.
@@ -117,6 +169,51 @@ Previous interventions modified the *model*. R011 modifies the *training data*: 
 ### Next step
 
 CV the R011 recipe (5-fold, ~30 h) to establish a band on the +0.0086 AUC gain. If CV confirms (mean ≥ 0.880), R011 becomes the project's final headline.
+
+---
+
+## 5-fold CV of R011 — 2026-05-26 → 2026-05-27 (output/014/)
+
+**Outcome:** R011 CV mean Test AUC **0.8761 ± 0.0029**, only +0.0022 above R010 CV (z = 0.45, **NOT significant** — within the noise floor). The single-run 0.8825 was a favorable upper-tail draw. R011's reproducible advantage is at **low-FAR**: TAR@FAR=0.001 = **0.0677 ± 0.0147** (+0.015 over R010, ~1σ), TAR@FAR=0.01 = 0.2069 ± 0.0107. Role-matched hard negatives at 30 % mix do work — they just don't move aggregate AUC outside noise.
+
+### Per-fold (output/014/fold_{0..4})
+
+| Fold | Val peak | Test AUC | Test AP | TAR@FAR=0.001 | TAR@FAR=0.01 | TAR@FAR=0.1 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0.8800 | 0.8767 | 0.8564 | 0.0779 | 0.2086 | 0.5920 |
+| 1 | 0.8789 | 0.8754 | 0.8537 | 0.0510 | 0.1915 | 0.6040 |
+| 2 | 0.8737 | 0.8771 | 0.8579 | 0.0835 | 0.2083 | 0.5913 |
+| 3 | 0.8977 | **0.8796** | **0.8602** | 0.0728 | **0.2214** | 0.6032 |
+| 4 | 0.8829 | 0.8716 | 0.8527 | 0.0533 | 0.2048 | 0.5847 |
+
+### Aggregate (n=5, sample std)
+
+| Metric | R011 CV | R010 CV | R006 CV | M02 R031 CV |
+|---|---:|---:|---:|---:|
+| Test ROC AUC | **0.8761 ± 0.0029** | 0.8739 ± 0.0038 | 0.8733 ± 0.0038 | 0.8462 ± 0.0040 |
+| Test AP | 0.8562 ± 0.0031 | — | — | 0.8131 |
+| TAR@FAR=0.001 | **0.0677 ± 0.0147** | 0.0524 | — | 0.0219 |
+| TAR@FAR=0.01 | 0.2069 ± 0.0107 | 0.1924 | — | 0.1349 |
+| TAR@FAR=0.1 | 0.5950 ± 0.0083 | 0.5892 | — | 0.4964 |
+| F1 | 0.7979 ± 0.0024 | — | — | 0.7774 |
+| Recall | 0.8826 ± 0.0144 | — | — | 0.9225 |
+| Precision | 0.7282 ± 0.0090 | — | — | 0.6724 |
+| Accuracy | 0.7858 ± 0.0036 | — | — | 0.7466 |
+
+### Revised headline structure (after CV)
+
+- **Aggregate AUC**: R006 / R010 / R011 all CV-tied within the noise floor (σ ≈ 0.003-0.004). Use 0.876 ± 0.003 as the canonical "best CV mean" number.
+- **Low-FAR (TAR@FAR=0.001)**: **R011 CV 0.068 ± 0.015** — the reproducible operational headline.
+- **Mid-FAR + AP**: R011 CV (0.207, 0.856) matches or slightly beats R010 CV within noise.
+
+The original "R011 single-run is the new headline (+0.0086, >2σ)" claim is **retracted** in favor of the CV-mean interpretation. Run-review/run-011.md has the full retraction and revised TCC narrative.
+
+### Artifacts
+
+- Folds: `output/014/fold_{0..4}/{checkpoints,logs,results}/`
+- Runner: `AMD/cv_runner_r011.sh`
+- Runner log: `/tmp/r011_cv_runner.log`
+- Wall-clock: 35h 32min (06:26 2026-05-26 → 17:58 2026-05-27)
 
 ---
 

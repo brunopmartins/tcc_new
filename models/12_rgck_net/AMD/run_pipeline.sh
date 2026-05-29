@@ -57,6 +57,8 @@ CLASSIFIER_HIDDEN="${CLASSIFIER_HIDDEN:-512}"
 DROPOUT="${DROPOUT:-0.2}"
 FREEZE_BACKBONE="${FREEZE_BACKBONE:-1}"        # Phase 1 default: frozen
 UNFREEZE_LAST_STAGE="${UNFREEZE_LAST_STAGE:-0}" # Phase 2: set to 1 to unfreeze body[46:49] + output_layer
+UNFREEZE_EXTRA_STAGE3_TAIL="${UNFREEZE_EXTRA_STAGE3_TAIL:-0}"  # R012: 1 = additionally unfreeze body[43:46] on top of body[46:49] + output_layer
+CONSISTENCY_WEIGHT="${CONSISTENCY_WEIGHT:-0.0}"                # R012: cosine consistency between fusion_AB and fusion_BA (requires SYMMETRIC_FORWARD=1)
 SUPCON_WEIGHT="${SUPCON_WEIGHT:-0.0}"             # Phase 4: weight λ for supervised-contrastive aux (0.0 = disabled)
 SUPCON_MARGIN="${SUPCON_MARGIN:-0.3}"             # margin for negative pairs in supcon term
 RELATION_AUX_WEIGHT="${RELATION_AUX_WEIGHT:-0.0}" # Phase 5: weight λ for relation-type CE aux on positives (0.0 = disabled)
@@ -144,7 +146,8 @@ echo "Run ID:              ${RUN_LABEL}"
 echo "Run dir:             ${RUN_DIR}"
 echo "Aligned root:        ${ALIGNED_ROOT}"
 echo "AdaFace weights:     ${ADAFACE_WEIGHTS}"
-echo "Backbone frozen:     ${FREEZE_BACKBONE} (unfreeze_last_stage=${UNFREEZE_LAST_STAGE})"
+echo "Backbone frozen:     ${FREEZE_BACKBONE} (unfreeze_last_stage=${UNFREEZE_LAST_STAGE}, extra_stage3_tail=${UNFREEZE_EXTRA_STAGE3_TAIL})"
+echo "Consistency weight:  ${CONSISTENCY_WEIGHT}"
 echo "Cross-attn:          ${CROSS_ATTN_LAYERS} layer × ${CROSS_ATTN_HEADS} heads"
 echo "Dropout:             ${DROPOUT}"
 echo "Batch / grad accum:  ${BATCH_SIZE} × ${GRAD_ACCUM} (eff $((BATCH_SIZE * GRAD_ACCUM)))"
@@ -208,6 +211,10 @@ fi
 if [ "${UNFREEZE_LAST_STAGE}" = "1" ]; then
     TRAIN_ARGS+=(--unfreeze_last_stage)
 fi
+if [ "${UNFREEZE_EXTRA_STAGE3_TAIL}" = "1" ]; then
+    TRAIN_ARGS+=(--unfreeze_extra_stage3_tail)
+fi
+TRAIN_ARGS+=(--consistency_weight "${CONSISTENCY_WEIGHT}")
 if [ "${RELATION_AUX_BALANCED}" != "1" ]; then
     TRAIN_ARGS+=(--relation_aux_unbalanced)
 fi
