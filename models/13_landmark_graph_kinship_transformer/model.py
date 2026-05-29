@@ -132,40 +132,56 @@ def _build_intra_edges() -> List[Tuple[int, int]]:
 # ---------------------------------------------------------------------------
 
 class LandmarkROITokenizer(nn.Module):
-    """One AdaFace pass per face → (B, 512, 7, 7) spatial map → ROIAlign over
-    landmark-derived component boxes → (B, K, 512) node tokens.
+    """One AdaFace pass per face → spatial feature map → ROIAlign over
+    landmark-derived component boxes → (B, K, embedding_dim) node tokens.
 
-    The 112-pixel boxes are converted to 7×7 feature-map coordinates by
-    ``roi_align``'s ``spatial_scale=7/112``.
+    Supports two feature-stage configurations (R002 introduces stage3):
+
+    - ``feature_stage="stage4"`` (R001 default): forward_spatial → (B, 512, 7, 7).
+      Coarse spatial grid (16-pixel cells in 112-pixel space) — small ROIs
+      may sample only 1-2 cells.
+    - ``feature_stage="stage3"``: manual forward through ``body[0:46]`` →
+      (B, 256, 14, 14). 4× more spatial cells, but 256 channels instead of
+      512 — a learned projection brings the per-node tokens back to
+      ``embedding_dim``.
     """
 
     def __init__(
         self,
         backbone: nn.Module,
+        embedding_dim: int = 512,
         boxes_112: List[Tuple[str, Tuple[float, float, float, float]]] = None,
-        feature_map_size: int = 7,
+        feature_stage: str = "stage4",
         roi_output_size: int = 3,
         pool: str = "avg",
     ):
         super().__init__()
+        if feature_stage not in ("stage4", "stage3"):
+            raise ValueError(f"Unknown feature_stage: {feature_stage}")
+        self.feature_stage = feature_stage
         self.backbone = backbone
         boxes_112 = boxes_112 if boxes_112 is not None else COMPONENT_BOXES_112
         self.box_names = [name for name, _ in boxes_112]
         self.num_nodes = len(boxes_112)
-        self.feature_map_size = feature_map_size
+        self.embedding_dim = embedding_dim
         self.roi_output_size = roi_output_size
 
-        # Register box coords (in 112-pixel space) as a buffer so they move
-        # with the model when .to(device) is called.
         boxes_tensor = torch.tensor(
             [list(b) for _, b in boxes_112], dtype=torch.float32
         )  # (K, 4) — (x0, y0, x1, y1)
         self.register_buffer("boxes_112", boxes_tensor, persistent=False)
 
-        # roi_align's spatial_scale converts box pixel coords to feature-map
-        # coords. We pass coordinates in 112-pixel space; the 7×7 map is at
-        # scale 1/16 of 112.
-        self.spatial_scale = feature_map_size / 112.0
+        # IR-101 stage outputs at 112-pixel input:
+        #   stage4 → (B, 512, 7, 7),  scale = 7/112
+        #   stage3 → (B, 256, 14, 14), scale = 14/112
+        if feature_stage == "stage4":
+            self.feature_map_size = 7
+            self._feature_channels = 512
+        else:  # stage3
+            self.feature_map_size = 14
+            self._feature_channels = 256
+
+        self.spatial_scale = self.feature_map_size / 112.0
 
         if pool == "avg":
             self.spatial_pool = nn.AdaptiveAvgPool2d(1)
@@ -174,8 +190,29 @@ class LandmarkROITokenizer(nn.Module):
         else:
             raise ValueError(f"Unknown pool: {pool}")
 
+        # Stage 3 outputs 256-channel features; project back to embedding_dim
+        # so the rest of the network (graph transformer, pooler, classifier)
+        # is unchanged. For stage 4 this is an identity.
+        if self._feature_channels != embedding_dim:
+            self.channel_projection = nn.Linear(self._feature_channels, embedding_dim)
+        else:
+            self.channel_projection = nn.Identity()
+
+    def _extract_features(self, x: torch.Tensor) -> torch.Tensor:
+        """Run backbone up to the selected stage and return its spatial map."""
+        if self.feature_stage == "stage4":
+            feat = self.backbone.forward_spatial(x)
+            if isinstance(feat, tuple):
+                feat = feat[0]
+            return feat
+        # stage3: input_layer + body[0:46], skipping body[46:49] (stage 4)
+        h = self.backbone.input_layer(x)
+        for i in range(46):
+            h = self.backbone.body[i](h)
+        return h
+
     def forward(self, img: torch.Tensor) -> torch.Tensor:
-        """img: (B, 3, 224, 224) → (B, K, 512)."""
+        """img: (B, 3, 224, 224) → (B, K, embedding_dim)."""
         B = img.shape[0]
 
         # AdaFace was trained on 112×112; resize once.
@@ -184,16 +221,9 @@ class LandmarkROITokenizer(nn.Module):
         else:
             x = img
 
-        # Get spatial feature map (B, 512, 7, 7).
-        feat = self.backbone.forward_spatial(x)
-        if isinstance(feat, tuple):
-            feat = feat[0]
+        feat = self._extract_features(x)  # (B, C, H, H), H ∈ {7, 14}
 
         K = self.num_nodes
-        # Replicate boxes per batch element for roi_align: it accepts a list
-        # of (N_i, 4) tensors (one per image) or a (sum_N, 5) tensor where
-        # the first column is the batch index.
-        # Build the batched (B*K, 5) tensor.
         batch_idx = (
             torch.arange(B, device=feat.device, dtype=feat.dtype)
             .unsqueeze(1)
@@ -203,7 +233,6 @@ class LandmarkROITokenizer(nn.Module):
         boxes = self.boxes_112.unsqueeze(0).expand(B, K, 4).reshape(B * K, 4)
         rois = torch.cat([batch_idx, boxes], dim=1)  # (B*K, 5)
 
-        # ROIAlign → (B*K, 512, roi_output_size, roi_output_size).
         pooled = roi_align(
             feat,
             rois,
@@ -213,8 +242,8 @@ class LandmarkROITokenizer(nn.Module):
             aligned=True,
         )
 
-        # Reduce each region to a single 512-D token.
-        tokens = self.spatial_pool(pooled).squeeze(-1).squeeze(-1)  # (B*K, 512)
+        tokens = self.spatial_pool(pooled).squeeze(-1).squeeze(-1)  # (B*K, C)
+        tokens = self.channel_projection(tokens)  # (B*K, embedding_dim)
         tokens = tokens.view(B, K, -1)
         return tokens
 
@@ -394,7 +423,12 @@ class GraphTransformer(nn.Module):
 class SymmetricPairPooler(nn.Module):
     """For each homologous node pair (A_i, B_i), compute order-invariant
     features [mean, |diff|, prod], then aggregate over nodes with an attention
-    pool. The output is invariant to swapping A and B by construction."""
+    pool. The output is invariant to swapping A and B by construction.
+
+    When ``comparison_only_pooling=True`` (M12 R009 analog), the global node
+    (index 0) is excluded from the pooled output to suppress identity leakage,
+    while it still participates in the graph attention as context.
+    """
 
     def __init__(
         self,
@@ -402,10 +436,14 @@ class SymmetricPairPooler(nn.Module):
         num_nodes: int = NUM_NODES,
         gate_hidden: int = 128,
         dropout: float = 0.1,
+        comparison_only_pooling: bool = False,
+        global_node_idx: int = 0,
     ):
         super().__init__()
         self.dim = dim
         self.num_nodes = num_nodes
+        self.comparison_only_pooling = comparison_only_pooling
+        self.global_node_idx = global_node_idx
         # Gate: per-node importance from the symmetric features.
         self.gate = nn.Sequential(
             nn.Linear(3 * dim, gate_hidden),
@@ -415,7 +453,10 @@ class SymmetricPairPooler(nn.Module):
         )
 
     def forward(self, x_pair: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """x_pair: (B, 2K, D). Returns (pooled: (B, 3D), gate_weights: (B, K))."""
+        """x_pair: (B, 2K, D). Returns (pooled: (B, 3D), gate_weights: (B, K')).
+
+        K' = K-1 when comparison_only_pooling, else K.
+        """
         B, twoK, D = x_pair.shape
         K = self.num_nodes
         assert twoK == 2 * K, f"Expected 2*{K} nodes, got {twoK}"
@@ -423,12 +464,18 @@ class SymmetricPairPooler(nn.Module):
         a = x_pair[:, :K, :]   # (B, K, D)
         b = x_pair[:, K:, :]   # (B, K, D)
 
+        if self.comparison_only_pooling:
+            keep = [i for i in range(K) if i != self.global_node_idx]
+            keep_idx = torch.tensor(keep, device=x_pair.device, dtype=torch.long)
+            a = a.index_select(1, keep_idx)  # (B, K-1, D)
+            b = b.index_select(1, keep_idx)
+
         mean = 0.5 * (a + b)
         diff = (a - b).abs()
         prod = a * b
-        symm = torch.cat([mean, diff, prod], dim=-1)  # (B, K, 3D)
+        symm = torch.cat([mean, diff, prod], dim=-1)  # (B, K', 3D)
 
-        gate_logits = self.gate(symm).squeeze(-1)  # (B, K)
+        gate_logits = self.gate(symm).squeeze(-1)  # (B, K')
         gate = torch.softmax(gate_logits, dim=-1)
         pooled = (symm * gate.unsqueeze(-1)).sum(dim=1)  # (B, 3D)
         return pooled, gate
@@ -459,6 +506,8 @@ class LGKTNet(nn.Module):
         aux_relation_head: bool = False,
         num_relation_classes: int = 11,
         roi_output_size: int = 3,
+        feature_stage: str = "stage4",
+        comparison_only_pooling: bool = False,
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
@@ -466,13 +515,22 @@ class LGKTNet(nn.Module):
         self.unfreeze_last_stage = unfreeze_last_stage
         self.aux_relation_head = aux_relation_head
         self.num_relation_classes = num_relation_classes
+        self.feature_stage = feature_stage
+        self.comparison_only_pooling = comparison_only_pooling
 
         self.tokenizer = LandmarkROITokenizer(
             backbone=adaface_backbone,
+            embedding_dim=embedding_dim,
+            feature_stage=feature_stage,
             roi_output_size=roi_output_size,
         )
         self.node_names = self.tokenizer.box_names
         self.num_nodes = self.tokenizer.num_nodes
+        # Determine global node index (first "global" entry, typically 0).
+        if "global" in self.node_names:
+            self._global_node_idx = self.node_names.index("global")
+        else:
+            self._global_node_idx = 0
 
         # Per-node embedding to disambiguate components (a "node-type" prior).
         self.node_type_embed = nn.Embedding(self.num_nodes, embedding_dim)
@@ -482,13 +540,23 @@ class LGKTNet(nn.Module):
                 p.requires_grad = False
 
             if unfreeze_last_stage:
-                # M12's Phase 2 pattern: unfreeze the last IR-101 block.
-                # AdaFace IR-101 has self.body = Sequential(48 BasicBlockIR's).
-                # body[46:49] is the deepest stage; output_layer is the BN+Flatten+FC head.
-                for p in adaface_backbone.body[46:49].parameters():
-                    p.requires_grad = True
-                for p in adaface_backbone.output_layer.parameters():
-                    p.requires_grad = True
+                # AdaFace IR-101 body has 49 BasicBlockIR's grouped as:
+                #   stage1 [0:3], stage2 [3:16], stage3 [16:46], stage4 [46:49].
+                # output_layer = BN + Flatten + FC.
+                #
+                # stage4: unfreeze body[46:49] + output_layer (R001 / M12 pattern;
+                #         output_layer is consumed by forward_spatial path indirectly,
+                #         but matching the M12 Phase 2 unfreeze set).
+                # stage3: stage 4 and output_layer are dead code (we cut at body[46]),
+                #         so unfreeze the last 3 blocks of stage 3 instead — body[43:46].
+                if feature_stage == "stage4":
+                    for p in adaface_backbone.body[46:49].parameters():
+                        p.requires_grad = True
+                    for p in adaface_backbone.output_layer.parameters():
+                        p.requires_grad = True
+                else:  # stage3
+                    for p in adaface_backbone.body[43:46].parameters():
+                        p.requires_grad = True
 
         self.graph = GraphTransformer(
             dim=embedding_dim,
@@ -499,7 +567,12 @@ class LGKTNet(nn.Module):
         )
 
         self.pooler = SymmetricPairPooler(
-            dim=embedding_dim, num_nodes=self.num_nodes, gate_hidden=gate_hidden, dropout=dropout,
+            dim=embedding_dim,
+            num_nodes=self.num_nodes,
+            gate_hidden=gate_hidden,
+            dropout=dropout,
+            comparison_only_pooling=comparison_only_pooling,
+            global_node_idx=self._global_node_idx,
         )
 
         # Classifier consumes the pooled [mean, |diff|, prod] features (3*D).
@@ -565,6 +638,8 @@ def build_lgkt_model(
     aux_relation_head: bool = False,
     num_relation_classes: int = 11,
     roi_output_size: int = 3,
+    feature_stage: str = "stage4",
+    comparison_only_pooling: bool = False,
 ) -> LGKTNet:
     """Factory that loads AdaFace IR-101 weights then wraps it in LGKT-Net."""
     # Reuse the M12 AdaFace loader (single ``adaface_ir101(weights_path)`` factory).
@@ -590,16 +665,24 @@ def build_lgkt_model(
         aux_relation_head=aux_relation_head,
         num_relation_classes=num_relation_classes,
         roi_output_size=roi_output_size,
+        feature_stage=feature_stage,
+        comparison_only_pooling=comparison_only_pooling,
     )
 
 
 if __name__ == "__main__":
-    # Quick smoke test.
+    # Quick smoke test — R002 config: stage3 features + comparison-only pooling.
     import sys
     from pathlib import Path
     proj = Path(__file__).parent.parent.parent
     weights = proj / "models/12_rgck_net/weights/adaface_ir101_webface4m.pth"
-    model = build_lgkt_model(str(weights), aux_relation_head=True, unfreeze_last_stage=True)
+    model = build_lgkt_model(
+        str(weights),
+        aux_relation_head=True,
+        unfreeze_last_stage=True,
+        feature_stage="stage3",
+        comparison_only_pooling=True,
+    )
     img_a = torch.randn(2, 3, 224, 224)
     img_b = torch.randn(2, 3, 224, 224)
     out = model(img_a, img_b)

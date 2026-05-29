@@ -10,12 +10,18 @@
 #   BATCH_SIZE               Batch size (default 16)
 #   GRAD_ACCUM               Gradient accumulation (default 2)
 #   FREEZE_BACKBONE          1 = freeze AdaFace (default)
-#   UNFREEZE_LAST_STAGE      1 = Phase 2 — unfreeze body[46:49] + output_layer
+#   UNFREEZE_LAST_STAGE      1 = unfreeze last 3 backbone blocks of the
+#                            selected feature stage (stage4: body[46:49] +
+#                            output_layer; stage3: body[43:46] only)
 #   LEARNING_RATE            default 1e-5
 #   NUM_GRAPH_LAYERS         default 2
 #   NUM_HEADS                default 4
 #   DROPOUT                  default 0.2
 #   ROI_OUTPUT_SIZE          default 3
+#   FEATURE_STAGE            stage4 (default) | stage3 — backbone feature
+#                            map for ROIAlign. stage3 = 14×14×256 (R002).
+#   COMPARISON_ONLY_POOLING  1 = exclude global node from the SymmetricPair
+#                            pooler (kept in graph as context). Default 0.
 #   RELATION_AUX_WEIGHT      default 0.0 (off in R001)
 #   TRAIN_NEGATIVE_STRATEGY  random | relation_matched (default random)
 #   HARD_NEGATIVE_RATIO      default 0.0
@@ -54,6 +60,8 @@ GATE_HIDDEN="${GATE_HIDDEN:-128}"
 CLASSIFIER_HIDDEN="${CLASSIFIER_HIDDEN:-512}"
 DROPOUT="${DROPOUT:-0.2}"
 ROI_OUTPUT_SIZE="${ROI_OUTPUT_SIZE:-3}"
+FEATURE_STAGE="${FEATURE_STAGE:-stage4}"
+COMPARISON_ONLY_POOLING="${COMPARISON_ONLY_POOLING:-0}"
 
 FREEZE_BACKBONE="${FREEZE_BACKBONE:-1}"
 UNFREEZE_LAST_STAGE="${UNFREEZE_LAST_STAGE:-0}"
@@ -132,6 +140,8 @@ echo "Run dir:             ${SUBRUN_DIR}"
 echo "Aligned root:        ${ALIGNED_ROOT}"
 echo "AdaFace weights:     ${ADAFACE_WEIGHTS}"
 echo "Backbone frozen:     ${FREEZE_BACKBONE} (unfreeze_last_stage=${UNFREEZE_LAST_STAGE})"
+echo "Feature stage:       ${FEATURE_STAGE}"
+echo "Comparison-only pool: ${COMPARISON_ONLY_POOLING}"
 echo "Graph layers/heads:  ${NUM_GRAPH_LAYERS} × ${NUM_HEADS}"
 echo "ROI output size:     ${ROI_OUTPUT_SIZE}"
 echo "Dropout:             ${DROPOUT}"
@@ -178,6 +188,7 @@ TRAIN_ARGS=(
     --classifier_hidden       "${CLASSIFIER_HIDDEN}"
     --dropout                 "${DROPOUT}"
     --roi_output_size         "${ROI_OUTPUT_SIZE}"
+    --feature_stage           "${FEATURE_STAGE}"
     --negative_ratio          "${NEGATIVE_RATIO}"
     --eval_negative_ratio     "${EVAL_NEGATIVE_RATIO}"
     --train_negative_strategy "${TRAIN_NEGATIVE_STRATEGY}"
@@ -193,6 +204,7 @@ TRAIN_ARGS=(
 )
 [ "${FREEZE_BACKBONE}" != "1" ] && TRAIN_ARGS+=(--unfreeze_backbone)
 [ "${UNFREEZE_LAST_STAGE}" = "1" ] && TRAIN_ARGS+=(--unfreeze_last_stage)
+[ "${COMPARISON_ONLY_POOLING}" = "1" ] && TRAIN_ARGS+=(--comparison_only_pooling)
 [ "${RELATION_AUX_BALANCED}" != "1" ] && TRAIN_ARGS+=(--relation_aux_unbalanced)
 if [ "${DIFFERENTIAL_LR}" = "1" ]; then
     TRAIN_ARGS+=(--differential_lr --lr_stage4 "${LR_STAGE4}" --lr_output_layer "${LR_OUTPUT_LAYER}" --lr_head "${LR_HEAD}")

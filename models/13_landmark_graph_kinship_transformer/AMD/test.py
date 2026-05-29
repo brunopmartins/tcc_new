@@ -76,6 +76,8 @@ def main():
         aux_relation_head=model_config.get("aux_relation_head", False),
         num_relation_classes=model_config.get("num_relation_classes", 11),
         roi_output_size=model_config.get("roi_output_size", 3),
+        feature_stage=model_config.get("feature_stage", "stage4"),
+        comparison_only_pooling=model_config.get("comparison_only_pooling", False),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)

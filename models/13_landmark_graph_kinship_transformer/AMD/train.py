@@ -101,6 +101,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dropout", type=float, default=0.2)
     p.add_argument("--roi_output_size", type=int, default=3,
                    help="ROIAlign output spatial size (3×3 default).")
+    p.add_argument("--feature_stage", type=str, default="stage4",
+                   choices=["stage3", "stage4"],
+                   help="Backbone feature stage for ROIAlign. stage4=7×7×512 "
+                        "(R001); stage3=14×14×256 (R002).")
+    p.add_argument("--comparison_only_pooling", action="store_true", default=False,
+                   help="Exclude the global node from the symmetric pooler "
+                        "while keeping it in the graph as context (M12 R009 analog).")
 
     # Training
     p.add_argument("--epochs", type=int, default=100)
@@ -243,11 +250,28 @@ def build_differential_lr_optimizer_and_scheduler(
     min_lr: float,
 ):
     backbone = model.tokenizer.backbone
-    stage4_params = [p for p in backbone.body[46:49].parameters() if p.requires_grad]
-    output_layer_params = [p for p in backbone.output_layer.parameters() if p.requires_grad]
+    feature_stage = getattr(model, "feature_stage", "stage4")
 
-    # Head modules: node-type embedding + graph + pooler + classifier (+ relation head).
-    head_modules = [model.node_type_embed, model.graph, model.pooler, model.classifier]
+    if feature_stage == "stage4":
+        backbone_blocks = [p for p in backbone.body[46:49].parameters() if p.requires_grad]
+        output_layer_params = [
+            p for p in backbone.output_layer.parameters() if p.requires_grad
+        ]
+        backbone_block_name = "backbone_stage4"
+    else:  # stage3 — last 3 blocks of stage 3; output_layer is not used.
+        backbone_blocks = [p for p in backbone.body[43:46].parameters() if p.requires_grad]
+        output_layer_params = []
+        backbone_block_name = "backbone_stage3_tail"
+
+    # Channel projection (stage3 only) goes with the head — it sits between
+    # backbone features and the graph and is initialised fresh.
+    head_modules = [
+        model.tokenizer.channel_projection,
+        model.node_type_embed,
+        model.graph,
+        model.pooler,
+        model.classifier,
+    ]
     if getattr(model, "relation_head", None) is not None:
         head_modules.append(model.relation_head)
     head_params: list = []
@@ -255,10 +279,14 @@ def build_differential_lr_optimizer_and_scheduler(
         head_params.extend(p for p in module.parameters() if p.requires_grad)
 
     param_groups = [
-        {"params": stage4_params, "lr": lr_stage4, "name": "backbone_stage4"},
-        {"params": output_layer_params, "lr": lr_output_layer, "name": "backbone_output_layer"},
-        {"params": head_params, "lr": lr_head, "name": "head"},
+        {"params": backbone_blocks, "lr": lr_stage4, "name": backbone_block_name},
     ]
+    if output_layer_params:
+        param_groups.append(
+            {"params": output_layer_params, "lr": lr_output_layer,
+             "name": "backbone_output_layer"}
+        )
+    param_groups.append({"params": head_params, "lr": lr_head, "name": "head"})
     optimizer = AdamW(param_groups, weight_decay=weight_decay, eps=1e-8)
 
     warmup = LinearLR(
@@ -430,6 +458,8 @@ def main() -> None:
     print("\nCreating LGKT-Net (Landmark Graph Kinship Transformer)...")
     print(f"  AdaFace weights:     {args.adaface_weights}")
     print(f"  Backbone frozen:     {args.freeze_backbone}")
+    print(f"  Feature stage:       {args.feature_stage}")
+    print(f"  Comparison-only pool: {args.comparison_only_pooling}")
     print(f"  Nodes:               {NODE_NAMES}")
     print(f"  Graph layers:        {args.num_graph_layers} × {args.num_heads} heads")
     print(f"  Dropout:             {args.dropout}")
@@ -448,6 +478,8 @@ def main() -> None:
         aux_relation_head=aux_relation_head_enabled,
         num_relation_classes=FIW_NUM_RELATIONS,
         roi_output_size=args.roi_output_size,
+        feature_stage=args.feature_stage,
+        comparison_only_pooling=args.comparison_only_pooling,
     )
     model = optimize_for_rocm(model)
 
@@ -543,6 +575,8 @@ def main() -> None:
         "relation_aux_balanced": bool(args.relation_aux_balanced),
         "num_relation_classes": FIW_NUM_RELATIONS,
         "roi_output_size": args.roi_output_size,
+        "feature_stage": args.feature_stage,
+        "comparison_only_pooling": bool(args.comparison_only_pooling),
         "differential_lr": bool(args.differential_lr),
         "lr_stage4": args.lr_stage4 if args.differential_lr else None,
         "lr_output_layer": args.lr_output_layer if args.differential_lr else None,

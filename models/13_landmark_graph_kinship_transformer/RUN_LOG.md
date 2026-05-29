@@ -4,6 +4,65 @@ Newest run on top.
 
 ---
 
+## Run 002 — 2026-05-27 → 2026-05-28 — Stage-3 + comparison-only pooling + rel-aux 0.05 (Test AUC **0.8526**; M13 LINE RE-STOPPED)
+
+**Status:** Trained 85/100 epochs; training crashed at ep 85 due to **disk full** during `torch.save()`. Best.pt from ep 44 (peak Val AUC 0.8952) survived intact; eval ran cleanly after manual cleanup + checkpoint patch.
+
+**Outcome:** Test ROC AUC **0.8526** (+0.0064 vs R001's 0.8462) but **TAR@FAR=0.001 collapsed to 0.0000** (R001: 0.0403). Per [EXPERIMENT_PLAN.md](EXPERIMENT_PLAN.md) decision rule `AUC < 0.860 → re-stop the M13 line`. **Line stopped (again).**
+
+**Recipe (delta vs R001):**
+
+- `FEATURE_STAGE=stage3` (14×14×256 → Linear(256,512) projection)
+- `COMPARISON_ONLY_POOLING=1` (global node excluded from `SymmetricPairPooler`, kept in graph as context)
+- `RELATION_AUX_WEIGHT=0.05` balanced CE
+- `UNFREEZE_LAST_STAGE=1` now means `body[43:46]` (stage-3 tail) since stage 4 is dead code in this path
+
+**Trainable:** 9,006,645 / 70,481,653 (12.75 %, down from R001's 31.3 M / 44.40 %).
+
+**Test metrics summary:**
+
+| Metric | R001 | **R002** | Δ |
+|---|---:|---:|---:|
+| Test ROC AUC | 0.8462 | **0.8526** | +0.0064 |
+| Test AP | 0.8281 | 0.8301 | +0.0020 |
+| Test F1 (thr=0.1) | 0.6935 | 0.6980 | +0.0045 |
+| Test Recall | 0.6037 | 0.6118 | +0.0081 |
+| **TAR@FAR=0.001** | 0.0403 | **0.0000** | **−0.0403 ⚠** |
+| TAR@FAR=0.01 | 0.1704 | 0.1665 | −0.0039 |
+| Val→Test gap | −0.039 | −0.043 | wider |
+| gfgs / gfgd (grandparent) | 38.8 / 50.0 % | **48.0 / 58.0 %** | +9.2 / +8.0 |
+| bb / fs / ss | 78.0 / 73.1 / 76.2 % | 70.0 / 63.3 / 66.9 % | −5 to −10 pp |
+
+**Net pattern:** R002 trades 5–10 pp on well-supported kin classes for 8–9 pp on the worst grandparent classes (rel-aux head doing its job). Strict-FAR collapsed (comparison-only pooling removed the global node's direct contribution to the pooled fusion). AUC modestly improved but still 0.024 below M12 R011 CV mean (0.8761 ± 0.0029).
+
+**Mechanism diagnosis** (full version in [run-review/run-002.md](run-review/run-002.md)):
+
+1. Stage-3 spatial gain is wasted: `LandmarkROITokenizer` does ROIAlign 3×3 then AdaptiveAvgPool to 1×1, throwing away the 4× cell density. A learned spatial encoder would be needed to use stage-3 properly.
+2. Comparison-only pooling collapses strict-FAR in this small model: the global token was the strongest separator at the tails; excluding it from the pooler (while the relation_head still depends on it) creates conflicting pressures.
+3. Bundle was the highest-EV combined remediation — landing at 0.8526 says the architecture cannot reach M12 territory under any combination of the levers tried.
+
+**Disk-full incident:** 17 `epoch_{5..85}.pt` periodic snapshots × 339 MB filled the disk at ep 85. best.pt was already saved at ep 44. Recovered by deleting periodic checkpoints (~5.7 GB freed), patching `best.pt` to add `model_config` + `protocol`, then running `test.py --threshold 0.1` manually. **Action item for future runs**: drop `save_every` from 5 to 25, or move outputs to a non-system disk.
+
+### Artifacts
+
+- Best.pt (ep 44, patched): `output/002/checkpoints/best.pt` (339 MB)
+- Train log: `output/002/logs/train.log`
+- Test log (val-threshold 0.1): `output/002/logs/test_thr01.log`
+- Final metrics: `output/002/results/test_metrics_rocm.txt`
+- Run review: [`run-review/run-002.md`](run-review/run-002.md)
+
+### Decision
+
+**M13 line stopped (again).** R001 and R002 together have established that:
+
+- Graph-transformer over 8 fixed-landmark ROIs on pre-aligned FIW cannot beat M02 R031 CV (0.8462) on aggregate AUC; it can beat M02 by +0.006 (R002 0.8526) but cannot approach M12 R006/R010/R011 territory.
+- Strict-FAR is a particular weakness — both runs land at ≤0.04 TAR@FAR=0.001, vs M12 R011 CV 0.068.
+- The "landmark-driven" framing reduces to "smaller fixed boxes" on pre-aligned data, where landmarks are canonical by construction. M12's larger fixed boxes + cross-region attention is empirically superior.
+
+No R003 launches. Future revisits to this line would need a non-pre-aligned dataset (so landmarks actually vary per image) or a non-trivial spatial encoder between ROIAlign and the graph (to actually exploit stage-3 detail).
+
+---
+
 ## Run 001 — 2026-05-26 — Manually stopped at ep 10 (peak Val AUC 0.8850 ep 5; Test AUC 0.8462 — M13 LINE STOPPED)
 
 **Status:** Manually stopped during ep 10 training; best.pt from ep 5 (peak Val AUC 0.8850).
