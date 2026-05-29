@@ -1,6 +1,6 @@
 # Kinship Classification Models
 
-This directory contains four novel model architectures for kinship verification from facial images, along with shared utilities for training, evaluation, and data loading.
+This directory contains the experimental model families for kinship verification from facial images, along with shared utilities for training, evaluation, and data loading.
 
 Shared evaluation rules are documented in [SHARED_EVALUATION_PROTOCOL.md](./SHARED_EVALUATION_PROTOCOL.md). All patched train/test/evaluate entrypoints now follow that protocol.
 
@@ -12,6 +12,8 @@ Shared evaluation rules are documented in [SHARED_EVALUATION_PROTOCOL.md](./SHAR
 | [02_vit_facor_crossattn](./02_vit_facor_crossattn/) | ViT backbone + FaCoR cross-attention | +2-3% overall |
 | [03_convnext_vit_hybrid](./03_convnext_vit_hybrid/) | Dual CNN-Transformer backbone | +3-4% overall |
 | [04_unified_kinship_model](./04_unified_kinship_model/) | All techniques combined | +8-10% overall |
+| [12_rgck_net](./12_rgck_net/) | Fixed anatomical region tokens + symmetric cross-region learning | validated FIW headline |
+| [13_landmark_graph_kinship_transformer](./13_landmark_graph_kinship_transformer/) | Landmark-derived anatomical graph + graph transformer | planned; documentation only |
 
 ## Directory Structure
 
