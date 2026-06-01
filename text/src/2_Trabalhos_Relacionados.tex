@@ -9,7 +9,7 @@ O primeiro modelo computacional de verificação visual de parentesco foi o de \
 
 Em paralelo, surgiram bancos públicos que tornaram a tarefa comparável entre laboratórios. \citeonline{lu2014kinface}
 liberaram KinFaceW-I e KinFaceW-II, com cerca de mil pares por dataset distribuídos em quatro tipos de relação. Ambos seguem em uso até hoje para prototipagem rápida ou validação cruzada de cinco dobras. Pouco depois, \citeonline{robinson2016fiw}
-introduziram a primeira versão do Families in the Wild, que viraria, dois anos depois, o principal benchmark da área.
+introduziram a primeira versão do Families in the Wild, que se tornaria, dois anos depois, o principal benchmark da área.
 
 \section{Aprendizado profundo e redes siamesas}
 
@@ -22,7 +22,7 @@ Backbones melhores não bastam, e parte significativa dos ganhos da década segu
 CosFace \cite{wang2018cosface}
 e ArcFace \cite{deng2019arcface}
 reformulou o softmax para impor margens angulares no espaço de embeddings, e essas perdas migraram naturalmente para parentesco. Em paralelo, abordagens com triplet loss \cite{schroff2015facenet}
-e Supervised Contrastive \cite{khosla2020supervised}
+e perdas contrastivas supervisionadas, como a formulação de \citeonline{khosla2020supervised},
 passaram a ser usadas para aproximar pares de parentes próximos no espaço de embeddings, afastando pares sem vínculo biológico.
 
 Trabalhos posteriores afinaram a perda para o domínio. \citeonline{lyu2023kfc}
@@ -34,13 +34,12 @@ A introdução do Vision Transformer \cite{dosovitskiy2020image}
 reabriu a questão de qual é o melhor backbone para parentesco facial. Os resultados mais recentes do FIW vêm de modelos que substituem o backbone convolucional pelo ViT pré-treinado. \citeonline{su2023facornet}
 propuseram o FaCoR, que adiciona um módulo de atenção cruzada bidirecional entre os tokens de patch de duas faces, permitindo que o modelo aprenda quais regiões comparar em vez de só comparar embeddings globais. O ganho relatado foi de 4,6\% sobre o melhor resultado anterior. O FaCoR é a inspiração direta do ViT-FaCoR deste trabalho.
 
-\section{Fusões híbridas e síntese de idade}
+\section{Fusões híbridas e modelos periféricos}
 
 Outra linha tenta combinar os indutivos convolucionais do ConvNeXt \cite{liu2022convnet}
 com a atenção global do ViT, em modelos de duplo backbone que produzem atributos locais e globais e os fundem por concatenação, gating ou atenção. Essa estratégia motivou o ConvNeXt-ViT deste trabalho, e a literatura recente aponta que aumentar capacidade total de backbone não traz, em geral, ganho proporcional em verificação de parentesco quando os dados de treino são limitados.
 
-Uma terceira linha aborda diretamente a assimetria etária entre pais e filhos. Métodos baseados em síntese de idade, em particular o SAM (Style-based Age Manipulation) \cite{alaluf2022sam},
-geram variantes do mesmo rosto em diferentes idades antes da comparação, com a hipótese de que pares com idades parecidas são mais fáceis de classificar. O Modelo com Síntese de Idade deste trabalho explora essa ideia, embora o módulo SAM não tenha sido plenamente ativado nos experimentos por restrições de hardware.
+Uma terceira linha, mantida aqui apenas como contexto dos modelos periféricos, aborda a assimetria etária entre pais e filhos. Métodos baseados em síntese de idade, como o SAM (Style-based Age Manipulation) \cite{alaluf2022sam}, geram variantes do mesmo rosto em diferentes idades antes da comparação. Neste trabalho, essa linha não compõe a comparação principal; o Modelo com Síntese de Idade fica descrito no Apêndice~\ref{ap:modelos-perifericos} como registro histórico do projeto.
 
 \section{Generalização cross-dataset e equidade}
 

@@ -1,7 +1,7 @@
 \chapter[Fundamentação Teórica]{Fundamentação Teórica}
 \label{cap:fundamentacao-teorica}
 
-Este capítulo apresenta os conceitos necessários para compreender as escolhas metodológicas do trabalho. A intenção não é fazer uma revisão geral de aprendizado profundo, mas explicar os elementos que aparecem diretamente nos modelos avaliados: verificação por similaridade, embeddings faciais, redes siamesas, backbones convolucionais e Transformers, mecanismos de atenção entre faces, adaptação por LoRA, recuperação de exemplos, síntese de idade, modelos multimodais e métricas de avaliação.
+Este capítulo apresenta os conceitos necessários para compreender as escolhas metodológicas do trabalho. A intenção não é fazer uma revisão geral de aprendizado profundo, mas explicar os elementos que aparecem diretamente nos modelos avaliados na comparação principal: verificação por similaridade, embeddings faciais, redes siamesas, backbones convolucionais e Transformers, mecanismos de atenção entre faces, adaptação por LoRA, recuperação de exemplos, modelos multimodais e métricas de avaliação.
 
 \section{Formulação do problema}
 
@@ -51,7 +51,7 @@ No DINOv2-LoRA deste trabalho, o DINOv2 funciona como backbone de uso geral e é
 
 \section{Atenção cruzada entre faces}
 
-Atenção cruzada, ou cross-attention, é uma variação da self-attention em que as consultas vêm de uma sequência e as chaves e valores vêm de outra. Em verificação de parentesco, isso significa que os tokens de uma face podem consultar os tokens da outra face. Em vez de comparar apenas dois embeddings globais, o modelo aprende quais partes de uma imagem devem ser relacionadas com quais partes da outra.
+Atenção cruzada, ou cross-attention, é uma variação da self-attention em que as consultas vêm de uma sequência e as chaves e valores vêm de outra. Em verificação de parentesco, isso permite calcular pesos de atenção entre os tokens de uma face e os tokens da outra. Em vez de comparar apenas dois embeddings globais, o modelo aprende quais partes de uma imagem devem ser relacionadas com quais partes da outra.
 
 Formalmente, dados $X_a$ e $X_b$ como os tokens das duas faces, a atenção cruzada de $a$ sobre $b$ pode ser escrita como
 
@@ -76,7 +76,7 @@ que divide cada cabeça em duas partes e calcula a atenção como a diferença e
 \label{eq:diff_attn}
 \end{equation}
 
-onde $\lambda$ é um escalar aprendível por cabeça. A intuição é que um mapa captura o sinal principal e o outro captura parte do ruído correlacionado; a subtração tende a reduzir correspondências espúrias. Em faces, esse tipo de mecanismo é interessante porque regiões sem valor genealógico, como fundo, cabelo e variações de iluminação, podem gerar similaridade alta sem indicar parentesco. No DINOv2-LoRA, essa ideia aparece no módulo de atenção cruzada diferencial entre as duas faces.
+onde $\lambda$ é um escalar aprendível por cabeça. A intuição é que um mapa captura o sinal principal e o outro captura parte do ruído correlacionado; a subtração tende a reduzir correspondências espúrias. Em faces, esse tipo de mecanismo é interessante porque áreas sem valor genealógico, como fundo da imagem ou cabelo, bem como artefatos espaciais causados por variações de iluminação, podem gerar similaridade alta sem indicar parentesco. No DINOv2-LoRA, essa ideia aparece no módulo de atenção cruzada diferencial entre as duas faces.
 
 \section{Adaptação de baixo posto com LoRA}
 
@@ -123,17 +123,9 @@ Nessa expressão, $y=1$ indica parente e $y=0$ indica não-parente. Os vetores $
 
 A Triplet Loss \citeonline{schroff2015facenet} usa trios em vez de pares. Cada trio contém uma âncora $z_a$, um positivo $z_p$ da mesma classe e um negativo $z_n$ de classe diferente. A perda força a distância entre âncora e positivo a ser menor que a distância entre âncora e negativo por uma margem mínima. Em reconhecimento facial, essa formulação ficou conhecida por organizar o espaço de embeddings a partir de comparações relativas.
 
-A Supervised Contrastive Loss \cite{khosla2020supervised} generaliza a ideia contrastiva para múltiplos positivos dentro do mesmo batch. Na formulação canônica, a perda usa similaridade cosseno escalada por temperatura e soma a contribuição de todos os positivos da amostra, sem margem explícita. Nas execuções deste trabalho que usam o nome Supervised Contrastive, a implementação é uma adaptação operacional desse conceito para o pipeline binário, com distância de cosseno entre pares e margem $m = 0{,}3$. Ela fica, portanto, mais próxima da Contrastive Loss clássica do que da formulação completa de Khosla, escolha feita por estabilidade empírica e simplicidade de integração aos modelos avaliados.
+A Supervised Contrastive Loss \cite{khosla2020supervised} generaliza a ideia contrastiva para múltiplos positivos dentro do mesmo batch. Na formulação canônica, a perda usa similaridade cosseno escalada por temperatura e soma a contribuição de todos os positivos da amostra, sem margem explícita. No código experimental deste trabalho, porém, as execuções inicialmente registradas como supervisionadas contrastivas usam distância de cosseno entre pares e margem $m = 0{,}3$. Por equivalência operacional, essa perda é referida nos capítulos seguintes como Contrastive Loss com cosseno e margem, reservando o nome Supervised Contrastive para a formulação canônica de Khosla.
 
 Essas perdas não mudam apenas o valor do erro no treinamento. Elas influenciam a forma do espaço aprendido. Perdas com margem tendem a criar separação mais explícita entre positivos e negativos, enquanto a BCE atua diretamente na decisão de classe. No problema de parentesco facial, essa diferença importa porque o modelo precisa aprender tanto a classificar pares quanto a ordenar corretamente os escores de similaridade.
-
-\section{Síntese de idade}
-
-A diferença de idade é um dos fatores que dificultam a verificação de parentesco facial. Em relações entre pais e filhos, ou entre avós e netos, duas pessoas biologicamente próximas podem aparecer em fases muito diferentes da vida. Rugas, formato aparente do rosto, textura da pele e proporções faciais mudam com o envelhecimento, e essas mudanças podem encobrir parte da semelhança herdada.
-
-Métodos de síntese de idade tentam reduzir esse problema gerando versões da mesma face em faixas etárias diferentes. O SAM, sigla em inglês para Style-based Age Manipulation \cite{alaluf2022sam}, é uma implementação dessa ideia baseada em StyleGAN. O método aprende um mapeamento no espaço latente do gerador e, a partir de uma imagem, produz variações do mesmo rosto com aparência mais jovem ou mais velha.
-
-Neste trabalho, a síntese de idade não é um componente da comparação principal. Ela fica restrita ao Modelo com Síntese de Idade, descrito como modelo periférico e histórico, no qual são consideradas três variantes etárias por face: criança, jovem e idosa. O ViT-FaCoR, o DINOv2-LoRA, o Modelo com Recuperação, o AdaFace-Cosseno e o AdaFace-Regional operam sobre as faces originais alinhadas, sem gerar variantes etárias. Essa separação é importante para que os resultados da comparação principal não misturem ganho de arquitetura com ganho de manipulação de idade.
 
 \section{Modelos multimodais visão-linguagem}
 
@@ -151,7 +143,7 @@ A acurácia mede a fração total de decisões corretas. Ela é intuitiva, mas p
 
 A métrica principal é o ROC AUC. A curva ROC mostra como a taxa de verdadeiros positivos muda em relação à taxa de falsos positivos quando o limiar varia. O AUC resume essa curva em um único número e pode ser lido como a capacidade do modelo de dar escore maior a um par positivo do que a um par negativo. Por não depender de um limiar específico, ele é adequado para comparar modelos que produzem escores em escalas diferentes.
 
-Average Precision também é independente de um único limiar, mas olha para a relação entre precisão e revocação. Ela resume a curva precisão-revocação e é útil quando interessa saber se os pares positivos aparecem bem ranqueados entre os maiores escores. No contexto deste trabalho, ela complementa o AUC porque avalia a qualidade do ranking por outro ponto de vista.
+Average Precision também é independente de um único limiar, mas considera a relação entre precisão e revocação. Ela resume a curva precisão-revocação e é útil quando interessa saber se os pares positivos aparecem bem ranqueados entre os maiores escores. No contexto deste trabalho, ela complementa o AUC porque avalia a qualidade do ranking por outro ponto de vista.
 
 Como a tarefa se aproxima de um problema biométrico de verificação, também são usadas FAR, TAR e TAR@FAR. FAR é a taxa de falsa aceitação, isto é, a proporção de pares negativos aceitos como positivos. TAR é a taxa de aceitação verdadeira, isto é, a proporção de pares positivos aceitos corretamente. A métrica TAR@FAR fixa primeiro uma taxa máxima de falsa aceitação e mede qual TAR o modelo consegue manter nesse ponto. Este trabalho usa FAR igual a $0{,}1$, $0{,}01$ e $0{,}001$. Quanto menor o FAR, mais rígido é o regime de decisão, o que é importante em contextos nos quais falso positivo tem custo alto.
 
