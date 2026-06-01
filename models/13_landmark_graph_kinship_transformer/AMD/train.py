@@ -532,6 +532,16 @@ def main() -> None:
     if args.resume:
         print(f"Resuming from {args.resume}")
         trainer.load_checkpoint(args.resume)
+        # Make the train loop skip already-completed epochs. The shared
+        # trainer uses ``self.start_epoch`` as the loop lower bound and
+        # honors the loaded scheduler state when ``epoch >= warmup_epochs``.
+        # We derive the resume point from the recorded val_auc history
+        # length so a checkpoint saved at the end of epoch N restarts at N.
+        completed = len(trainer.history.get("val_auc", []))
+        if completed > 0:
+            trainer.start_epoch = completed
+            print(f"  Loaded history has {completed} completed epochs; "
+                  f"training will resume at epoch {completed + 1}.")
 
     print("\nStarting ROCm-optimised training...")
     print(f"Scheduler: {train_config.scheduler} (warmup={train_config.warmup_epochs}, min_lr={train_config.min_lr:.1e})")

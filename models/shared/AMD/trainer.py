@@ -96,6 +96,12 @@ class ROCmTrainer:
         self.best_metric = float("-inf")
         self.best_epoch = -1
         self.patience_counter = 0
+        # Resume support: external code can set ``self.start_epoch`` after a
+        # load_checkpoint() call so the train loop skips already-completed
+        # epochs. The loop also skips the manual warmup-LR override for any
+        # epoch >= warmup_epochs, so a mid-cosine resume keeps the loaded
+        # scheduler state intact.
+        self.start_epoch = 0
         self.history = {
             "train_loss": [],
             "val_accuracy": [],
@@ -234,7 +240,12 @@ class ROCmTrainer:
         print(f"{'=' * 60}\n")
 
         final_metrics: Dict[str, float] = {}
-        for epoch in range(self.config.num_epochs):
+        if self.start_epoch > 0:
+            print(
+                f"Resuming training: skipping epochs 0..{self.start_epoch - 1} "
+                f"(already completed; loaded model/optimizer/scheduler state)."
+            )
+        for epoch in range(self.start_epoch, self.config.num_epochs):
             self.on_epoch_start(epoch + 1)
             start_time = time.time()
 
