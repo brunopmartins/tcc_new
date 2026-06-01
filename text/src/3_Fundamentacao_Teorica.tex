@@ -81,7 +81,7 @@ onde $\lambda$ é um escalar aprendível por cabeça. A intuição é que um map
 \section{Adaptação de baixo posto com LoRA}
 
 Low-Rank Adaptation, ou LoRA \cite{hu2021lora},
-é uma técnica de fine-tuning eficiente em parâmetros. Em vez de atualizar toda uma matriz de pesos $W \in \mathbb{R}^{d \times d}$, LoRA mantém $W$ congelada e adiciona um caminho treinável de baixo posto:
+é uma técnica de fine-tuning eficiente em parâmetros. Em vez de atualizar toda uma matriz de pesos $W \in \mathbb{R}^{d \times d}$, LoRA preserva $W$ congelada e adiciona um caminho treinável de baixo posto:
 
 \begin{equation}
 y = Wx + \frac{\alpha}{r} \, B A x,
@@ -131,7 +131,7 @@ Essas perdas não mudam apenas o valor do erro no treinamento. Elas influenciam 
 
 Modelos multimodais visão-linguagem, ou VLMs, combinam representação visual com linguagem natural. CLIP \cite{radford2021learning} foi um dos primeiros modelos amplamente usados nesse formato, treinando um encoder visual e um encoder textual para aproximar imagens e textos correspondentes no mesmo espaço. Modelos mais recentes, como GPT-4V e Claude Sonnet, ampliam esse regime para diálogo multimodal, em que o usuário envia uma imagem junto com uma instrução e recebe uma resposta em linguagem natural.
 
-No parentesco facial, os VLMs entram pela possibilidade de testar a tarefa sem treinamento específico no FIW. O procedimento é simples: envia-se uma imagem com duas faces e um prompt descrevendo as relações possíveis. A resposta do modelo passa a depender do que ele consegue extrair da imagem e da instrução textual. Essa simplicidade, porém, também limita a leitura do resultado. Como o modelo não foi ajustado para relações genealógicas finas, ele pode se apoiar em pistas mais imediatas, como idade aparente, gênero ou semelhança geral entre as faces.
+No parentesco facial, os VLMs entram pela possibilidade de testar a tarefa sem treinamento específico no FIW. O procedimento é simples: envia-se uma imagem com duas faces e um prompt descrevendo as relações possíveis. A resposta do modelo passa a depender das informações extraídas da imagem e da instrução textual. Essa simplicidade, porém, também limita a leitura do resultado. Como o modelo não foi ajustado para relações genealógicas finas, seu desempenho pode ser influenciado por variáveis de confusão mais imediatas, como idade aparente, gênero ou semelhança geral entre as faces.
 
 As linhas de base com VLMs deste trabalho exploram esse comportamento em três regimes. No zero-shot, o modelo recebe apenas a instrução e a imagem. No few-shot in-context learning, o prompt inclui alguns exemplos com resposta correta, para orientar o formato e o tipo de raciocínio esperado. No regime com prompt estruturado, o modelo é levado a produzir informações auxiliares, como diferença geracional aparente e gênero das faces, antes da resposta final. Sobre essas saídas auxiliares, uma calibração leve treinada em validação ajusta a resposta final. Como esses modelos fazem classificação entre relações positivas, e não verificação binária com classe non-kin, seus resultados são tratados como exploração complementar.
 
