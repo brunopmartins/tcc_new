@@ -29,7 +29,12 @@ from rocm_utils import (  # noqa: E402
     optimize_for_rocm, print_rocm_info, clear_rocm_cache,
 )
 from config import DataConfig, TrainConfig  # noqa: E402
-from dataset import create_dataloaders, KinshipPairDataset, get_transforms  # noqa: E402
+from dataset import (  # noqa: E402
+    create_dataloaders,
+    create_fiw_5fold_train_val_loaders,
+    KinshipPairDataset,
+    get_transforms,
+)
 from losses import CosineContrastiveLoss  # noqa: E402
 from trainer import ROCmTrainer  # noqa: E402
 from evaluation import print_metrics  # noqa: E402
@@ -110,6 +115,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--aligned_root", type=str, default=None,
                    help="Path to MTCNN-aligned FIW crops; remaps paths at load time.")
+
+    # K-fold CV — mirrors M12 plumbing
+    p.add_argument("--fold", type=int, default=None,
+                   help="Active fold index for family-disjoint 5-fold CV "
+                        "(0..n_folds-1). When set, train+val come from "
+                        "create_fiw_5fold_train_val_loaders.")
+    p.add_argument("--num_folds", type=int, default=5)
 
     return p.parse_args()
 
@@ -270,14 +282,28 @@ def main() -> None:
         monitor_metric="roc_auc",
     )
 
-    train_loader, val_loader, _ = create_dataloaders(
-        config=train_data_config,
-        batch_size=args.batch_size,
-        dataset_type=args.train_dataset,
-        split_seed=args.seed,
-        num_workers=args.num_workers,
-        aligned_root=args.aligned_root,
-    )
+    if args.fold is not None:
+        if args.train_dataset != "fiw":
+            raise ValueError(f"--fold is only supported for FIW; got {args.train_dataset}")
+        print(f"  K-fold CV active: fold {args.fold}/{args.num_folds}")
+        train_loader, val_loader, _ = create_fiw_5fold_train_val_loaders(
+            config=train_data_config,
+            fold_k=args.fold,
+            n_folds=args.num_folds,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            split_seed=args.seed,
+            aligned_root=args.aligned_root,
+        )
+    else:
+        train_loader, val_loader, _ = create_dataloaders(
+            config=train_data_config,
+            batch_size=args.batch_size,
+            dataset_type=args.train_dataset,
+            split_seed=args.seed,
+            num_workers=args.num_workers,
+            aligned_root=args.aligned_root,
+        )
     print(f"  train: {len(train_loader.dataset)}  val: {len(val_loader.dataset)}")
 
     from torch.utils.data import DataLoader

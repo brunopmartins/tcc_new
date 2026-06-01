@@ -185,22 +185,36 @@ fi
 # ---------- numbered output folder --------------------------------------------
 OUTPUT_BASE="${MODEL_ROOT}/output"
 mkdir -p "${OUTPUT_BASE}"
-RUN_ID=0
-for existing_dir in "${OUTPUT_BASE}"/*; do
-    [ -d "${existing_dir}" ] || continue
-    dir_name="$(basename "${existing_dir}")"
-    case "${dir_name}" in
-        ''|*[!0-9]*) continue ;;
-    esac
-    dir_num=$((10#${dir_name}))
-    [ "${dir_num}" -gt "${RUN_ID}" ] && RUN_ID="${dir_num}"
-done
-RUN_ID=$((RUN_ID + 1))
-RUN_LABEL="$(printf '%03d' ${RUN_ID})"
-RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
-CKPT_DIR="${RUN_DIR}/checkpoints"
-RESULTS_DIR="${RUN_DIR}/results"
-LOGS_DIR="${RUN_DIR}/logs"
+FOLD="${FOLD:-}"
+NUM_FOLDS="${NUM_FOLDS:-5}"
+RUN_OVERRIDE="${RUN_OVERRIDE:-}"
+if [ -n "${RUN_OVERRIDE}" ]; then
+    RUN_LABEL="${RUN_OVERRIDE}"
+    RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
+    mkdir -p "${RUN_DIR}"
+else
+    RUN_ID=0
+    for existing_dir in "${OUTPUT_BASE}"/*; do
+        [ -d "${existing_dir}" ] || continue
+        dir_name="$(basename "${existing_dir}")"
+        case "${dir_name}" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        dir_num=$((10#${dir_name}))
+        [ "${dir_num}" -gt "${RUN_ID}" ] && RUN_ID="${dir_num}"
+    done
+    RUN_ID=$((RUN_ID + 1))
+    RUN_LABEL="$(printf '%03d' ${RUN_ID})"
+    RUN_DIR="${OUTPUT_BASE}/${RUN_LABEL}"
+fi
+if [ -n "${FOLD}" ]; then
+    SUBRUN_DIR="${RUN_DIR}/fold_${FOLD}"
+else
+    SUBRUN_DIR="${RUN_DIR}"
+fi
+CKPT_DIR="${SUBRUN_DIR}/checkpoints"
+RESULTS_DIR="${SUBRUN_DIR}/results"
+LOGS_DIR="${SUBRUN_DIR}/logs"
 mkdir -p "${CKPT_DIR}" "${RESULTS_DIR}" "${LOGS_DIR}"
 
 echo '============================================'
@@ -289,6 +303,7 @@ TRAIN_ARGS=(
 [ "${NO_GRAD_CKPT}" = "1" ]       && TRAIN_ARGS+=(--no_grad_ckpt)
 [ "${STRATIFIED_SAMPLER}" = "1" ] && TRAIN_ARGS+=(--stratified_sampler)
 [ "${UNFREEZE_BACKBONE_BLOCKS}" != "0" ] && TRAIN_ARGS+=(--unfreeze_backbone_blocks "${UNFREEZE_BACKBONE_BLOCKS}" --backbone_lr_factor "${BACKBONE_LR_FACTOR}")
+[ -n "${FOLD}" ] && TRAIN_ARGS+=(--fold "${FOLD}" --num_folds "${NUM_FOLDS}")
 if [ "${USE_HYBRID_BACKBONE}" = "1" ]; then
     TRAIN_ARGS+=(--use_hybrid_backbone --face_backbone_name "${FACE_BACKBONE_NAME}" \
                  --face_backbone_state_prefix "${FACE_BACKBONE_STATE_PREFIX}" \
