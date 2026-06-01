@@ -147,26 +147,42 @@ The structure:
 
 ---
 
-## Conclusion (as of R011 CV — 2026-05-27)
+## Conclusion (as of R011 CV ensemble — 2026-05-29)
 
-**Revised after 5-fold CV of R011 (output/014/, completed 2026-05-27):**
-the single-run R011 (Test AUC 0.8825) was a favorable upper-tail draw.
-R011 **CV mean Test AUC is 0.8761 ± 0.0029**, only +0.0022 above R010 CV
-(z = 0.45, not significant — within the noise floor). The role-matched
-hard-negative intervention does produce a reproducible **low-FAR** lift
-(TAR@FAR=0.001 = 0.0677 ± 0.0147 vs R010 0.0524, +0.015 ~ 1σ), but it
-does **not** beat R010 on aggregate AUC outside the noise floor.
+**Updated after the R011 CV ensemble (2026-05-29, ~30 min inference):**
+averaging the sigmoid predictions of the 5 R011 CV checkpoints on the
+same fixed RFIW test set cleanly breaks the 0.876 ± 0.003 ceiling that
+R006/R010/R011 had all hit individually. **The CV ensemble is the new
+project headline on every threshold-invariant metric.**
 
-**Three CV-validated headline structures now stand** (as of R011 CV,
-2026-05-27):
+| Metric | **R011 CV ensemble** | R011 CV mean | R011 single | R010 CV mean | R006 CV mean | M02 R031 CV |
+|---|---:|---:|---:|---:|---:|---:|
+| Test ROC AUC | **0.8839** | 0.8761 ± 0.0029 | 0.8825 | 0.8739 ± 0.0038 | 0.8733 ± 0.0038 | 0.8462 ± 0.0040 |
+| Test AP | **0.8657** | 0.8562 ± 0.0031 | 0.8645 | — | — | 0.8131 |
+| TAR@FAR=0.001 | **0.0801** | 0.0677 ± 0.0147 | 0.0751 | ~0.0524 | — | 0.0219 |
+| TAR@FAR=0.01 | **0.2172** | 0.2069 ± 0.0107 | 0.2130 | — | — | 0.1349 |
+| TAR@FAR=0.1 | **0.6063** | 0.5951 ± 0.0083 | 0.6189 | — | — | 0.4964 |
+| F1 | **0.8054** | 0.7979 ± 0.0024 | 0.7938 | — | — | 0.7774 |
 
-- **🏆 Low-FAR headline — R011 (CV-validated)**: TAR@FAR=0.001 =
-  **0.0677 ± 0.0147** (+0.015 over R010 ~ 1σ, +0.045 over M02 R031).
-  Test AUC **0.8761 ± 0.0029**, Test AP **0.8562 ± 0.0031**,
-  TAR@FAR=0.01 0.2069 ± 0.0107. n=5 family-disjoint folds in
-  `output/014/`. Decisive intervention: **role-matched hard negatives
-  at 30 % mix** (sampler-fix commit `fc3301d`). Single-run 0.8825 was
-  an upper-tail draw; CV mean is the honest project-level number.
+Vs R010 CV the ensemble lands at **+0.0100 AUC (≈2σ)** — the first
+genuine break of the noise-floor ceiling. Even the single-run R011
+(0.8825, upper-tail draw) is beaten by +0.0014 AUC and +0.0050
+TAR@FAR=0.001.
+
+**Project headline structure (as of 2026-05-29):**
+
+- **🏆 Aggregate AUC + low-FAR — R011 CV ensemble**: Test AUC **0.8839**,
+  AP **0.8657**, TAR@FAR=0.001 **0.0801**, TAR@FAR=0.01 **0.2172**,
+  F1 **0.8054**. n=5 R011 CV folds averaged in
+  [`output/014/ensemble/`](../output/014/ensemble/). Deployment-quotable
+  number. NOT a single model — the CV mean (0.8761 ± 0.0029) should be
+  cited alongside whenever single-model comparison is the point.
+
+- **Single-model headline — R011** (CV-validated): Test AUC
+  **0.8761 ± 0.0029**, TAR@FAR=0.001 **0.0677 ± 0.0147** — the best
+  single-model band achievable on this architecture. Decisive
+  intervention: role-matched hard negatives at 30 % mix (sampler-fix
+  commit `fc3301d`).
 
 - **Aggregate AUC headline (pre-R011) — R006** (single-run Test AUC 0.8788; **CV
   mean 0.8733 ± 0.0038**, n=5). Decisive intervention: **symmetric

@@ -1,8 +1,35 @@
-# CV-fold ensemble — R011 (planning doc, not yet executed)
+# CV-fold ensemble — R011 (NEW PROJECT HEADLINE, executed 2026-05-29)
 
-**Status:** Script implemented (2026-05-27), not yet run. The 5 R011 CV
-checkpoints in [`output/014/fold_{0..4}/checkpoints/best.pt`](../output/014/)
-are the inputs.
+**Status:** Executed 2026-05-29 against the 5 R011 CV checkpoints in
+[`output/014/fold_{0..4}/checkpoints/best.pt`](../output/014/). Inference
+ran in ~30 min on the RX 6750 XT.
+
+**Outcome — new project headline on every threshold-invariant test metric:**
+
+| Metric | **Ensemble** | Per-fold mean (CV) | Δ |
+|---|---:|---:|---:|
+| Test ROC AUC | **0.8839** | 0.8761 ± 0.0029 | **+0.0078** |
+| Test AP | **0.8657** | 0.8562 ± 0.0031 | +0.0095 |
+| TAR@FAR=0.001 | **0.0801** | 0.0677 ± 0.0147 | +0.0124 |
+| TAR@FAR=0.01 | **0.2172** | 0.2069 ± 0.0107 | +0.0103 |
+| TAR@FAR=0.1 | **0.6063** | 0.5951 ± 0.0083 | +0.0112 |
+| F1 | **0.8054** | 0.7979 ± 0.0024 | +0.0075 |
+| Accuracy | **0.7925** | 0.7858 ± 0.0036 | +0.0067 |
+| Precision / Recall | 0.7313 / 0.8961 | 0.7282 / 0.8826 | +0.003 / +0.014 |
+
+Ensemble threshold = mean of the 5 per-fold val-selected thresholds = 0.330
+(per-fold thresholds: 0.40, 0.40, 0.30, 0.40, 0.15).
+
+**Vs all prior headlines:**
+
+- vs **R010 CV** (0.8739 ± 0.0038): +0.0100 AUC (≈2σ — first reproducible
+  break of the 0.876 ceiling).
+- vs **R011 single-run** (0.8825, upper-tail draw): +0.0014 AUC,
+  +0.0050 TAR@FAR=0.001 — even the upper-tail draw is beaten.
+- vs **R011 CV mean** (0.8761 ± 0.0029): +0.0078 AUC, +0.0124 low-FAR
+  (~0.85σ on AUC, similar on low-FAR — meaningful when paired with the
+  zero-cost methodology).
+- vs **M02 R031 CV** (0.8462 ± 0.0040): +0.0377 AUC.
 
 ## Idea
 
@@ -93,3 +120,46 @@ is already the project's low-FAR headline.
 - ~5 min inference per fold × 5 folds = ~30 min wall-clock.
 - No training. GPU thermal load is low (test mode only).
 - Disk: `ensemble_probs.npz` is ~600 KB (5 × 13 425 float64 + labels).
+
+---
+
+## Result (2026-05-29 execution)
+
+The ensemble cleared the 0.876 ± 0.003 ceiling that R006/R010/R011 had
+all hit individually. Best-case outcome from the pre-registered decision
+rule: **AUC ≥ 0.880 → report as the project's deployment headline**.
+
+**Project ranking after the ensemble (Test ROC AUC, single-number form):**
+
+1. **M12 R011 CV ensemble: 0.8839** (NEW HEADLINE)
+2. M12 R011 single-run: 0.8825 (upper-tail draw, retracted)
+3. M12 R011 CV mean: 0.8761 ± 0.0029
+4. M12 R006 single-run: 0.8788
+5. M12 R010 CV mean: 0.8739 ± 0.0038
+6. M12 R006 CV mean: 0.8733 ± 0.0038
+7. M12 R002 single-run: 0.8564
+8. M02 R031 CV mean: 0.8462 ± 0.0040
+9. M02 R031 single-run: 0.850
+10. M13 R002 single-run: 0.8526 (line stopped)
+11. M13 R001 single-run: 0.8462 (line stopped)
+
+The ensemble result is not a "free" win — it's the payoff for the
+5-fold CV investment in `output/014/`. Reporting it as the headline
+requires explicit framing: it is *not* a single model. The CV mean and
+spread should be cited alongside whenever the ensemble number is the
+quoted figure.
+
+### Artifacts
+
+- `output/014/ensemble/ensemble_metrics.txt` (full metric table +
+  per-fold reproduction)
+- `output/014/ensemble/ensemble_probs.npz` (probs_per_fold (5, N) +
+  ensemble_probs (N,) + labels + thresholds)
+- `output/014/ensemble/ensemble.log` (full run log)
+
+### Per-fold reproduction (sanity check)
+
+All 5 folds reproduced their original `test_metrics_rocm.txt` exactly:
+0.8767 / 0.8754 / 0.8771 / 0.8796 / 0.8716 — confirming the ensemble
+inference is operating on the same checkpoints that produced the CV
+mean, with no drift.

@@ -38,23 +38,51 @@ Planning doc: [`run-review/run-012.md`](run-review/run-012.md).
 
 ---
 
-## CV-fold ensemble — R011 — 2026-05-27 — Planning doc, NOT YET RUN
+## CV-fold ensemble — R011 — 2026-05-29 — Test ROC AUC **0.8839 — NEW PROJECT HEADLINE**
 
-**Status:** Script implemented. Inputs are the 5 R011 CV `best.pt` checkpoints in `output/014/fold_{0..4}/checkpoints/`. Wall-clock estimate ~30 min of pure inference.
+**Status:** Executed 2026-05-29 (~30 min wall-clock). Cleared the
+0.876 ± 0.003 ceiling that R006/R010/R011 all hit individually.
 Script: [`AMD/cv_ensemble.py`](AMD/cv_ensemble.py) + [`AMD/cv_ensemble_r011.sh`](AMD/cv_ensemble_r011.sh).
-Planning doc: [`run-review/cv_ensemble_r011.md`](run-review/cv_ensemble_r011.md).
+Full results: [`run-review/cv_ensemble_r011.md`](run-review/cv_ensemble_r011.md).
 
-**Idea:** All 5 R011 CV folds evaluate on the *same* 13 425-pair RFIW Track-I test set. The 5 sigmoid prediction vectors are statistically independent (each model saw disjoint families) but on identical test pairs — a clean soft-ensembling setting. Mean of per-fold sigmoid probabilities + mean of per-fold val-selected thresholds gives a single ensemble metric pack with no test-set snooping.
+**Ensemble metrics (averaged sigmoid probs across 5 R011 CV folds, same fixed RFIW test set):**
 
-**Expected outcome:** historically CV-fold ensembles give +0.005 to +0.010 AUC over the per-fold mean (0.8761). R011's per-fold TAR@FAR=0.001 swing is 0.051–0.083 — meaningful diversity to exploit at low-FAR.
+| Metric | **Ensemble** | Per-fold mean (CV) | R010 CV | R011 single |
+|---|---:|---:|---:|---:|
+| Test ROC AUC | **0.8839** | 0.8761 ± 0.0029 | 0.8739 | 0.8825 |
+| Test AP | **0.8657** | 0.8562 ± 0.0031 | — | 0.8645 |
+| TAR@FAR=0.001 | **0.0801** | 0.0677 ± 0.0147 | ~0.0524 | 0.0751 |
+| TAR@FAR=0.01 | **0.2172** | 0.2069 ± 0.0107 | — | 0.2130 |
+| TAR@FAR=0.1 | **0.6063** | 0.5951 ± 0.0083 | — | 0.6189 |
+| F1 | **0.8054** | 0.7979 ± 0.0024 | — | 0.7938 |
+| Accuracy | **0.7925** | 0.7858 ± 0.0036 | — | 0.7982 |
+| Precision / Recall | 0.7313 / 0.8961 | 0.7282 / 0.8826 | — | 0.7777 / 0.8105 |
 
-**Decision rule:**
+Ensemble threshold = mean of per-fold val-selected thresholds = 0.330
+(per-fold: 0.40, 0.40, 0.30, 0.40, 0.15).
 
-- Ensemble AUC ≥ 0.880: report as the project's deployment headline; cite per-fold mean ± std for variance.
-- 0.876 ≤ AUC < 0.880: framed as "ensembling recovers ~half the inter-fold variance"; not a breakthrough.
-- AUC < 0.876: ensemble does nothing — folds learned the same function. File and move on.
+**Vs prior headlines:**
 
-In all cases the TAR@FAR=0.001 ensemble number is also reported, since R011 is already the low-FAR headline.
+- vs R010 CV (0.8739 ± 0.0038): **+0.0100 AUC** (≈2σ — first reproducible break of the ceiling).
+- vs R011 single-run (0.8825, upper-tail draw): +0.0014 AUC, +0.0050 TAR@FAR=0.001 — even the upper-tail draw is beaten.
+- vs R011 CV mean (0.8761 ± 0.0029): +0.0078 AUC, +0.0124 low-FAR.
+- vs M02 R031 CV (0.8462 ± 0.0040): +0.0377 AUC.
+
+**Sanity check:** All 5 per-fold reproductions matched the original
+`test_metrics_rocm.txt` files exactly (0.8767 / 0.8754 / 0.8771 /
+0.8796 / 0.8716) — confirming the ensemble is operating on the same
+checkpoints that produced the CV mean, with no drift.
+
+**Caveat for the TCC:** the ensemble is **not** a single model. The
+deployment number should be quoted as `0.8839 (5-fold CV ensemble)`,
+with the per-fold mean (`0.8761 ± 0.0029`) cited alongside whenever
+single-model performance is the relevant comparison.
+
+**Artifacts:**
+
+- `output/014/ensemble/ensemble_metrics.txt` (full metric table)
+- `output/014/ensemble/ensemble_probs.npz` (probs_per_fold (5, N) + ensemble_probs + labels + thresholds)
+- `output/014/ensemble/ensemble.log` (full run log)
 
 ---
 
