@@ -1,219 +1,246 @@
-# Experimento com VLM Codex para Classificacao de Parentesco
+# Experimento com VLM Codex para Verificacao Binaria de Parentesco
 
 ## Objetivo
 
-Definir um experimento complementar aos modelos treinados usando um **VLM do ecossistema Codex** como baseline **zero-shot** para classificacao de parentesco facial. A proposta e medir quanto um modelo multimodal generico consegue inferir a relacao familiar apenas a partir de pistas visuais, **sem treinamento supervisionado no dominio**.
+Registrar o experimento complementar com um **VLM do ecossistema Codex** em configuracao **zero-shot** para a tarefa de verificacao binaria de parentesco facial.
+
+A formulacao usada neste experimento e:
+
+```text
+kin vs non_kin
+```
+
+Essa mudanca foi necessaria para alinhar a avaliacao do VLM ao protocolo dos modelos supervisionados da pesquisa, que tambem decidem se um par possui ou nao relacao de parentesco, em vez de classificar a relacao genealogica exata.
 
 ---
 
 ## Motivacao
 
-Os modelos 01-04 desta pesquisa exigem treinamento, validacao e ajuste de hiperparametros. Um VLM, por outro lado, permite uma avaliacao imediata:
-
-1. **Sem treinamento**: basta preparar os pares e definir um prompt fixo.
-2. **Baseline de baixo custo**: o experimento pode ser executado rapidamente como referencia externa.
-3. **Analise qualitativa**: os erros do VLM revelam quais relacoes dependem mais de semelhanca facial fina e menos de pistas amplas de idade/genero.
-
-O papel deste experimento nao e substituir os modelos especializados, mas sim fornecer um **baseline zero-shot** e uma camada extra de interpretacao metodologica.
-
----
-
-## Hipotese
-
-Um VLM generico deve conseguir resolver razoavelmente bem relacoes em que **idade** e **genero** oferecem pistas fortes, como:
-
-- `fd` e `fs`
-- `md` e `ms`
-- `sibs`
-
-Por outro lado, espera-se maior dificuldade em relacoes que exigem distinguir **graus genealogicos** mais sutis:
-
-- `bb` vs `fs`
-- `ss` vs `md`
-- `gfgd`, `gfgs`, `gmgd`, `gmgs`
-
----
-
-## Definicao da Task
-
-O experimento usa o problema como **classificacao fechada da relacao de parentesco**.
-
-Dado um par de faces `(x1, x2)`, o VLM deve escolher exatamente uma classe em:
+Na versao anterior, o VLM era avaliado como classificador multiclasse entre 11 relacoes positivas do FIW:
 
 ```text
 bb, ss, sibs, fd, fs, md, ms, gfgd, gfgs, gmgd, gmgs
 ```
 
+Esse enquadramento gerava uma discrepancia metodologica: os modelos supervisionados da pesquisa realizam **verificacao binaria**, enquanto o VLM realizava **classificacao multiclasse** sem considerar a classe `non_kin`.
+
+Para tornar a comparacao metodologicamente mais coerente, o experimento foi refeito com a mesma pergunta central dos demais modelos:
+
+> As duas faces pertencem a pessoas com relacao de parentesco?
+
+---
+
+## Definicao da Task
+
+Dado um par de faces `(x1, x2)`, o VLM deve escolher exatamente uma das classes:
+
+```text
+kin
+non_kin
+```
+
 Onde:
 
-- `bb` = brother-brother
-- `ss` = sister-sister
-- `sibs` = brother-sister
-- `fd` = father-daughter
-- `fs` = father-son
-- `md` = mother-daughter
-- `ms` = mother-son
-- `gfgd` = grandfather-granddaughter
-- `gfgs` = grandfather-grandson
-- `gmgd` = grandmother-granddaughter
-- `gmgs` = grandmother-grandson
+- `kin` indica que o par possui relacao familiar.
+- `non_kin` indica que o par nao possui relacao familiar.
 
-Este enquadramento e diferente da verificacao binaria (`kin` vs `non-kin`) usada nos modelos treinados, e por isso deve ser tratado como **baseline complementar**, nao como substituto direto.
+O modelo nao deve inferir ou retornar o tipo especifico de relacao familiar. A saida esperada e apenas uma decisao binaria acompanhada de confianca.
 
 ---
 
 ## Dataset e Protocolo
 
-### Dataset recomendado
+### Dataset
 
-Usar o **FIW Track-I**, pois ele ja fornece pares rotulados por tipo de relacao e cobre as 11 classes necessarias.
+O experimento usa o **FIW Track-I**, com pares extraidos de:
 
-### Split
+```text
+datasets/FIW/track-I/test-pairs.csv
+```
 
-Usar o **split oficial de teste** do FIW, mantendo o protocolo padrao do dataset.
+### Amostragem
 
-### Filtragem
+Foram avaliados **6000 pares unicos**, balanceados entre as duas classes:
 
-Antes da inferencia:
+| Classe | Pares |
+|---|---:|
+| `kin` | 3000 |
+| `non_kin` | 3000 |
+| Total | 6000 |
 
-1. Verificar se os caminhos de imagem listados no split existem no dataset local.
-2. Descartar entradas com paths quebrados ou inconsistentes.
-3. Manter um **manifest** deterministicamente salvo em disco para reproducao.
+O run foi composto por:
 
-### Balanceamento
+| Etapa | Pares |
+|---|---:|
+| Rodada inicial | 750 |
+| Complemento | 5250 |
+| Total combinado | 6000 |
 
-Para evitar que relacoes abundantes dominem a analise:
+O complemento foi executado com exclusao do manifesto inicial, evitando repeticao dos pares ja avaliados. A validacao do manifesto combinado indicou:
 
-1. Amostrar o mesmo numero de pares por relacao sempre que possivel.
-2. Se alguma relacao tiver menos pares validos do que o alvo planejado, limitar essa classe ao maximo disponivel e redistribuir o deficit entre as demais relacoes.
-3. Fixar uma seed unica para tornar a amostragem reprodutivel.
+| Checagem | Resultado |
+|---|---:|
+| Pares totais | 6000 |
+| Pares `kin` | 3000 |
+| Pares `non_kin` | 3000 |
+| Duplicatas detectadas | 0 |
 
 ---
 
 ## Preparacao das Entradas
 
-Cada exemplo deve ser convertido em uma **imagem composta** com:
+Cada exemplo foi convertido em uma imagem composta com:
 
-1. Face da pessoa A na esquerda
-2. Face da pessoa B na direita
-3. Um layout fixo para todos os pares
+1. Face da pessoa A na esquerda.
+2. Face da pessoa B na direita.
+3. Layout fixo para todos os pares.
 
-Essa representacao simplifica o prompt e reduz ambiguidade na ordem das imagens.
-
-Pipeline sugerido:
-
-1. Ler o par `(img1, img2)`
-2. Redimensionar/cortar ambas para um tamanho padrao
-3. Combinar lado a lado em uma unica imagem
-4. Enviar a imagem composta ao Codex VLM
+Essa representacao simplifica o prompt e garante que o VLM receba sempre a mesma estrutura visual.
 
 ---
 
 ## Prompting
 
-O prompt deve ser **fixo** para todas as amostras. Isso evita tuning manual por relacao e preserva o caracter zero-shot.
+O prompt foi fixo para todas as amostras, preservando o carater zero-shot do experimento.
 
-Exemplo de prompt:
+Formato conceitual do prompt:
 
 ```text
-You will receive one kinship pair image containing a left face and a right face.
-Classify the family relation using only the visual evidence in that image.
-Choose exactly one label from:
-bb, ss, sibs, fd, fs, md, ms, gfgd, gfgs, gmgd, gmgs.
+You will receive one face pair image containing a left face and a right face.
+Decide whether the two people are biologically related.
+Choose exactly one label: kin or non_kin.
 Return only a JSON object with:
 {
-  "predicted_relation": "<one_label>",
+  "predicted_label": "kin" or "non_kin",
   "confidence": <0_to_1>
 }
-Do not use shell commands or inspect files.
 ```
 
-Para throughput maior, tambem e possivel **batchar varias imagens compostas por chamada**, pedindo um array JSON na mesma ordem dos anexos.
+O prompt nao solicita a relacao especifica (`fd`, `md`, `sibs` etc.), pois isso recriaria a discrepancia com o protocolo binario dos modelos supervisionados.
 
 ---
 
 ## Configuracao do Modelo
 
-O experimento deve fixar uma variante do Codex VLM e mantela constante durante toda a avaliacao.
-
-Configuracao recomendada:
-
-- **Modelo:** `gpt-5.4` ou `gpt-5.4-mini`
-- **Modo:** zero-shot
-- **Reasoning effort:** `low` ou `medium`
-- **Saida estruturada:** JSON schema fixo
-
-Para estudos futuros, pode-se comparar:
-
-1. `gpt-5.4-mini` vs `gpt-5.4`
-2. `low` vs `medium` reasoning
-3. inferencia individual vs inferencia em lote
-
----
-
-## Metricas
-
-Como a task e multiclasse, as metricas principais devem ser:
-
-1. **Accuracy global**
-2. **Macro Precision**
-3. **Macro Recall**
-4. **Macro F1**
-5. **Accuracy por relacao**
-6. **Matriz de confusao**
-
-Tambem vale registrar:
-
-1. **Confidence media**
-2. **Confidence media em acertos**
-3. **Confidence media em erros**
-
-Isso ajuda a medir se o VLM esta bem calibrado ou apenas responde com alta confianca independentemente da qualidade.
+| Campo | Valor |
+|---|---|
+| Modelo | `gpt-5.4-mini` |
+| Familia | Codex VLM |
+| Modo | zero-shot |
+| Reasoning effort | `medium` |
+| Saida | JSON estruturado |
+| Tarefa | verificacao binaria |
 
 ---
 
 ## Artefatos de Reproducao
 
-O experimento deve salvar pelo menos:
+O resultado combinado esta salvo em:
 
-1. `config.json` com modelo, seed, batch size e configuracao do run
-2. `manifest.json` com os pares efetivamente avaliados
-3. `predictions.csv` com ground truth, predicao e confianca
-4. `metrics.json` com accuracy, macro-F1 e matriz de confusao
+```text
+data/codex_vlm_fiw_binary_6000_medium_combined/
+```
 
-Esses artefatos tornam o VLM benchmarkavel da mesma forma que os runs dos modelos treinados.
+Principais arquivos:
+
+| Arquivo | Conteudo |
+|---|---|
+| `config.json` | configuracao do run |
+| `manifest.json` | pares avaliados |
+| `predictions.csv` | ground truth, predicao e confianca |
+| `metrics.json` | metricas agregadas |
+
+As duas rodadas que compoem o resultado combinado estao em:
+
+```text
+data/codex_vlm_fiw_binary_1500_medium/
+data/codex_vlm_fiw_binary_extra_5250_medium/
+```
 
 ---
 
-## Limitacoes Esperadas
+## Resultados
 
-1. **Nao ha adaptacao ao dominio**: o VLM nao aprende com FIW.
-2. **Sensibilidade a heuristicas superficiais**: idade e genero podem dominar a decisao.
-3. **Nao e comparacao direta com AUC de verificacao**: a task aqui e multiclasse, nao binaria.
-4. **Custo de inferencia por chamada**: embora nao haja treinamento, ha custo por lote de imagens.
+### Metricas globais
 
-Por isso, o VLM deve ser interpretado como **baseline zero-shot exploratorio**, nao como candidato principal para SOTA na tarefa.
+| Metrica | Valor |
+|---|---:|
+| Accuracy | 58.98% |
+| Balanced accuracy | 58.98% |
+| Precision | 0.563 |
+| Recall / sensibilidade `kin` | 0.799 |
+| Specificity / rejeicao `non_kin` | 0.381 |
+| F1 | 0.661 |
+| Confidence media | 0.721 |
+| Confidence media em acertos | 0.735 |
+| Confidence media em erros | 0.700 |
+
+### Matriz de confusao
+
+| Classe real | Predito `kin` | Predito `non_kin` | Total |
+|---|---:|---:|---:|
+| `kin` | 2396 | 604 | 3000 |
+| `non_kin` | 1857 | 1143 | 3000 |
+
+Em termos de verificacao binaria:
+
+| Tipo | Quantidade |
+|---|---:|
+| Verdadeiros positivos | 2396 |
+| Falsos negativos | 604 |
+| Falsos positivos | 1857 |
+| Verdadeiros negativos | 1143 |
 
 ---
 
-## Como Posicionar na Dissertacao
+## Interpretacao
 
-Este experimento pode ser apresentado como:
+O Codex VLM apresentou desempenho acima do acaso, com **balanced accuracy de 58.98%**, mas mostrou forte tendencia a predizer `kin`.
 
-1. **Baseline sem treinamento**
-2. **Controle externo ao pipeline supervisionado**
-3. **Analise complementar de erro**
+Essa tendencia aparece na diferenca entre:
 
-Uma formulacao adequada seria:
+| Indicador | Valor |
+|---|---:|
+| Recall para `kin` | 79.87% |
+| Specificity para `non_kin` | 38.10% |
 
-> Alem dos modelos treinados especificamente para verificacao de parentesco, foi avaliado um VLM do ecossistema Codex em configuracao zero-shot, com o objetivo de medir o quanto um modelo multimodal generico consegue inferir a relacao familiar apenas por pistas visuais. O resultado serve como baseline complementar e evidencia a diferenca entre conhecimento visual geral e especializacao supervisionada no dominio de parentesco facial.
+Ou seja, o modelo reconhece muitos pares positivos, mas rejeita mal pares negativos. Isso gera um numero elevado de falsos positivos: **1857 pares `non_kin` foram classificados como `kin`**.
+
+O resultado sugere que, em zero-shot, o VLM usa pistas visuais gerais de semelhanca facial, idade, genero e aparencia global, mas ainda nao possui calibracao suficiente para separar parentesco real de semelhanca superficial.
+
+---
+
+## Comparabilidade com os Modelos Supervisionados
+
+Com a reformulacao binaria, o experimento passa a ser mais comparavel aos modelos supervisionados da pesquisa do que a versao multiclasse anterior.
+
+Ainda assim, a comparacao deve ser feita com cautela:
+
+1. O VLM nao foi treinado no FIW.
+2. O VLM nao possui ajuste de threshold em validacao.
+3. O VLM nao usa validacao cruzada.
+4. O VLM produz uma decisao zero-shot baseada no prompt, nao em uma funcao de similaridade supervisionada.
+
+Portanto, o resultado deve ser usado como **baseline externo zero-shot**, nao como substituto direto dos modelos especializados.
+
+---
+
+## Nota Sobre o Experimento Multiclasse Anterior
+
+A versao anterior deste documento descrevia uma tarefa de classificacao fechada em 11 relacoes positivas:
+
+```text
+bb, ss, sibs, fd, fs, md, ms, gfgd, gfgs, gmgd, gmgs
+```
+
+Essa formulacao foi mantida apenas como etapa exploratoria historica, pois nao inclui a classe `non_kin` e, por isso, nao mede a mesma tarefa dos modelos de verificacao binaria.
+
+O resultado principal a ser usado na comparacao metodologica e o experimento binario de 6000 pares documentado acima.
 
 ---
 
 ## Conclusao
 
-O experimento com VLM Codex acrescenta valor metodologico porque responde a uma pergunta diferente da dos modelos 01-04:
+O experimento com Codex VLM mostra que um modelo multimodal generico consegue capturar parte do sinal visual de parentesco sem treinamento no dominio, mas ainda apresenta desempenho limitado para rejeitar pares `non_kin`.
 
-**quanto do problema de parentesco facial pode ser resolvido sem treinamento, apenas com capacidade visual geral?**
-
-Essa comparacao fortalece a narrativa da pesquisa ao mostrar, de forma concreta, onde um VLM generico acerta, onde falha, e por que modelos especializados continuam necessarios.
+O valor metodologico do experimento esta em estabelecer um baseline zero-shot binario: ele mede quanto da tarefa pode ser resolvido apenas com conhecimento visual geral e evidencia por que modelos supervisionados, calibrados especificamente para verificacao de parentesco facial, continuam necessarios.

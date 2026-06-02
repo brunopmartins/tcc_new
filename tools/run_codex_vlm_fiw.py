@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Run a zero-shot Codex VLM kinship-relation experiment on FIW test pairs.
+Run a zero-shot Codex VLM binary kinship-verification experiment on FIW pairs.
 
-The script samples valid positive FIW pairs, builds temporary side-by-side
-pair sheets, calls `codex exec` in batches, and writes reproducible outputs.
+The script samples positive and negative FIW test pairs, builds temporary
+side-by-side pair sheets, calls `codex exec` in batches, and writes
+reproducible outputs.
 """
 
 from __future__ import annotations
@@ -15,12 +16,14 @@ import random
 import shutil
 import subprocess
 import tempfile
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List
 
 from PIL import Image, ImageOps, ImageDraw
 
+
+LABELS = ["kin", "non_kin"]
 
 RELATIONS = [
     "bb",
@@ -69,7 +72,13 @@ def parse_args() -> argparse.Namespace:
         "--total-images",
         type=int,
         default=150,
-        help="Total number of individual images. Must be even.",
+        help="Total number of individual images. Must be even. Ignored when --total-pairs is set.",
+    )
+    parser.add_argument(
+        "--total-pairs",
+        type=int,
+        default=None,
+        help="Total number of FIW pairs to evaluate. Overrides --total-images when set.",
     )
     parser.add_argument(
         "--batch-size",
@@ -98,21 +107,47 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Keep generated pair sheets after the run.",
     )
+    parser.add_argument(
+        "--exclude-manifest",
+        type=Path,
+        default=None,
+        help="Manifest JSON with previously evaluated pairs to exclude from sampling.",
+    )
     return parser.parse_args()
 
 
-def load_valid_positive_pairs(root: Path) -> Dict[str, List[dict]]:
+def pair_key(record: dict) -> tuple[str, str, str, str]:
+    return (
+        record["label"],
+        record["relation"],
+        record["p1_rel"],
+        record["p2_rel"],
+    )
+
+
+def load_excluded_pair_keys(manifest_path: Path | None) -> set[tuple[str, str, str, str]]:
+    if manifest_path is None:
+        return set()
+    records = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return {pair_key(record) for record in records}
+
+
+def load_valid_pairs(root: Path) -> Dict[str, Dict[str, List[dict]]]:
     csv_path = root / "datasets" / "FIW" / "track-I" / "test-pairs.csv"
     fiw_root = root / "datasets" / "FIW" / "FIDs"
-    by_relation: Dict[str, List[dict]] = defaultdict(list)
+    by_label_relation: Dict[str, Dict[str, List[dict]]] = {
+        label: defaultdict(list) for label in LABELS
+    }
 
     with csv_path.open(newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
-            if row["labels"] != "1":
-                continue
             relation = row["ptype"]
             if relation not in RELATIONS:
+                continue
+
+            label = "kin" if row["labels"] == "1" else "non_kin" if row["labels"] == "0" else None
+            if label is None:
                 continue
 
             p1_abs = fiw_root / row["p1"]
@@ -121,26 +156,60 @@ def load_valid_positive_pairs(root: Path) -> Dict[str, List[dict]]:
                 continue
 
             record = {
+                "label": label,
                 "relation": relation,
+                "relation_name": RELATION_NAMES[relation],
                 "p1_rel": row["p1"],
                 "p2_rel": row["p2"],
                 "p1_abs": str(p1_abs),
                 "p2_abs": str(p2_abs),
             }
-            by_relation[relation].append(record)
+            by_label_relation[label][relation].append(record)
 
-    return by_relation
+    return by_label_relation
 
 
-def build_allocation(by_relation: Dict[str, List[dict]], total_pairs: int) -> Dict[str, int]:
-    if total_pairs < len(RELATIONS):
-        raise ValueError("Need at least one pair per relation.")
+def exclude_pairs(
+    by_label_relation: Dict[str, Dict[str, List[dict]]],
+    excluded_keys: set[tuple[str, str, str, str]],
+) -> int:
+    removed = 0
+    if not excluded_keys:
+        return removed
 
-    base = total_pairs // len(RELATIONS)
-    remainder = total_pairs % len(RELATIONS)
+    for label in LABELS:
+        for relation in RELATIONS:
+            kept = []
+            for record in by_label_relation[label][relation]:
+                if pair_key(record) in excluded_keys:
+                    removed += 1
+                    continue
+                kept.append(record)
+            by_label_relation[label][relation] = kept
+    return removed
+
+
+def build_relation_allocation(
+    candidates_by_relation: Dict[str, List[dict]],
+    target_pairs: int,
+) -> Dict[str, int]:
+    available_total = sum(len(candidates_by_relation[relation]) for relation in RELATIONS)
+    if target_pairs > available_total:
+        raise ValueError(
+            f"Requested {target_pairs} pairs, but only {available_total} valid pairs are available."
+        )
+    if target_pairs < len(RELATIONS):
+        abundance_order = sorted(RELATIONS, key=lambda rel: len(candidates_by_relation[rel]), reverse=True)
+        allocation = {relation: 0 for relation in RELATIONS}
+        for relation in abundance_order[:target_pairs]:
+            allocation[relation] = 1
+        return allocation
+
+    base = target_pairs // len(RELATIONS)
+    remainder = target_pairs % len(RELATIONS)
 
     allocation = {relation: base for relation in RELATIONS}
-    abundance_order = sorted(RELATIONS, key=lambda rel: len(by_relation[rel]), reverse=True)
+    abundance_order = sorted(RELATIONS, key=lambda rel: len(candidates_by_relation[rel]), reverse=True)
     for relation in abundance_order[:remainder]:
         allocation[relation] += 1
 
@@ -148,7 +217,7 @@ def build_allocation(by_relation: Dict[str, List[dict]], total_pairs: int) -> Di
     # available count and redistribute the shortfall to richer relations.
     deficit = 0
     for relation, needed in allocation.items():
-        available = len(by_relation[relation])
+        available = len(candidates_by_relation[relation])
         if available < needed:
             deficit += needed - available
             allocation[relation] = available
@@ -157,7 +226,7 @@ def build_allocation(by_relation: Dict[str, List[dict]], total_pairs: int) -> Di
         while deficit > 0:
             progress_made = False
             for relation in abundance_order:
-                spare = len(by_relation[relation]) - allocation[relation]
+                spare = len(candidates_by_relation[relation]) - allocation[relation]
                 if spare <= 0:
                     continue
                 allocation[relation] += 1
@@ -177,27 +246,42 @@ def build_allocation(by_relation: Dict[str, List[dict]], total_pairs: int) -> Di
     return allocation
 
 
+def build_allocation(
+    by_label_relation: Dict[str, Dict[str, List[dict]]],
+    total_pairs: int,
+) -> Dict[str, Dict[str, int]]:
+    if total_pairs < len(LABELS):
+        raise ValueError("Need at least one pair per binary class.")
+
+    kin_pairs = total_pairs // 2
+    non_kin_pairs = total_pairs - kin_pairs
+    return {
+        "kin": build_relation_allocation(by_label_relation["kin"], kin_pairs),
+        "non_kin": build_relation_allocation(by_label_relation["non_kin"], non_kin_pairs),
+    }
+
+
 def sample_pairs(
-    by_relation: Dict[str, List[dict]],
-    allocation: Dict[str, int],
+    by_label_relation: Dict[str, Dict[str, List[dict]]],
+    allocation: Dict[str, Dict[str, int]],
     seed: int,
 ) -> List[dict]:
     rng = random.Random(seed)
     sampled: List[dict] = []
     sample_index = 1
 
-    for relation in RELATIONS:
-        candidates = list(by_relation[relation])
-        rng.shuffle(candidates)
-        for record in candidates[: allocation[relation]]:
-            sampled.append(
-                {
-                    **record,
-                    "sample_id": f"S{sample_index:03d}",
-                    "relation_name": RELATION_NAMES[relation],
-                }
-            )
-            sample_index += 1
+    for label in LABELS:
+        for relation in RELATIONS:
+            candidates = list(by_label_relation[label][relation])
+            rng.shuffle(candidates)
+            for record in candidates[: allocation[label][relation]]:
+                sampled.append(
+                    {
+                        **record,
+                        "sample_id": f"S{sample_index:03d}",
+                    }
+                )
+                sample_index += 1
 
     rng.shuffle(sampled)
     for index, record in enumerate(sampled, start=1):
@@ -236,9 +320,9 @@ def write_schema(path: Path, batch_size: int) -> None:
                 "items": {
                     "type": "object",
                     "properties": {
-                        "predicted_relation": {
+                        "predicted_label": {
                             "type": "string",
-                            "enum": RELATIONS,
+                            "enum": LABELS,
                         },
                         "confidence": {
                             "type": "number",
@@ -246,7 +330,7 @@ def write_schema(path: Path, batch_size: int) -> None:
                             "maximum": 1,
                         },
                     },
-                    "required": ["predicted_relation", "confidence"],
+                    "required": ["predicted_label", "confidence"],
                     "additionalProperties": False,
                 },
             }
@@ -272,14 +356,16 @@ def run_batch(
     prompt = (
         f"You will receive {len(batch_records)} attached images. "
         "Each attached image is one FIW kinship pair sheet containing the left and right face "
-        "for a single positive pair. "
-        "Classify each attached pair independently using only the visual evidence in that "
-        "attached image. Do not run shell commands. Do not inspect files. "
+        "for one candidate pair. "
+        "For each attached pair, perform binary kinship verification using only the visual "
+        "evidence in that attached image. Decide whether the two people are biologically "
+        "related or not. Do not infer or output the exact relation type. "
+        "Do not run shell commands. Do not inspect files. "
         f"Return a JSON object with a predictions array of exactly {len(batch_records)} items, "
         "in the same order as the attachments. "
-        "For each item, choose exactly one label from: "
-        + ", ".join(RELATIONS)
-        + "."
+        "For each item, choose exactly one label: kin if the pair appears biologically related, "
+        "or non_kin if the pair does not appear biologically related. "
+        "The confidence must be your confidence in the chosen binary label, from 0 to 1."
     )
 
     command = [
@@ -331,57 +417,61 @@ def run_batch(
 
 def compute_metrics(records: List[dict]) -> dict:
     total = len(records)
-    correct = sum(1 for record in records if record["predicted_relation"] == record["relation"])
+    correct = sum(1 for record in records if record["predicted_label"] == record["label"])
+
+    confusion: Dict[str, Dict[str, int]] = {label: {pred: 0 for pred in LABELS} for label in LABELS}
+    for record in records:
+        confusion[record["label"]][record["predicted_label"]] += 1
+
+    tp = confusion["kin"]["kin"]
+    fn = confusion["kin"]["non_kin"]
+    fp = confusion["non_kin"]["kin"]
+    tn = confusion["non_kin"]["non_kin"]
+
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    specificity = tn / (tn + fp) if (tn + fp) else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+    balanced_accuracy = (recall + specificity) / 2
+
+    per_label = {}
+    for label in LABELS:
+        label_records = [record for record in records if record["label"] == label]
+        label_total = len(label_records)
+        label_correct = sum(1 for record in label_records if record["predicted_label"] == label)
+        per_label[label] = {
+            "count": label_total,
+            "correct": label_correct,
+            "accuracy": label_correct / label_total if label_total else 0.0,
+        }
 
     per_relation = {}
-    confusion: Dict[str, Dict[str, int]] = {rel: {pred: 0 for pred in RELATIONS} for rel in RELATIONS}
-
     for relation in RELATIONS:
         rel_records = [record for record in records if record["relation"] == relation]
         rel_total = len(rel_records)
-        rel_correct = sum(1 for record in rel_records if record["predicted_relation"] == relation)
+        rel_correct = sum(1 for record in rel_records if record["predicted_label"] == record["label"])
         per_relation[relation] = {
             "count": rel_total,
             "correct": rel_correct,
             "accuracy": rel_correct / rel_total if rel_total else 0.0,
+            "kin_count": sum(1 for record in rel_records if record["label"] == "kin"),
+            "non_kin_count": sum(1 for record in rel_records if record["label"] == "non_kin"),
         }
 
-    for record in records:
-        confusion[record["relation"]][record["predicted_relation"]] += 1
-
-    metric_rows = []
-    for relation in RELATIONS:
-        tp = confusion[relation][relation]
-        fp = sum(confusion[other][relation] for other in RELATIONS if other != relation)
-        fn = sum(confusion[relation][other] for other in RELATIONS if other != relation)
-        precision = tp / (tp + fp) if (tp + fp) else 0.0
-        recall = tp / (tp + fn) if (tp + fn) else 0.0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
-        metric_rows.append((precision, recall, f1))
-        per_relation[relation].update(
-            {
-                "precision": precision,
-                "recall": recall,
-                "f1": f1,
-            }
-        )
-
-    macro_precision = sum(row[0] for row in metric_rows) / len(metric_rows)
-    macro_recall = sum(row[1] for row in metric_rows) / len(metric_rows)
-    macro_f1 = sum(row[2] for row in metric_rows) / len(metric_rows)
-
     confidences = [float(record["confidence"]) for record in records]
-    correct_confidences = [float(record["confidence"]) for record in records if record["predicted_relation"] == record["relation"]]
-    incorrect_confidences = [float(record["confidence"]) for record in records if record["predicted_relation"] != record["relation"]]
+    correct_confidences = [float(record["confidence"]) for record in records if record["predicted_label"] == record["label"]]
+    incorrect_confidences = [float(record["confidence"]) for record in records if record["predicted_label"] != record["label"]]
 
     return {
-        "task": "closed_set_relation_classification",
+        "task": "binary_kinship_verification",
         "total_pairs": total,
         "total_images": total * 2,
         "overall_accuracy": correct / total if total else 0.0,
-        "macro_precision": macro_precision,
-        "macro_recall": macro_recall,
-        "macro_f1": macro_f1,
+        "precision": precision,
+        "recall": recall,
+        "specificity": specificity,
+        "f1": f1,
+        "balanced_accuracy": balanced_accuracy,
         "mean_confidence": sum(confidences) / len(confidences) if confidences else 0.0,
         "mean_confidence_correct": (
             sum(correct_confidences) / len(correct_confidences) if correct_confidences else 0.0
@@ -389,6 +479,7 @@ def compute_metrics(records: List[dict]) -> dict:
         "mean_confidence_incorrect": (
             sum(incorrect_confidences) / len(incorrect_confidences) if incorrect_confidences else 0.0
         ),
+        "per_label": per_label,
         "per_relation": per_relation,
         "confusion_matrix": confusion,
     }
@@ -397,10 +488,10 @@ def compute_metrics(records: List[dict]) -> dict:
 def write_predictions_csv(path: Path, records: List[dict]) -> None:
     fieldnames = [
         "sample_id",
+        "label",
         "relation",
         "relation_name",
-        "predicted_relation",
-        "predicted_relation_name",
+        "predicted_label",
         "confidence",
         "correct",
         "p1_rel",
@@ -413,12 +504,12 @@ def write_predictions_csv(path: Path, records: List[dict]) -> None:
             writer.writerow(
                 {
                     "sample_id": record["sample_id"],
+                    "label": record["label"],
                     "relation": record["relation"],
                     "relation_name": record["relation_name"],
-                    "predicted_relation": record["predicted_relation"],
-                    "predicted_relation_name": RELATION_NAMES[record["predicted_relation"]],
+                    "predicted_label": record["predicted_label"],
                     "confidence": record["confidence"],
-                    "correct": int(record["predicted_relation"] == record["relation"]),
+                    "correct": int(record["predicted_label"] == record["label"]),
                     "p1_rel": record["p1_rel"],
                     "p2_rel": record["p2_rel"],
                 }
@@ -427,17 +518,23 @@ def write_predictions_csv(path: Path, records: List[dict]) -> None:
 
 def main() -> None:
     args = parse_args()
-    if args.total_images % 2 != 0:
-        raise ValueError("--total-images must be even because each sample is an image pair.")
+    if args.total_pairs is not None:
+        total_pairs = args.total_pairs
+        args.total_images = total_pairs * 2
+    else:
+        if args.total_images % 2 != 0:
+            raise ValueError("--total-images must be even because each sample is an image pair.")
+        total_pairs = args.total_images // 2
 
-    total_pairs = args.total_images // 2
     if args.output_dir is None:
-        args.output_dir = args.root / "data" / f"codex_vlm_fiw_{args.total_images}"
+        args.output_dir = args.root / "data" / f"codex_vlm_fiw_binary_{args.total_images}"
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    by_relation = load_valid_positive_pairs(args.root)
-    allocation = build_allocation(by_relation, total_pairs)
-    sampled_records = sample_pairs(by_relation, allocation, args.seed)
+    by_label_relation = load_valid_pairs(args.root)
+    excluded_keys = load_excluded_pair_keys(args.exclude_manifest)
+    excluded_pairs_removed = exclude_pairs(by_label_relation, excluded_keys)
+    allocation = build_allocation(by_label_relation, total_pairs)
+    sampled_records = sample_pairs(by_label_relation, allocation, args.seed)
 
     temp_dir = Path(tempfile.mkdtemp(prefix="codex_vlm_fiw_"))
     batch_dir = temp_dir / "pair_sheets"
@@ -458,8 +555,15 @@ def main() -> None:
             "total_images": args.total_images,
             "total_pairs": total_pairs,
             "batch_size": args.batch_size,
+            "exclude_manifest": str(args.exclude_manifest) if args.exclude_manifest else None,
+            "excluded_pairs_removed": excluded_pairs_removed,
             "allocation": allocation,
-            "available_valid_pairs": {relation: len(by_relation[relation]) for relation in RELATIONS},
+            "available_valid_pairs": {
+                label: {
+                    relation: len(by_label_relation[label][relation]) for relation in RELATIONS
+                }
+                for label in LABELS
+            },
         }
         (args.output_dir / "config.json").write_text(json.dumps(config_payload, indent=2), encoding="utf-8")
 
@@ -478,7 +582,7 @@ def main() -> None:
                 output_json_path=batch_output_path,
             )
             for record, prediction in zip(batch_records, predictions):
-                record["predicted_relation"] = prediction["predicted_relation"]
+                record["predicted_label"] = prediction["predicted_label"]
                 record["confidence"] = float(prediction["confidence"])
             batch_outputs.append(
                 {
@@ -502,7 +606,11 @@ def main() -> None:
         print(f"Pairs evaluated: {metrics['total_pairs']}")
         print(f"Images evaluated: {metrics['total_images']}")
         print(f"Overall accuracy: {metrics['overall_accuracy']:.4f}")
-        print(f"Macro F1: {metrics['macro_f1']:.4f}")
+        print(f"Precision: {metrics['precision']:.4f}")
+        print(f"Recall: {metrics['recall']:.4f}")
+        print(f"Specificity: {metrics['specificity']:.4f}")
+        print(f"F1: {metrics['f1']:.4f}")
+        print(f"Balanced accuracy: {metrics['balanced_accuracy']:.4f}")
     finally:
         if args.keep_temp:
             kept_dir = args.output_dir / "pair_sheets"
