@@ -13,7 +13,7 @@ Os modelos supervisionados deste trabalho resolvem essa versão binária do prob
 
 \section{Redes siamesas e aprendizado por similaridade}
 
-Redes siamesas são uma forma natural de modelar tarefas baseadas em pares. A arquitetura tem dois ramos idênticos, com pesos compartilhados, e cada ramo processa uma imagem do par. Como os pesos são os mesmos, as duas faces passam pela mesma transformação e são levadas para o mesmo espaço de embeddings. Em seguida, os vetores resultantes são comparados por uma medida de similaridade ou distância.
+Redes siamesas são uma forma natural de modelar tarefas baseadas em pares. A arquitetura tem dois ramos idênticos, com pesos compartilhados, e cada ramo processa uma imagem do par. Como os pesos são compartilhados, ambas as imagens passam pela mesma transformação e são mapeadas para um espaço vetorial comum. Em seguida, os vetores resultantes são comparados por uma medida de similaridade ou distância.
 
 A ideia por trás desse tipo de rede é aproximar pares positivos e afastar pares negativos no espaço vetorial. Em verificação facial, essa estrutura é útil porque a pergunta não é qual é a classe isolada de uma imagem, mas se duas imagens devem ser consideradas próximas segundo algum critério. No caso do parentesco, o critério não é identidade da pessoa, e sim semelhança familiar. Essa adaptação para verificação de parentesco foi consolidada no trabalho de \citeonline{robinson2018visual}, que usou redes siamesas com backbones pré-treinados em reconhecimento facial.
 
@@ -51,7 +51,7 @@ No DINOv2-LoRA deste trabalho, o DINOv2 funciona como backbone de uso geral e é
 
 \section{Atenção cruzada entre faces}
 
-Atenção cruzada, ou cross-attention, é uma variação da self-attention em que as consultas vêm de uma sequência e as chaves e valores vêm de outra. Em verificação de parentesco, isso permite calcular pesos de atenção entre os tokens de uma face e os tokens da outra. Em vez de comparar apenas dois embeddings globais, o modelo aprende quais partes de uma imagem devem ser relacionadas com quais partes da outra.
+Atenção cruzada, ou cross-attention, é uma variação da self-attention em que as consultas vêm de uma sequência e as chaves e valores vêm de outra. Em verificação de parentesco, isso permite calcular pesos de atenção entre os tokens de uma face e os tokens da outra. Em vez de comparar apenas dois embeddings globais, o módulo estima relações entre partes de uma imagem e partes da outra.
 
 Formalmente, dados $X_a$ e $X_b$ como os tokens das duas faces, a atenção cruzada de $a$ sobre $b$ pode ser escrita como
 
@@ -66,7 +66,7 @@ Uma limitação dos modelos baseados em patches densos é que a atenção pode e
 
 Essa escolha introduz um prior estrutural simples: o modelo é orientado a comparar partes faciais interpretáveis, e não todos os pontos da imagem com a mesma liberdade. A vantagem é reduzir a complexidade da comparação e aproximar a arquitetura do modo como o problema é descrito visualmente. O custo é uma dependência maior do alinhamento facial. Se a face é mal detectada, se a pose é extrema ou se o recorte desloca as regiões, os tokens deixam de corresponder às partes anatômicas esperadas. Na revisão feita para este trabalho, não foi identificada uma combinação equivalente de backbone facial, tokens anatômicos, atenção cruzada regional e passagem simétrica aplicada à verificação de parentesco facial.
 
-Há ainda um detalhe específico da tarefa binária: inverter a ordem das imagens não deveria mudar o rótulo. Se ``A é parente de B'' é verdadeiro, então ``B é parente de A'' também deve ser. Em termos ideais, a função de decisão deveria satisfazer $f(A,B) = f(B,A)$. Essa propriedade, porém, não aparece automaticamente quando a cabeça recebe embeddings concatenados em ordem fixa ou quando a atenção cruzada é usada de forma direcional. A passagem simétrica força o modelo a ver o mesmo par nas duas ordens e reduz a chance de ele aprender atalhos associados à posição da imagem no par.
+Há ainda um detalhe específico da tarefa binária: inverter a ordem das imagens não deveria mudar o rótulo. Se ``A é parente de B'' é verdadeiro, então ``B é parente de A'' também deve ser. Em termos ideais, a função de decisão deveria satisfazer $f(A,B) = f(B,A)$. Essa propriedade, porém, não aparece automaticamente quando a cabeça recebe embeddings concatenados em ordem fixa ou quando a atenção cruzada é usada de forma direcional. A passagem simétrica processa o mesmo par nas duas ordens e regulariza a função de decisão, reduzindo a chance de dependência de atalhos associados à posição da imagem no par.
 
 Uma variação recente do mecanismo de atenção é a atenção diferencial \cite{ye2024differential},
 que divide cada cabeça em duas partes e calcula a atenção como a diferença entre dois mapas softmax:
