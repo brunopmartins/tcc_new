@@ -692,8 +692,8 @@ Este resultado negativo entra no TCC como ablacao: confirma que melhorias "obvia
 | **Modelo 05 R007** | M05 + DINOv2 + M02-trained-ViT hybrid backbone | 0.810 | 71.9% | 0.136 | 11.58M | 32.7% (gfgs) |
 | **Modelo 06 R001** | Retrieval-Augmented (frozen ViT-B/16, K=32) | 0.776 | 69.8% | 0.062 | 8.16M | 61.2% (gmgs) |
 | **Modelo 06 R002** | Retrieval-Augmented (frozen DINOv2, K=64) | 0.731 | 66.2% | 0.042 | ~12M | 41.3% (gmgs) |
-| Codex VLM zero-shot | gpt-5.4-mini | — | 33.1% | — | 0 (zero-shot) | 0.0% |
-| Claude Sonnet zero-shot | claude-sonnet-4-6 | — | 37.3% | — | 0 (zero-shot) | 0.0% |
+| Codex VLM zero-shot binario | gpt-5.4-mini (`medium`) | — | 59.0% bal. | — | 0 (zero-shot) | non-kin: 38.1% |
+| Claude Sonnet zero-shot binario | claude-sonnet-4-6 | — | 72.3% bal. | — | 0 (zero-shot) | non-kin: 63.9% |
 
 *Threshold=0.5 default no evaluate.py — accuracy nao comparavel diretamente. Usar AUC.
 
@@ -702,7 +702,7 @@ Este resultado negativo entra no TCC como ablacao: confirma que melhorias "obvia
 - **Modelo 05 R001 tem o melhor TAR@FAR=0.01 (0.152)** — em regimes de threshold rigoroso, supera todos os outros, incluindo M02/M03. Util para aplicacoes que exigem baixa taxa de falsos positivos.
 - **Modelo 05 atinge Val AUC 0.9116** (maior do projeto), mas o gap val→teste de -0.105 nao e fechado por regularizacao mais forte (R002 manteve gap em -0.106). Sugere divergencia estrutural entre distribuicoes de familia val/teste, nao overfitting do modelo.
 - **Modelo 06 e 10x-20x menor em parametros treinaveis** e ainda assim atinge 0.776 AUC (Run 001).
-- VLMs zero-shot nao discriminam classes de avo/avoa-neto(a); apenas Modelo 06 R001 atinge 61-83% nessas mesmas classes (M02/M03/M05 ainda falham nelas, ainda que menos catastroficamente).
+- VLMs zero-shot agora foram avaliados tambem em verificacao binaria. O GPT fica em 58.98% de balanced accuracy e rejeita mal pares non-kin (38.1% de especificidade), enquanto o Claude chega a 72.28% de balanced accuracy. Mesmo com a tarefa binaria, os VLMs continuam abaixo dos modelos supervisionados calibrados no dominio.
 - **Run 002 do M06 (DINOv2 + K=64) regrediu** em todas as metricas de teste, mostrando que o gargalo de M06 nao e backbone ou volume de retrieval, e sim regularizacao da cross-attention contra a galeria fixa.
 
 ---
@@ -723,67 +723,51 @@ Este resultado negativo entra no TCC como ablacao: confirma que melhorias "obvia
 | gfgd (avo-neta) | 89.9% | 0.947 | 138 |
 | gmgs (avo-neto) | 88.4% | 0.939 | 121 |
 
-### Experimento Exploratorio com VLM (Codex) — FIW
+### Experimento Exploratorio com VLM (Codex) — FIW, verificacao binaria
 
-Como complemento aos modelos treinados, foi executado um experimento **zero-shot** com um VLM do ecossistema Codex, sem qualquer etapa de treinamento ou fine-tuning. O objetivo foi medir ate onde um modelo multimodal generico consegue identificar a **classe exata da relacao de parentesco** apenas pela aparencia facial.
+Como complemento aos modelos treinados, foi executado um experimento **zero-shot** com um VLM do ecossistema Codex, sem qualquer etapa de treinamento ou fine-tuning. A avaliacao foi refeita como **verificacao binaria**, para equiparar a formulacao da tarefa aos modelos supervisionados: dado um par de faces, o modelo deve responder apenas se existe ou nao parentesco biologico.
 
-O desenho metodologico completo deste baseline esta documentado em `docs/pt/10_experimento_vlm_codex.md`.
+O resultado atual substitui, para fins de comparacao metodologica, o experimento anterior de classificacao 11-way. O experimento 11-way continua util como diagnostico historico de confusoes entre relacoes, mas nao e mais o numero principal do GPT.
 
 **Configuracao do experimento:**
 - **Modelo:** `gpt-5.4-mini` via Codex CLI
-- **Modo:** zero-shot, `reasoning_effort=low`
-- **Task:** classificacao fechada em 11 classes do FIW (`bb`, `ss`, `sibs`, `fd`, `fs`, `md`, `ms`, `gfgd`, `gfgs`, `gmgd`, `gmgs`)
-- **Amostra:** 1500 imagens = **750 pares positivos**
-- **Split:** pares positivos do `FIW/track-I/test-pairs.csv`, filtrando apenas entradas com caminhos de imagem validos no dataset local
-- **Balanceamento:** amostragem estratificada quase uniforme; `gmgd` foi limitado a 46 pares por indisponibilidade de mais caminhos validos no dataset local, e o restante foi redistribuido entre as demais classes
+- **Modo:** zero-shot, `reasoning_effort=medium`
+- **Task:** verificacao binaria (`kin` vs `non_kin`)
+- **Amostra total:** **6.000 pares unicos** = 3.000 positivos + 3.000 non-kin
+- **Execucao:** 750 pares iniciais + 5.250 pares complementares
+- **Controle de duplicatas:** o lote complementar excluiu o manifesto dos 750 pares iniciais; o consolidado final tem `0` duplicatas
 - **Entrada:** cada par foi convertido em uma imagem composta (face esquerda + face direita)
+- **Artefatos:** `data/codex_vlm_fiw_binary_6000_medium_combined/`
 
-### Resultados do VLM (1500 imagens / 750 pares)
+### Resultados do GPT VLM binario (6.000 pares / 12.000 faces)
 
 | Metrica | Valor |
-|---------|-------|
-| **Accuracy** | **33.1%** |
-| **Macro Precision** | 0.245 |
-| **Macro Recall** | 0.320 |
-| **Macro F1** | **0.257** |
-| **Confidence media** | 0.782 |
-| Confidence media (acertos) | 0.792 |
-| Confidence media (erros) | 0.777 |
+|---------|------:|
+| **Accuracy / Balanced accuracy** | **58.98%** |
+| **Precision** | 0.563 |
+| **Recall / Sensibilidade kin** | 0.799 |
+| **Specificity / Rejeicao non-kin** | 0.381 |
+| **F1** | 0.661 |
+| Confidence media | 0.721 |
+| Confidence media (acertos) | 0.735 |
+| Confidence media (erros) | 0.700 |
 
-Com a amostra ampliada, o desempenho ficou mais estavel e confirmou o mesmo comportamento observado no piloto menor: o VLM consegue explorar bem sinais de **idade** e **genero**, mas continua falhando quando precisa distinguir relacoes genealogicas mais finas. Diferentemente do piloto inicial, a confianca ficou um pouco melhor calibrada: os acertos tiveram confianca media ligeiramente maior que os erros.
+### Matriz de Confusao — GPT VLM binario
 
-### Accuracy por Relacao — VLM Codex
+| Classe real | Predito kin | Predito non-kin | Total |
+|-------------|------------:|----------------:|------:|
+| kin | 2.396 | 604 | 3.000 |
+| non-kin | 1.857 | 1.143 | 3.000 |
 
-| Relacao | Accuracy | Acertos |
-|---------|----------|---------|
-| `md` | **76.4%** | 55 / 72 |
-| `fd` | **72.9%** | 51 / 70 |
-| `fs` | **67.1%** | 47 / 70 |
-| `sibs` | 58.6% | 41 / 70 |
-| `ms` | 48.6% | 34 / 70 |
-| `ss` | 20.0% | 14 / 70 |
-| `bb` | 8.3% | 6 / 72 |
-| `gfgd` | 0.0% | 0 / 70 |
-| `gfgs` | 0.0% | 0 / 70 |
-| `gmgd` | 0.0% | 0 / 46 |
-| `gmgs` | 0.0% | 0 / 70 |
+### Interpretacao (GPT)
 
-### Padroes de Erro do VLM
+O GPT recupera bem pares positivos (`recall=0.799`), mas rejeita mal pares non-kin (`specificity=0.381`). O comportamento dominante e um **viés de aceitacao**: o modelo tende a responder `kin`, gerando 1.857 falsos positivos em 3.000 pares non-kin. Por isso, apesar de resolver a mesma tarefa binaria dos modelos supervisionados, o GPT zero-shot ainda nao oferece evidencia de substituicao de modelos treinados e calibrados para parentesco facial.
 
-Os erros mais frequentes seguiram um padrao consistente:
+O ponto metodologico principal e que a discrepancia anterior foi removida: agora o VLM tambem recebe pares positivos e negativos e decide apenas entre `kin` e `non_kin`. A diferenca remanescente e de protocolo: o GPT nao e treinado no FIW, nao escolhe limiar em validacao e nao passa por validacao cruzada por familia.
 
-1. **Relacoes de avo/avoa-neto(a) continuaram sendo o principal ponto cego**. Os erros dominantes foram `gfgs -> md` (41 casos), `gfgd -> ms` (39 casos), `gmgs -> gfgd` (32 casos) e `gmgs -> fd` (25 casos).
-2. **O modelo depende fortemente de sinais de idade/genero**, o que favorece `fd`, `fs` e `md`, mas nao resolve graus genealogicos mais profundos.
-3. **Irmaos do mesmo sexo seguem dificeis**: `bb` foi confundido principalmente com `sibs` (22 casos) e `ss` (14), enquanto `ss` foi confundido com `sibs` (23) e `fs` (11).
-4. **As relacoes avo/avoa-neto(a) nao tiveram nenhum acerto** no conjunto ampliado, reforcando que a aparencia facial isolada nao basta para essa classificacao fine-grained em zero-shot.
+### Adaptacao ao Dominio por Prompt no VLM (Codex) — experimento 11-way anterior
 
-### Interpretacao (Codex)
-
-Este experimento reforca que um **VLM generico zero-shot nao substitui** modelos especializados para verificacao/classificacao de parentesco facial. Mesmo com 1500 imagens, o ganho concentrou-se nas relacoes pai/mae-filho(a) e em `sibs`, enquanto as relacoes de segundo grau permaneceram essencialmente irresolvidas. Como baseline metodologico, o resultado e valioso justamente por delimitar o que um modelo multimodal geral consegue inferir apenas com pistas visuais amplas.
-
-### Adaptacao ao Dominio por Prompt no VLM (Codex)
-
-Como extensao do baseline zero-shot, foi testada uma forma de **adaptacao ao dominio baseada em inferencia**, sem fine-tuning do modelo. A ideia foi adaptar o comportamento do VLM ao dominio de parentesco facial por meio de:
+Como extensao do baseline zero-shot **11-way anterior**, foi testada uma forma de **adaptacao ao dominio baseada em inferencia**, sem fine-tuning do modelo. A ideia foi adaptar o comportamento do VLM ao dominio de parentesco facial por meio de:
 
 - **few-shot in-context learning** com exemplos do `FIW/track-I/val-pairs.csv`
 - **prompt estruturado** obrigando o modelo a estimar gap geracional, genero e face mais velha antes da relacao final
@@ -835,56 +819,45 @@ Assim, neste estudo, a tentativa de adaptacao ao dominio via prompt **nao supero
 Artefatos: `data/codex_vlm_fiw_domain_adapt_1500/`  
 Metodologia detalhada: `docs/pt/12_adaptacao_dominio_vlm_codex.md`
 
+Este bloco fica mantido como diagnostico historico da formulacao multiclasse. Ele nao substitui o resultado binario de 6.000 pares descrito acima.
+
 ---
 
-### Experimento Zero-Shot com Claude Sonnet — FIW
+### Experimento Zero-Shot com Claude Sonnet — FIW, verificacao binaria
 
-Como segundo baseline zero-shot, o **Claude Sonnet** (Anthropic) foi avaliado sobre um **subconjunto anterior de 75 pares** usado no piloto inicial de VLMs, permitindo comparacao direta naquele recorte menor sem qualquer treinamento.
+Como segundo baseline zero-shot, o **Claude Sonnet** (Anthropic) tambem foi avaliado em verificacao binaria. A tarefa e equivalente a do GPT no espaco de saida (`kin` vs `non_kin`), embora os manifestos nao sejam exatamente pareados imagem a imagem.
 
 **Configuracao:**
 - **Modelo:** `claude-sonnet-4-6` (zero-shot direto por visao)
 - **Entrada:** imagem composta lado a lado de dois rostos
-- **Task:** classificacao fechada em 11 classes FIW
+- **Task:** verificacao binaria (`kin` vs `non_kin`)
+- **Amostra:** 6.000 pares = 3.000 positivos + 3.000 non-kin
+- **Artefatos:** `data/claude_vlm_fiw_binary_6000/`
 
-### Resultados — Claude Sonnet (75 pares, 150 imagens, subconjunto piloto)
+### Resultados — Claude Sonnet binario (6.000 pares)
 
-| Metrica | Codex piloto (`gpt-5.4-mini`) | Claude Sonnet |
-|---------|----------------------|---------------|
-| **Accuracy** | 28.0% | **37.3%** |
-| **Macro Precision** | 0.210 | **0.296** |
-| **Macro Recall** | 0.273 | **0.364** |
-| **Macro F1** | 0.232 | **0.324** |
-| Confianca media | 0.789 | 0.601 |
+| Metrica | Valor |
+|---------|------:|
+| **Accuracy / Balanced accuracy** | **72.28%** |
+| **Precision** | 0.691 |
+| **Recall / Sensibilidade kin** | 0.806 |
+| **Specificity / Rejeicao non-kin** | 0.639 |
+| **F1** | 0.744 |
+| ROC AUC | 0.789 |
+| Average Precision | 0.742 |
 
-### Accuracy por Relacao — Claude Sonnet
+### Matriz de Confusao — Claude Sonnet binario
 
-| Relacao | Corretos/Total | Accuracy | F1 |
-|---------|---------------|----------|----|
-| fd (pai-filha) | 6/7 | **85.7%** | 0.800 |
-| fs (pai-filho) | 5/7 | **71.4%** | 0.667 |
-| md (mae-filha) | 5/7 | **71.4%** | 0.556 |
-| sibs (irmao-irma) | 5/7 | **71.4%** | 0.588 |
-| ms (mae-filho) | 4/7 | 57.1% | 0.500 |
-| ss (irma-irma) | 2/7 | 28.6% | 0.308 |
-| bb (irmao-irmao) | 1/7 | 14.3% | 0.143 |
-| gfgd (avo-neta) | 0/7 | 0.0% | 0.000 |
-| gfgs (avo-neto) | 0/7 | 0.0% | 0.000 |
-| gmgd (avo-neta) | 0/6 | 0.0% | 0.000 |
-| gmgs (avo-neto) | 0/6 | 0.0% | 0.000 |
-
-### Padroes de Confusao — Claude Sonnet
-
-- **Relacoes de segundo grau (gfgd, gfgs, gmgd, gmgs): 0% de acuracia** — confusao sistematica com relacoes pai/mae-filho(a).
-- **Irmaos do mesmo sexo (bb, ss):** 14–29% — sem diferenca de genero ou geracao, a discriminacao e altamente ambigua.
-- **Relacoes pai/mae-filho/a (fd, fs, md, ms):** as mais discriminaveis, com 57–86% de acuracia.
+| Classe real | Predito kin | Predito non-kin | Total |
+|-------------|------------:|----------------:|------:|
+| kin | 2.419 | 581 | 3.000 |
+| non-kin | 1.082 | 1.918 | 3.000 |
 
 ### Interpretacao Comparativa
 
-No subconjunto piloto de 75 pares, ambos os VLMs dependem dos mesmos sinais visuais primarios — **diferenca etaria** e **genero** — e falham igualmente em relacoes de segundo grau. Nesse recorte menor, o Claude Sonnet supera o Codex em 9 pontos percentuais de acuracia geral (37.3% vs 28.0%), com F1 macro superior (0.324 vs 0.232). Ja o experimento ampliado do Codex, com 750 pares, estabilizou em 33.1% de accuracy e 0.257 de macro-F1, mas nao deve ser lido como comparacao direta com o Claude porque a amostra e maior e diferente.
+No enquadramento binario, o Claude Sonnet supera o GPT em balanced accuracy (72.28% vs 58.98%) e principalmente em especificidade (63.9% vs 38.1%). Os dois VLMs recuperam pares positivos em nivel semelhante, mas o GPT aceita muito mais pares non-kin como parentes. A comparacao confirma que a formulacao binaria reduz a discrepancia metodologica anterior, mas ainda nao torna os VLMs substitutos dos modelos supervisionados: a ausencia de treino no dominio, validacao de limiar e validacao cruzada continua sendo uma limitacao central.
 
-A comparacao confirma que nenhum VLM generico zero-shot resolve verificacao de parentesco fine-grained: o treinamento supervisionado com perda contrastiva e indispensavel.
-
-**Artefatos Claude:** `data/claude_vlm_fiw_150/` | **Artefatos Codex:** `data/codex_vlm_fiw_1500/` | **Metodologia:** `docs/pt/10_experimento_vlm_codex.md`
+**Artefatos Claude:** `data/claude_vlm_fiw_binary_6000/` | **Artefatos GPT:** `data/codex_vlm_fiw_binary_6000_medium_combined/`
 
 ---
 
@@ -948,9 +921,9 @@ Hiperparametros refinados ao longo de 32+ experimentos:
 
 7. **Restricoes de hardware importam**: a AMD RX 6750 XT (12GB VRAM) limitou batch_size a 16 com backbones descongelados e impediu exploracao completa do espaco de hiperparametros para freeze/unfreeze.
 
-8. **Baselines VLM zero-shot confirmam a necessidade de supervisao**: tanto o Codex (33.1%) quanto o Claude Sonnet (37.3%) ficam muito abaixo dos modelos treinados em classificacao multiclasse de parentesco — o treinamento supervisionado e indispensavel para este dominio.
+8. **Baselines VLM zero-shot confirmam a necessidade de supervisao**: na verificacao binaria, o GPT (`gpt-5.4-mini`, `medium`) ficou em **58.98%** de balanced accuracy e o Claude Sonnet em **72.28%**. O GPT, em particular, rejeita mal pares non-kin (specificity = **0.381**), produzindo muitos falsos positivos.
 
-9. **Adaptacao ao dominio por prompt em VLMs nao ajuda**: o few-shot + prompt estruturado piorou o desempenho do Codex (33.1% → 26.7%), engessando a decisao em heuristicas de idade/genero que amplificam vieses em vez de corrigir.
+9. **Adaptacao ao dominio por prompt em VLMs nao ajudou no experimento 11-way anterior**: o few-shot + prompt estruturado piorou o desempenho do Codex (33.1% -> 26.7%), engessando a decisao em heuristicas de idade/genero que amplificam vieses em vez de corrigir. Esse diagnostico fica separado do novo resultado binario de 6.000 pares.
 
 10. **Retrieval-augmentation (Modelo 06) resolve o problema de classes raras** mas com AUC abaixo dos parametricos: o modelo retrieval-augmented com encoder congelado atinge Test AUC=0.776 (vs 0.850 dos parametricos), mas com **per-relacao muito mais uniforme** (61-87% em todas as 11 classes). Isso confirma que dar acesso explicito a exemplos de treino similares ajuda em classes com poucos exemplos, mas a complexidade extra da galeria + cross-attention nao supera os modelos parametricos quando ha dados suficientes. Apenas 8.16M parametros sao treinaveis (vs 86M-176M).
 

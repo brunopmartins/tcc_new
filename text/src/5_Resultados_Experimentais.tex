@@ -1,19 +1,19 @@
 \chapter[Resultados Experimentais]{Resultados Experimentais}
 \label{cap:resultados}
 
-Este capítulo apresenta os resultados experimentais obtidos no benchmark Families in the Wild (FIW). A comparação principal segue o protocolo descrito no Capítulo~\ref{cap:Metodologia}: validação cruzada de cinco dobras separadas por família, escolha do limiar apenas na validação e avaliação no conjunto de teste do RFIW Track-I. Entram nessa comparação a linha de base AdaFace-Cosseno, o ViT-FaCoR, o DINOv2-LoRA, o Modelo com Recuperação e as três configurações finalistas do AdaFace-Regional: Simétrico, Comparativo e com Negativos Difíceis. Os valores são reportados como média e desvio padrão entre as cinco dobras.
+Este capítulo apresenta os resultados experimentais obtidos no benchmark Families in the Wild (FIW). A comparação principal segue o protocolo descrito no Capítulo~\ref{cap:Metodologia}: validação cruzada de cinco dobras separadas por família, escolha do limiar apenas na validação e avaliação no conjunto de teste do RFIW Track-I. Entram nessa comparação a linha de base AdaFace-Cosseno, o ViT-FaCoR, o DINOv2-LoRA, o Modelo com Recuperação e as três configurações finalistas do AdaFace-Regional: Simétrico, Comparativo e com Negativos Difíceis. Os VLMs entram como baselines externos zero-shot em verificação binária, avaliados em amostras balanceadas de 6.000 pares.
 
 A métrica principal é o ROC AUC, por ser independente do limiar de decisão. Average Precision e TAR@FAR complementam essa leitura ao avaliar, respectivamente, a curva precisão-revocação e os regimes de baixa falsa aceitação. A acurácia é usada principalmente na análise por tipo de relação, porque permite observar quais vínculos familiares continuam mais difíceis para cada configuração.
 
 \section{Resultados gerais em FIW}
 
-A Tabela~\ref{tab:fiw_main} resume os resultados gerais em FIW. Para o AdaFace-Regional, são mantidas três configurações finalistas porque elas representam escolhas operacionais próximas, mas não idênticas. A configuração Simétrica consolida o ganho principal do modelo, a Comparativa desloca o ponto de operação para baixa falsa aceitação e a configuração com Negativos Difíceis combina essa estratégia com pares negativos mais próximos dos positivos. AdaFace-Cosseno, DINOv2-LoRA e Modelo com Recuperação aparecem na mesma tabela para situar, respectivamente, a linha de base sem treinamento, a adaptação com DINOv2 e a alternativa baseada em recuperação de pares positivos.
+A Tabela~\ref{tab:fiw_main} resume os resultados gerais em FIW. Para o AdaFace-Regional, são mantidas três configurações finalistas porque elas representam escolhas operacionais próximas, mas não idênticas. A configuração Simétrica consolida o ganho principal do modelo, a Comparativa desloca o ponto de operação para baixa falsa aceitação e a configuração com Negativos Difíceis combina essa estratégia com pares negativos mais próximos dos positivos. AdaFace-Cosseno, DINOv2-LoRA e Modelo com Recuperação aparecem na mesma tabela para situar, respectivamente, a linha de base sem treinamento, a adaptação com DINOv2 e a alternativa baseada em recuperação de pares positivos. Os VLMs aparecem como referência zero-shot, com a ressalva de que não usam treino, validação cruzada nem limiar ajustado em validação.
 
 \begin{table}[h]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2pt}
-\caption{Resultados gerais em FIW. Modelos com validação cruzada reportam média $\pm$ desvio padrão sobre cinco dobras.}
+\caption{Resultados gerais em FIW. Modelos com validação cruzada reportam média $\pm$ desvio padrão sobre cinco dobras. Execuções únicas e VLMs zero-shot reportam um único valor.}
 \label{tab:fiw_main}
 \begin{tabular}{lrrrrr}
 \hline
@@ -23,9 +23,11 @@ AdaFace-Regional com Negativos Difíceis (CV)       & \textbf{0{,}876 $\pm$ 0{,}
 AdaFace-Regional Comparativo (CV)                  & 0{,}874 $\pm$ 0{,}004 & 0{,}853 $\pm$ 0{,}005 & 0{,}059 $\pm$ 0{,}012 & 0{,}192 $\pm$ 0{,}014 & 0{,}589 $\pm$ 0{,}015 \\
 AdaFace-Regional Simétrico (CV)                     & 0{,}873 $\pm$ 0{,}004 & 0{,}848 $\pm$ 0{,}004 & 0{,}042 $\pm$ 0{,}013 & 0{,}174 $\pm$ 0{,}012 & 0{,}577 $\pm$ 0{,}009 \\
 ViT-FaCoR (CV)                                      & 0{,}846 $\pm$ 0{,}004 & 0{,}813 $\pm$ 0{,}005 & 0{,}022 $\pm$ 0{,}006 & 0{,}135 $\pm$ 0{,}012 & 0{,}496 $\pm$ 0{,}026 \\
-DINOv2-LoRA com Descongelamento Completo (CV)       & 0{,}822 $\pm$ 0{,}000 & 0{,}798 $\pm$ 0{,}000 & 0{,}007 $\pm$ 0{,}000 & 0{,}100 $\pm$ 0{,}000 & 0{,}511 $\pm$ 0{,}000 \\
-AdaFace-Cosseno (CV)             & 0{,}799 $\pm$ 0{,}000 & 0{,}809 $\pm$ 0{,}000 & \textbf{0{,}071 $\pm$ 0{,}000} & \textbf{0{,}218 $\pm$ 0{,}000} & 0{,}524 $\pm$ 0{,}000 \\
-Modelo com Recuperação (CV)      & 0{,}776 $\pm$ 0{,}000 & 0{,}735 $\pm$ 0{,}000 & 0{,}006 $\pm$ 0{,}000 & 0{,}062 $\pm$ 0{,}000 & 0{,}388 $\pm$ 0{,}000 \\
+DINOv2-LoRA com Descongelamento Completo (exec. única) & 0{,}822 & 0{,}798 & 0{,}007 & 0{,}100 & 0{,}511 \\
+AdaFace-Cosseno (sem treino)                         & 0{,}799 & 0{,}809 & \textbf{0{,}071} & \textbf{0{,}218} & 0{,}524 \\
+Claude Sonnet binário zero-shot                      & 0{,}789 & 0{,}742 & 0{,}042 & 0{,}042 & 0{,}297 \\
+Modelo com Recuperação (exec. única)                 & 0{,}776 & 0{,}735 & 0{,}006 & 0{,}062 & 0{,}388 \\
+Codex VLM binário zero-shot                          & 0{,}624 & 0{,}592 & 0{,}000 & 0{,}018 & 0{,}170 \\
 \hline
 \end{tabular}
 \end{table}
@@ -36,15 +38,17 @@ A comparação mais importante é entre o AdaFace-Regional e o ViT-FaCoR, porque
 
 A escolha entre as três configurações finalistas exige mais cuidado. Em AUC, elas ficam muito próximas: 0,873, 0,874 e 0,876, todas dentro de uma faixa menor que o próprio desvio entre dobras. Essa sobreposição não sustenta uma afirmação forte de superioridade entre as três variantes; ela indica, antes, que as configurações ocupam uma região de desempenho semelhante. A diferença entre elas aparece mais claramente no ponto de operação. Em TAR@FAR=0,001, a configuração com Negativos Difíceis chega a 0,068 $\pm$ 0,015, enquanto a Simétrica fica em 0,042 $\pm$ 0,013. Assim, as três configurações são próximas em ranking global, mas a configuração com Negativos Difíceis é a escolha mais adequada quando falsos positivos têm custo elevado.
 
-O comportamento do AdaFace-Cosseno reforça a importância de separar AUC global e regime operacional. Mesmo sem treinamento específico para parentesco, essa linha de base permanece forte nas faixas de baixa falsa aceitação. Em TAR@FAR=0,01, o valor do AdaFace-Cosseno (0,218 $\pm$ 0,000) fica no mesmo patamar da configuração com Negativos Difíceis (0,207 $\pm$ 0,011). Em TAR@FAR=0,001, AdaFace-Cosseno (0,071 $\pm$ 0,000) fica ligeiramente acima dos 0,068 $\pm$ 0,015 da configuração com Negativos Difíceis. Isso indica que embeddings de reconhecimento facial já carregam um sinal útil para parentesco, principalmente quando a comparação exige baixa taxa de falso positivo. A contribuição do AdaFace-Regional, portanto, não é substituir esse sinal em todos os pontos de operação, mas melhorar a ordenação global e oferecer um modelo adaptado à tarefa.
+O comportamento do AdaFace-Cosseno reforça a importância de separar AUC global e regime operacional. Mesmo sem treinamento específico para parentesco, essa linha de base permanece forte nas faixas de baixa falsa aceitação. Em TAR@FAR=0,01, o valor do AdaFace-Cosseno (0,218) fica no mesmo patamar da configuração com Negativos Difíceis (0,207 $\pm$ 0,011). Em TAR@FAR=0,001, AdaFace-Cosseno (0,071) fica ligeiramente acima dos 0,068 $\pm$ 0,015 da configuração com Negativos Difíceis. Isso indica que embeddings de reconhecimento facial já carregam um sinal útil para parentesco, principalmente quando a comparação exige baixa taxa de falso positivo. A contribuição do AdaFace-Regional, portanto, não é substituir esse sinal em todos os pontos de operação, mas melhorar a ordenação global e oferecer um modelo adaptado à tarefa.
 
 A validação cruzada também mostra que algumas execuções únicas do ciclo de desenvolvimento caíram em regiões favoráveis da distribuição. A execução única da configuração Simétrica, com AUC 0,879, ficou cerca de 1,5 desvio acima da média por dobra dessa mesma configuração (0,873). A execução única da configuração com Negativos Difíceis, com AUC 0,882, também ficou acima da média por dobra (0,876). Esse resultado confirma a necessidade de reportar médias por dobra, especialmente quando as diferenças entre configurações são pequenas. Na prática, diferenças de AUC inferiores a aproximadamente 0,008 entre execuções únicas devem ser interpretadas com cautela.
 
-O DINOv2-LoRA alcança AUC 0,822 $\pm$ 0,000, ficando acima da linha de base AdaFace-Cosseno em AUC, mas abaixo do ViT-FaCoR. O resultado indica que a adaptação do DINOv2 por LoRA ou por descongelamento melhora a linha de base sem treinamento, porém não basta para superar a arquitetura com ViT e atenção cruzada bidirecional. O Modelo com Recuperação apresenta o menor AUC da comparação, 0,776 $\pm$ 0,000, mas ainda é relevante na análise por relação porque o mecanismo de recuperação tende a reduzir a diferença entre classes frequentes e classes raras. Dessa forma, DINOv2-LoRA e Modelo com Recuperação ajudam a delimitar duas hipóteses negativas: a representação auto-supervisionada adaptada não resolve sozinha o problema, e a recuperação de exemplos melhora a uniformidade em algumas relações sem necessariamente melhorar o ranking global.
+O DINOv2-LoRA alcança AUC 0,822 em execução única, ficando acima da linha de base AdaFace-Cosseno em AUC, mas abaixo do ViT-FaCoR. O resultado indica que a adaptação do DINOv2 por LoRA ou por descongelamento melhora a linha de base sem treinamento, porém não basta para superar a arquitetura com ViT e atenção cruzada bidirecional. O Modelo com Recuperação apresenta AUC 0,776, mas ainda é relevante na análise por relação porque o mecanismo de recuperação tende a reduzir a diferença entre classes frequentes e classes raras. Dessa forma, DINOv2-LoRA e Modelo com Recuperação ajudam a delimitar duas hipóteses negativas: a representação auto-supervisionada adaptada não resolve sozinha o problema, e a recuperação de exemplos melhora a uniformidade em algumas relações sem necessariamente melhorar o ranking global.
+
+Os VLMs binários mostram um limite claro da inferência zero-shot. O Claude Sonnet atinge AUC 0,789, muito próximo, mas ainda abaixo, do AdaFace-Cosseno sem treinamento específico (0,799). O Codex VLM fica mais distante, com AUC 0,624 e Average Precision 0,592. A diferença principal aparece nos regimes de baixa falsa aceitação: o Claude mantém TAR@FAR=0,01 de apenas 0,042, e o Codex chega a 0,018. Mesmo quando a decisão binária produz acurácia ou F1 razoáveis, a ordenação dos escores não é fina o suficiente para operar em pontos conservadores de falsa aceitação.
 
 \section{Execuções do DINOv2-LoRA e do AdaFace-Regional}
 
-Esta seção registra as execuções de desenvolvimento do DINOv2-LoRA e do AdaFace-Regional. O objetivo não é substituir a comparação principal da Tabela~\ref{tab:fiw_main}, mas mostrar como as configurações finais foram escolhidas. No DINOv2-LoRA, as execuções únicas serviram para selecionar a configuração com descongelamento completo, depois levada à validação cruzada. No AdaFace-Regional, o ciclo foi mais longo, porque nele está a proposta autoral do trabalho.
+Esta seção registra as execuções de desenvolvimento do DINOv2-LoRA e do AdaFace-Regional. O objetivo não é substituir a comparação principal da Tabela~\ref{tab:fiw_main}, mas mostrar como as configurações finais foram escolhidas. No DINOv2-LoRA, as execuções únicas serviram para selecionar a configuração com descongelamento completo, reportada na tabela principal como melhor ponto da família. No AdaFace-Regional, o ciclo foi mais longo, porque nele está a proposta autoral do trabalho.
 
 O DINOv2-LoRA foi avaliado em sete execuções, cobrindo regimes de adaptação e descongelamento do DINOv2. A Tabela~\ref{tab:dinov2_lora_execucoes} mostra que o melhor AUC da família aparece no descongelamento completo, enquanto o melhor TAR@FAR=0,01 ocorre na configuração inicial com LoRA. Isso impede uma leitura simples de que liberar mais parâmetros sempre melhora todos os regimes de avaliação.
 
@@ -146,51 +150,50 @@ A classe non-kin apresenta o movimento oposto. A configuração Simétrica é a 
 
 \section{Linhas de base com modelos multimodais}
 
-Além das abordagens de verificação binária, dois VLMs foram avaliados em uma tarefa complementar: classificar qual das onze relações positivas do FIW liga duas faces. Essa tarefa não é equivalente à verificação binária, porque não inclui a classe non-kin e exige escolher uma relação específica. Por isso, os resultados dos VLMs são interpretados como análise exploratória, e não como comparação direta com os modelos supervisionados.
+Os VLMs foram avaliados novamente na formulação binária kin/non-kin, para alinhar a pergunta com a dos modelos supervisionados. Cada modelo recebeu 6.000 pares balanceados do FIW, com 3.000 positivos e 3.000 negativos, em regime zero-shot. A Tabela~\ref{tab:vlm_binario_resultados} resume as métricas globais, usando o escore contínuo derivado da decisão e da confiança conforme a Equação~\ref{eq:vlm_score}.
 
 \begin{table}[h]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{3pt}
-\caption{Resultados das linhas de base com VLMs em classificação multiclasse de onze relações positivas.}
-\label{tab:vlm_resultados}
-\begin{tabular}{lllrrrr}
+\caption{Resultados dos VLMs em verificação binária zero-shot no FIW, com 6.000 pares balanceados por modelo.}
+\label{tab:vlm_binario_resultados}
+\begin{tabular}{lrrrrrrrr}
 \hline
-\textbf{Modelo} & \textbf{Regime} & \textbf{N} & \textbf{Acc.} & \textbf{Macro-P} & \textbf{Macro-R} & \textbf{Macro-F1} \\
+\textbf{Modelo} & \textbf{AUC} & \textbf{AP} & \textbf{Acc.} & \textbf{Prec.} & \textbf{Rev.} & \textbf{Spec.} & \textbf{F1} & \textbf{Conf. média} \\
 \hline
-Codex & Zero-shot                     & 750 & 33{,}1\% & 0{,}245 & 0{,}320 & 0{,}257 \\
-Codex & Adaptação por prompt (7-shot) & 750 & 26{,}7\% & 0{,}203 & 0{,}260 & 0{,}223 \\
-Claude Sonnet & Zero-shot direto        & 75  & {\raise.17ex\hbox{$\scriptstyle\sim$}}37\% & {\raise.17ex\hbox{$\scriptstyle\sim$}}0{,}30 & {\raise.17ex\hbox{$\scriptstyle\sim$}}0{,}36 & {\raise.17ex\hbox{$\scriptstyle\sim$}}0{,}32 \\
+Claude Sonnet 4.6 & 0{,}789 & 0{,}742 & 72{,}3\% & 0{,}691 & 0{,}806 & 0{,}639 & 0{,}744 & 0{,}656 \\
+Codex gpt-5.4-mini & 0{,}624 & 0{,}592 & 59{,}0\% & 0{,}563 & 0{,}799 & 0{,}381 & 0{,}661 & 0{,}721 \\
 \hline
 \end{tabular}
 \end{table}
 
-O Codex em zero-shot alcança 33,1\% de acurácia e macro-F1 de 0,257. A adaptação por prompt não melhora esse resultado, caindo para 26,7\% de acurácia e macro-F1 de 0,223. A avaliação do Claude Sonnet foi conduzida em um recorte piloto de 75 pares, insuficiente para comparação estatística; sua taxa de acerto aproximada de 37\% deve ser lida apenas como experimento exploratório. O padrão mais importante é que os VLMs continuam errando de forma consistente relações de avós e netos, justamente o grupo em que o AdaFace-Regional apresenta maior recuperação após a passagem simétrica. Isso reforça que pistas gerais de idade e gênero não bastam para resolver relações genealógicas finas sem treinamento específico no domínio.
+O Claude Sonnet apresenta desempenho acima do acaso e fica próximo da linha de base AdaFace-Cosseno em AUC, mas não a supera: 0,789 contra 0,799. A acurácia de 72,3\% e o F1 de 0,744 mostram que o modelo consegue responder à tarefa binária de forma coerente em muitos casos, porém a Average Precision e o TAR@FAR indicam limitação forte de ordenação. A distribuição de confiança é discreta, com poucos valores recorrentes, e isso reduz a utilidade do modelo em regimes de falsa aceitação estrita.
 
-Os prompts direcionados por treinamento não foram executados sobre os 750 pares do teste completo. Eles foram avaliados apenas em um recorte de diagnóstico com 12 pares das quatro relações de avós e netos, apresentado na Tabela~\ref{tab:vlm_grandparent}. Por esse motivo, não entram como uma quarta linha na Tabela~\ref{tab:vlm_resultados}.
+O Codex VLM tem comportamento mais enviesado para a classe positiva. Sua revocação para kin é 0,799, parecida com a do Claude, mas a especificidade cai para 0,381. Em termos absolutos, isso significa que 1.857 dos 3.000 pares non-kin foram classificados como parentes. A matriz de confusão da Tabela~\ref{tab:vlm_confusao_binaria} explicita esse padrão. O resultado sugere que, em zero-shot, o Codex captura pistas gerais de semelhança facial, mas rejeita mal casos em que pessoas sem parentesco são visualmente parecidas.
 
 \begin{table}[h]
 \centering
 \small
-\setlength{\tabcolsep}{3pt}
-\caption{Recorte de diagnóstico dos VLMs em doze pares de avós e netos.}
-\label{tab:vlm_grandparent}
-\begin{tabular}{lrrr}
+\setlength{\tabcolsep}{5pt}
+\caption{Matriz de confusão dos VLMs binários em 6.000 pares balanceados.}
+\label{tab:vlm_confusao_binaria}
+\begin{tabular}{lrrrr}
 \hline
-\textbf{Regime} & \textbf{Acurácia exata} & \textbf{Bucket avós-netos} & \textbf{Macro-F1 ativo} \\
+\textbf{Modelo} & \textbf{TP} & \textbf{FN} & \textbf{FP} & \textbf{TN} \\
 \hline
-Zero-shot original & 0{,}0\% & 8{,}3\% & 0{,}000 \\
-Adaptação 7-shot & 0{,}0\% & 16{,}7\% & 0{,}000 \\
-Prompt direcionado 11 classes & 0{,}0\% & 33{,}3\% & 0{,}000 \\
-Oráculo restrito a 4 classes & 8{,}3\% & 100{,}0\% & 0{,}071 \\
+Claude Sonnet 4.6 & 2.419 & 581 & 1.082 & 1.918 \\
+Codex gpt-5.4-mini & 2.396 & 604 & 1.857 & 1.143 \\
 \hline
 \end{tabular}
 \end{table}
 
-O recorte de diagnóstico mostra que orientar explicitamente o prompt para relações de duas gerações aumenta a chance de o modelo escolher o grupo correto de avós e netos, mas quase não resolve a classe exata. O resultado com oráculo restrito a quatro classes não é comparável ao teste multiclasse completo, porque remove sete alternativas possíveis. Ele serve apenas para mostrar que, mesmo sob essa restrição artificial, o VLM ainda confunde o sexo e o papel genealógico das pessoas no par.
+A comparação com os modelos supervisionados deve ser feita com cautela. Os VLMs respondem à mesma tarefa binária, mas não têm treinamento no FIW, não usam validação cruzada e não ajustam limiar por validação. Ainda assim, as métricas independentes de limiar são informativas: o Claude fica próximo, mas abaixo, da linha de base facial sem treinamento; o Codex fica substancialmente abaixo; e ambos ficam distantes do AdaFace-Regional e do ViT-FaCoR. Isso indica que conhecimento visual geral não substitui adaptação supervisionada para verificação de parentesco facial.
+
+A avaliação multiclasse anterior permanece como diagnóstico histórico. Nela, o Codex zero-shot alcançou 33,1\% de acurácia e macro-F1 de 0,257 em 750 pares positivos; a adaptação por prompt caiu para 26,7\% de acurácia e macro-F1 de 0,223; e o piloto do Claude Sonnet em 75 pares ficou em torno de 37\% de acurácia. Como esse protocolo não inclui non-kin, ele não é usado na comparação principal. O recorte de 12 pares de avós e netos com prompts direcionados mostrou que orientar explicitamente o modelo para relações de duas gerações ajuda a escolher o grupo correto, mas quase não resolve a relação exata.
 
 \section{Síntese dos resultados}
 
-Sob validação cruzada, o AdaFace-Regional é a melhor arquitetura avaliada em FIW. O resultado da configuração com Negativos Difíceis é 0,876 $\pm$ 0,003 AUC, acima do ViT-FaCoR (0,846 $\pm$ 0,004), do DINOv2-LoRA (0,822 $\pm$ 0,000), da linha de base AdaFace-Cosseno (0,799 $\pm$ 0,000) e do Modelo com Recuperação (0,776 $\pm$ 0,000). A principal evidência do capítulo é, portanto, que a proposta baseada em AdaFace parcialmente descongelado, tokens regionais anatômicos, cabeça auxiliar de relação e passagem simétrica melhora a verificação de parentesco no FIW em relação às alternativas avaliadas.
+Sob validação cruzada, o AdaFace-Regional é a melhor arquitetura avaliada em FIW. O resultado da configuração com Negativos Difíceis é 0,876 $\pm$ 0,003 AUC, acima do ViT-FaCoR (0,846 $\pm$ 0,004), do DINOv2-LoRA (0,822), da linha de base AdaFace-Cosseno (0,799), do Claude Sonnet binário zero-shot (0,789), do Modelo com Recuperação (0,776) e do Codex VLM binário zero-shot (0,624). A principal evidência do capítulo é, portanto, que a proposta baseada em AdaFace parcialmente descongelado, tokens regionais anatômicos, cabeça auxiliar de relação e passagem simétrica melhora a verificação de parentesco no FIW em relação às alternativas avaliadas.
 
-Essa conclusão deve ser acompanhada de três ressalvas. Primeiro, AdaFace-Cosseno continua competitivo nos regimes de baixa falsa aceitação, mostrando que reconhecimento facial pré-treinado já contém sinal útil para parentesco. Segundo, as diferenças entre as configurações Simétrica, Comparativa e com Negativos Difíceis são pequenas em AUC, e a escolha entre elas depende mais do ponto operacional do que de uma superioridade global clara. Terceiro, as relações de avós e netos continuam sendo as mais sensíveis à variação entre dobras, apesar do ganho expressivo obtido pelo AdaFace-Regional. Por fim, a avaliação exploratória com VLMs indica desempenho baixo na classificação fina de relações, especialmente nas relações de segundo grau, e não fornece evidência de que inferência zero-shot substitua modelos supervisionados treinados para esse domínio.
+Essa conclusão deve ser acompanhada de quatro ressalvas. Primeiro, AdaFace-Cosseno continua competitivo nos regimes de baixa falsa aceitação, mostrando que reconhecimento facial pré-treinado já contém sinal útil para parentesco. Segundo, as diferenças entre as configurações Simétrica, Comparativa e com Negativos Difíceis são pequenas em AUC, e a escolha entre elas depende mais do ponto operacional do que de uma superioridade global clara. Terceiro, as relações de avós e netos continuam sendo as mais sensíveis à variação entre dobras, apesar do ganho expressivo obtido pelo AdaFace-Regional. Quarto, os VLMs binários zero-shot ficam abaixo dos modelos supervisionados e apresentam limitação clara em especificidade ou em operação com FAR baixo, indicando que inferência multimodal genérica não substitui modelos treinados e calibrados para esse domínio.

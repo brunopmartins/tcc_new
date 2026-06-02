@@ -19,7 +19,7 @@ Apesar desse avanço, comparar os métodos da área com rigor continua trabalhos
 
 \section{Problema de pesquisa}
 
-A literatura recente em verificação visual de parentesco facial reúne arquiteturas heterogêneas avaliadas sob protocolos não comparáveis, e os ganhos relatados frequentemente dependem de escolhas de limiar, amostragem e seleção de ponto salvo que variam entre trabalhos. Em paralelo, modelos multimodais generalistas em regime zero-shot têm sido apresentados como alternativa de baixo custo de implantação, mas faltam medições rigorosas que situem o desempenho desses modelos contra modelos supervisionados especializados, considerando que as duas classes tratam tarefas distintas (verificação binária para os supervisionados e classificação multiclasse das relações para os VLMs).
+A literatura recente em verificação visual de parentesco facial reúne arquiteturas heterogêneas avaliadas sob protocolos não comparáveis, e os ganhos relatados frequentemente dependem de escolhas de limiar, amostragem e seleção de ponto salvo que variam entre trabalhos. Em paralelo, modelos multimodais generalistas em regime zero-shot têm sido apresentados como alternativa de baixo custo de implantação, mas faltam medições rigorosas que situem o desempenho desses modelos contra modelos supervisionados especializados quando ambos respondem à mesma pergunta binária de parentesco.
 
 Diante disso, o problema de pesquisa deste trabalho se desdobra em duas perguntas complementares. A primeira é a comparação principal:
 
@@ -30,12 +30,12 @@ Diante disso, o problema de pesquisa deste trabalho se desdobra em duas pergunta
 A segunda é uma pergunta secundária, de caráter exploratório:
 
 \begin{quote}
-\noindent Qual é o desempenho atual de modelos multimodais generalistas (VLMs) em classificação fina de relações de parentesco no FIW, em regime zero-shot e em adaptação por prompt, quando comparados qualitativamente aos modelos supervisionados em uma tarefa relacionada porém distinta?
+\noindent Qual é o desempenho atual de modelos multimodais generalistas (VLMs) em verificação binária zero-shot no FIW, quando usados como baselines externos sem treinamento específico e comparados com modelos supervisionados especializados?
 \end{quote}
 
 \section{Objetivo geral}
 
-Comparar de forma controlada cinco abordagens representativas para verificação binária visual de parentesco facial, sob um único protocolo experimental no benchmark Families in the Wild, e medir o ganho efetivo de uma proposta arquitetônica baseada em backbone facial especializado, descongelamento parcial e tokens regionais anatômicos. Em paralelo e como estudo exploratório complementar, mapear o desempenho de dois modelos multimodais generalistas em classificação multiclasse de relações de parentesco no mesmo banco.
+Comparar de forma controlada cinco abordagens representativas para verificação binária visual de parentesco facial, sob um único protocolo experimental no benchmark Families in the Wild, e medir o ganho efetivo de uma proposta arquitetônica baseada em backbone facial especializado, descongelamento parcial e tokens regionais anatômicos. Em paralelo e como estudo exploratório complementar, mapear o desempenho de dois modelos multimodais generalistas em verificação binária zero-shot no mesmo banco.
 
 \section{Objetivos específicos}
 
@@ -43,7 +43,7 @@ Comparar de forma controlada cinco abordagens representativas para verificação
   \item Implementar uma linha de base mínima de verificação de parentesco com extrator facial AdaFace pré-treinado e similaridade cosseno, sem qualquer treinamento específico de domínio.
   \item Reproduzir e avaliar três famílias de modelo da literatura recente em regime de verificação binária, contemplando ViT com atenção cruzada bidirecional, DINOv2 adaptado por LoRA com atenção cruzada diferencial e modelo aumentado por recuperação sobre galeria de pares positivos.
   \item Implementar e avaliar uma proposta autoral para o AdaFace-Regional, que combina AdaFace IR-101 com descongelamento parcial do último estágio, cinco tokens regionais anatômicos, atenção cruzada bidirecional entre regiões, gate sigmoide, cabeça auxiliar de relação e inferência simétrica entre as duas ordens do par.
-  \item Conduzir uma avaliação exploratória de dois modelos multimodais generalistas, Codex e Claude Sonnet, em classificação multiclasse das onze relações do FIW, em regime zero-shot e em adaptação ao domínio por prompt, sem pretensão de comparação direta às métricas binárias dos modelos supervisionados.
+  \item Conduzir uma avaliação exploratória de dois modelos multimodais generalistas, Codex e Claude Sonnet, em verificação binária zero-shot no FIW, com 3.000 pares positivos e 3.000 pares negativos por modelo, mantendo a avaliação multiclasse anterior apenas como diagnóstico histórico de classificação fina de relações.
   \item Reportar e discutir métricas independentes de limiar específico, em particular ROC AUC e Average Precision, e métricas calculadas em pontos operacionais fixados por taxa de falso positivo (TAR@FAR=0,1, TAR@FAR=0,01 e TAR@FAR=0,001), além de análise por tipo de relação, identificando limitações metodológicas e éticas do uso pretendido.
 \end{enumerate}
 
@@ -53,7 +53,7 @@ A relevância do trabalho tem duas frentes. Do ponto de vista científico, a ár
 
 \section{Contribuições}
 
-As contribuições principais deste trabalho são quatro. A primeira é um protocolo comparativo aplicado de forma uniforme às cinco abordagens de verificação binária, com limiar escolhido em validação, métricas independentes de limiar e análise por tipo de relação. A segunda é a proposta arquitetônica autoral do AdaFace-Regional, descrita no Capítulo~\ref{cap:Metodologia}, que combina backbone facial especializado, descongelamento parcial do último estágio, estrutura regional anatômica com atenção cruzada entre regiões, gate sigmoide, cabeça auxiliar de relação e passagem simétrica para reduzir atalhos dependentes da ordem do par. A terceira é uma avaliação exploratória de dois VLMs em parentesco facial, em classificação multiclasse das onze relações do FIW, com a ressalva explícita de que se trata de tarefa diferente da verificação binária dos supervisionados. A quarta é uma análise consolidada de erros por tipo de relação, com atenção particular às relações de avós e netos, classes historicamente mais difíceis na literatura do FIW.
+As contribuições principais deste trabalho são quatro. A primeira é um protocolo comparativo aplicado de forma uniforme às cinco abordagens de verificação binária, com limiar escolhido em validação, métricas independentes de limiar e análise por tipo de relação. A segunda é a proposta arquitetônica autoral do AdaFace-Regional, descrita no Capítulo~\ref{cap:Metodologia}, que combina backbone facial especializado, descongelamento parcial do último estágio, estrutura regional anatômica com atenção cruzada entre regiões, gate sigmoide, cabeça auxiliar de relação e passagem simétrica para reduzir atalhos dependentes da ordem do par. A terceira é uma avaliação exploratória de dois VLMs em parentesco facial, agora na mesma formulação binária kin/non-kin, com 6.000 pares balanceados por modelo e a ressalva de que se trata de baseline externo zero-shot, sem treino ou calibração por validação. A quarta é uma análise consolidada de erros por tipo de relação, com atenção particular às relações de avós e netos, classes historicamente mais difíceis na literatura do FIW.
 
 \section{Delimitações}
 

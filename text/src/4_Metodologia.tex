@@ -5,13 +5,13 @@ Este capítulo descreve o desenho experimental do trabalho: quais modelos são c
 
 Os cinco modelos são o AdaFace-Cosseno, uma linha de base sem treinamento que usa um extrator facial pronto (AdaFace IR-101) e similaridade de cosseno; o ViT-FaCoR, um Vision Transformer com atenção cruzada entre as duas faces, no estilo do FaCoR; o DINOv2-LoRA, um DINOv2 adaptado com LoRA e atenção cruzada diferencial; o Modelo com Recuperação, que recupera pares positivos parecidos de uma galeria; e o AdaFace-Regional, a proposta deste trabalho, com AdaFace parcialmente descongelado, tokens por região do rosto, cabeça auxiliar de relação e leitura simétrica do par.
 
-Dois outros modelos do projeto ficam descritos no Apêndice~\ref{ap:modelos-perifericos}: o Modelo com Síntese de Idade, linha de base histórica com CNN e síntese de idade, e o ConvNeXt-ViT, estudo de capacidade de um híbrido ConvNeXt mais ViT. Por fim, duas linhas de base com modelos multimodais generalistas (VLMs) aparecem em seção própria. Elas resolvem uma tarefa diferente, classificar qual das onze relações do FIW liga as duas faces, e por isso entram como estudo exploratório, não como concorrentes diretas dos modelos supervisionados.
+Dois outros modelos do projeto ficam descritos no Apêndice~\ref{ap:modelos-perifericos}: o Modelo com Síntese de Idade, linha de base histórica com CNN e síntese de idade, e o ConvNeXt-ViT, estudo de capacidade de um híbrido ConvNeXt mais ViT. Por fim, duas linhas de base com modelos multimodais generalistas (VLMs) aparecem em seção própria. No desenho final, elas resolvem a mesma pergunta binária kin/non-kin, mas sem treinamento específico, sem ajuste de pesos e sem seleção de limiar em validação; por isso entram como baselines externos zero-shot, não como modelos supervisionados equivalentes.
 
 \section{Desenho da pesquisa}
 
-O trabalho é de natureza experimental e comparativa. Cinco abordagens de verificação binária são avaliadas sob o mesmo protocolo, e dois VLMs são executados sobre o mesmo conjunto de teste, em regime zero-shot e com adaptação por prompt. A métrica principal de comparação é o ROC AUC, por não depender da escolha de limiar. Ela é complementada por Average Precision, TAR@FAR=0,1, 0,01 e 0,001, e por acurácia por tipo de relação. A análise por relação acompanha as métricas globais porque a literatura mostra que relações de segundo grau, entre avós e netos, se comportam de forma bem diferente das relações de primeiro grau, entre pais e filhos ou entre irmãos.
+O trabalho é de natureza experimental e comparativa. Cinco abordagens de verificação binária são avaliadas sob o mesmo protocolo, e dois VLMs são executados como baselines zero-shot sobre amostras balanceadas do conjunto de teste. A métrica principal de comparação é o ROC AUC, por não depender da escolha de limiar. Ela é complementada por Average Precision, TAR@FAR=0,1, 0,01 e 0,001, e por acurácia por tipo de relação. A análise por relação acompanha as métricas globais porque a literatura mostra que relações de segundo grau, entre avós e netos, se comportam de forma bem diferente das relações de primeiro grau, entre pais e filhos ou entre irmãos.
 
-Das cinco abordagens, três servem de referência e cobrem famílias de método já consolidadas. As outras duas são mais exploratórias e combinam técnicas recentes ainda pouco testadas em parentesco facial. Os VLMs entram apenas para medir o que um modelo multimodal genérico consegue inferir sem treino no domínio.
+Das cinco abordagens, três servem de referência e cobrem famílias de método já consolidadas. As outras duas são mais exploratórias e combinam técnicas recentes ainda pouco testadas em parentesco facial. Os VLMs entram como baselines externos para medir o que um modelo multimodal genérico consegue inferir sem treino no domínio.
 
 \section{Datasets}
 
@@ -182,46 +182,51 @@ O ROC AUC é a métrica principal por não depender da escolha de limiar. As mé
 
 Por relação, são reportadas acurácia e F1 condicionadas ao tipo de parentesco do par. Esse recorte é importante porque a literatura mostra desempenho bem desigual entre relações: pais e filhos chegam a valores altos, e avós e netos são historicamente mais difíceis.
 
-Para as linhas de base com VLMs, descritas mais adiante, que fazem classificação em onze classes em vez de verificação binária, valem métricas multiclasse próprias: acurácia, macro-precision, macro-recall, macro-F1 e matriz de confusão.
+Para as linhas de base binárias com VLMs, descritas mais adiante, são usadas as mesmas métricas de verificação, mas com a ressalva de que o limiar é fixado em 0,5 por não haver validação própria. A avaliação multiclasse anterior dos VLMs, quando mencionada, usa métricas próprias de onze classes: acurácia, macro-precision, macro-recall, macro-F1 e matriz de confusão.
 
 \section{Linhas de base com modelos multimodais}
 
-As linhas de base com VLMs medem o que um modelo multimodal generalista consegue inferir sobre parentesco facial sem treino específico no domínio. O Codex é avaliado em três regimes progressivos, e o Claude Sonnet em um recorte piloto zero-shot.
+As linhas de base com VLMs medem o que um modelo multimodal generalista consegue inferir sobre parentesco facial sem treino específico no domínio. A versão consolidada do experimento usa a mesma formulação binária dos modelos supervisionados: decidir se o par é kin ou non-kin. A tarefa multiclasse anterior, na qual o VLM escolhia uma entre onze relações positivas, fica registrada apenas como diagnóstico histórico, porque não inclui pares non-kin.
 
 \subsection{Configuração comum}
 
-A tarefa é classificar qual das onze relações positivas do FIW liga as duas faces. A entrada é uma única imagem com as duas faces lado a lado, e a resposta válida é uma das onze relações. As amostras vêm da partição de teste do FIW, com seleção estratificada quase uniforme entre as classes positivas. Os modelos não recebem nenhum treino sobre o FIW e trabalham só a partir do prompt textual e da imagem. Respostas fora das onze relações, inclusive respostas de não-parentesco, contam como erro. Como a tarefa é diferente da dos modelos supervisionados, os números dos VLMs são comparados de forma qualitativa, e não métrica contra métrica.
+A entrada visual de cada amostra é uma única imagem composta, com a face da primeira pessoa à esquerda e a face da segunda pessoa à direita. O prompt pede uma decisão binária sobre parentesco biológico e uma confiança no intervalo $[0,1]$. Os VLMs não recebem exemplos de treino do FIW, não passam por fine-tuning e não usam uma validação separada para escolher limiar.
 
-\subsection{Codex zero-shot}
+Para calcular métricas independentes de limiar, a decisão e a confiança são convertidas em um escore contínuo $s_{\text{vlm}} \in [0,1]$:
 
-A primeira linha de base é o gpt-5.4-mini, executado pelo Codex CLI com \texttt{reasoning\_effort=low}. A amostra é de 750 pares positivos balanceados entre as onze classes, somando 1.500 imagens. O prompt é direto, descreve as onze classes possíveis e pede a classificação da relação entre as duas faces.
+\begin{equation}
+s_{\text{vlm}} =
+\begin{cases}
+0{,}5 + 0{,}5c, & \text{se a decisão é kin},\\
+0{,}5 - 0{,}5c, & \text{se a decisão é non-kin},
+\end{cases}
+\label{eq:vlm_score}
+\end{equation}
 
-\subsection{Claude Sonnet zero-shot}
+onde $c$ é a confiança informada pelo modelo. Assim, escores próximos de 1 indicam maior confiança em parentesco, e escores próximos de 0 indicam maior confiança em não-parentesco. Como não há conjunto de validação próprio para os VLMs, o limiar usado nas métricas dependentes de ponto operacional é 0,5, a fronteira natural desse mapeamento. ROC AUC, Average Precision e TAR@FAR são calculados diretamente sobre $s_{\text{vlm}}$.
 
-A segunda linha de base é o claude-sonnet-4-6, avaliado por visão direta com a mesma estrutura de prompt do Codex. A avaliação do Claude usa um recorte piloto de 75 pares balanceados, tirados do mesmo conjunto de teste. Esse tamanho é insuficiente para comparação estatística entre modelos e serve apenas como leitura qualitativa complementar.
+\subsection{Codex VLM binário zero-shot}
 
-\subsection{Adaptação ao domínio por prompt no Codex}
+A primeira linha de base é o gpt-5.4-mini, executado pelo Codex CLI em \texttt{reasoning\_effort=medium}. O experimento usa 6.000 pares únicos do FIW Track-I, balanceados entre 3.000 positivos e 3.000 negativos. A execução foi composta por uma rodada inicial de 750 pares e um complemento de 5.250 pares, com exclusão do manifesto inicial para evitar duplicatas. O artefato combinado ficou em \texttt{data/codex\_vlm\_fiw\_binary\_6000\_medium\_combined/}. A saída esperada é um JSON com \texttt{predicted\_label} em \{\texttt{kin}, \texttt{non\_kin}\} e \texttt{confidence}.
 
-Para mudar o comportamento do VLM sem fine-tuning, este regime combina três mecanismos. O few-shot in-context learning entra com sete a onze exemplos da partição de validação do FIW, escolhidos para cobrir as classes mais difíceis. Em torno desses exemplos, um prompt estruturado obriga o modelo a estimar, antes da resposta final, a diferença de geração aparente, o gênero de cada face e qual face parece mais velha. Uma calibração leve, treinada em 110 pares de validação, ajusta a resposta final a partir dessas saídas auxiliares.
+\subsection{Claude Sonnet binário zero-shot}
 
-Quatro configurações são comparadas em validação, e a melhor é avaliada nos 750 pares de teste, os mesmos do zero-shot, o que permite comparar os dois regimes diretamente. A adaptação aqui é só de inferência e não muda os pesos do modelo.
+A segunda linha de base é o claude-sonnet-4-6, avaliado por visão direta pela API da Anthropic, também em regime zero-shot. O experimento usa 6.000 pares balanceados, com 3.000 positivos e 3.000 negativos, amostrados do pool de teste do FIW usado pelos modelos supervisionados. A execução foi realizada entre 1 e 2 de junho de 2026 com o script \texttt{tools/run\_claude\_vlm\_fiw\_binary.py}, e os artefatos ficaram em \texttt{data/claude\_vlm\_fiw\_binary\_6000/}. A saída esperada é um JSON com \texttt{is\_related} booleano e \texttt{confidence}.
 
-\subsection{Prompts direcionados por treinamento}
+\subsection{Avaliação multiclasse histórica}
 
-Há ainda um terceiro regime de VLMs, baseado em curadoria iterativa de exemplos e em estruturas de prompt otimizadas sobre um subconjunto de validação. A diferença em relação à adaptação por prompt é o ciclo de iteração: o conjunto de exemplos few-shot e a estrutura do prompt são ajustados em rodadas sucessivas a partir do desempenho observado na validação. Esse regime não foi rodado sobre os 750 pares do teste completo. Ele aparece só como um recorte diagnóstico de 12 pares das quatro relações entre avós e netos, usado para investigar se prompts orientados pela diferença de geração corrigiriam o principal erro do VLM.
+Antes da reformulação binária, os VLMs foram avaliados como classificadores fechados entre as onze relações positivas do FIW. O Codex foi testado em zero-shot e com adaptação por prompt sobre 750 pares positivos, enquanto o Claude Sonnet teve um piloto zero-shot de 75 pares. Também houve um recorte diagnóstico de 12 pares de avós e netos com prompts direcionados. Esses resultados são mencionados no Capítulo~\ref{cap:resultados} apenas para contextualizar a dificuldade de classificação fina de relações, sem comparação direta com os verificadores binários.
 
 \begin{table}[h]
 \centering
-\caption{Especificação das linhas de base com modelos multimodais.}
+\caption{Especificação das linhas de base com modelos multimodais no protocolo consolidado.}
 \label{tab:vlms_metodologia}
-\begin{tabular}{lll}
+\begin{tabular}{llll}
 \hline
-\textbf{Modelo} & \textbf{Regime} & \textbf{Amostra de teste} \\
+\textbf{Modelo} & \textbf{Regime} & \textbf{Tarefa} & \textbf{Amostra} \\
 \hline
-Codex (gpt-5.4-mini) & Zero-shot                       & 750 pares balanceados \\
-Codex (gpt-5.4-mini) & Adaptação por prompt (7 a 11 exemplos) & 750 pares (mesmos do zero-shot) \\
-Codex (gpt-5.4-mini) & Prompts direcionados por treino  & 12 pares de avós e netos (diagnóstico) \\
-Claude Sonnet 4.6   & Zero-shot direto                  & 75 pares (piloto) \\
+Codex (gpt-5.4-mini) & Zero-shot & kin/non-kin & 6.000 pares balanceados \\
+Claude Sonnet 4.6 & Zero-shot & kin/non-kin & 6.000 pares balanceados \\
 \hline
 \end{tabular}
 \end{table}
