@@ -17,7 +17,7 @@ Redes siamesas são uma forma natural de modelar tarefas baseadas em pares. A ar
 
 A ideia por trás desse tipo de rede é aproximar pares positivos e afastar pares negativos no espaço vetorial. Em verificação facial, essa estrutura é útil porque a pergunta não é qual é a classe isolada de uma imagem, mas se duas imagens devem ser consideradas próximas segundo algum critério. No caso do parentesco, o critério não é identidade da pessoa, e sim semelhança familiar. Essa adaptação para verificação de parentesco foi consolidada no trabalho de \citeonline{robinson2018visual}, que usou redes siamesas com backbones pré-treinados em reconhecimento facial.
 
-O cosseno é usado porque compara principalmente a direção dos embeddings, e não o tamanho absoluto dos vetores. Com normalização em $L^2$, seu valor fica no intervalo $[-1, 1]$. Nessa condição, a distância euclidiana e o cosseno dão leituras próximas do mesmo espaço, pois ambas dependem da posição relativa entre os vetores. Já a margem aparece nas perdas discriminativas como a distância mínima que se deseja manter entre positivos e negativos.
+A similaridade de cosseno é utilizada porque avalia o alinhamento angular entre embeddings, independentemente da magnitude, ou norma $L^2$, dos vetores. Com normalização em $L^2$, seu valor fica no intervalo $[-1, 1]$. Nessa condição, a distância euclidiana e o cosseno dão leituras próximas do mesmo espaço, pois ambas dependem da posição relativa entre os vetores. Já a margem aparece nas perdas discriminativas como a distância mínima que se deseja manter entre positivos e negativos.
 
 \section{Redes convolucionais, ResNet e ConvNeXt}
 
@@ -28,7 +28,7 @@ introduziu conexões de atalho que facilitam o treinamento de redes profundas, r
 
 O AdaFace \cite{kim2022adaface} é um exemplo de backbone facial especializado. Ele usa uma variante IR-101 da família ResNet adaptada para faces e é treinado em larga escala, no WebFace4M, para separar identidades. A perda do AdaFace ajusta a margem de acordo com a qualidade da imagem, dando tratamento diferente a exemplos mais confiáveis e a exemplos degradados. O resultado é um extrator que produz embeddings de 512 dimensões em que distâncias e ângulos carregam informação de similaridade facial. Neste trabalho, esse sinal é usado de duas formas: diretamente na linha de base AdaFace-Cosseno e como base do AdaFace-Regional, com descongelamento parcial do último estágio.
 
-ConvNeXt \cite{liu2022convnet} revisita a CNN tradicional incorporando escolhas de projeto associadas aos Transformers, como convoluções depthwise, blocos invertidos e normalização por camada. A proposta mostra que uma CNN modernizada pode competir com Vision Transformers em tarefas gerais de imagem, mantendo parte dos vieses indutivos das convoluções. No escopo deste trabalho, o ConvNeXt aparece no estudo periférico ConvNeXt-ViT, em que representa o ramo de características locais de um modelo híbrido.
+ConvNeXt \cite{liu2022convnet} revisita a CNN tradicional incorporando escolhas de projeto associadas aos Transformers, como convoluções depthwise, blocos invertidos e normalização por camada. No escopo deste trabalho, ele aparece apenas no experimento complementar ConvNeXt-ViT.
 
 \section{Vision Transformers e DINOv2}
 
@@ -92,14 +92,6 @@ onde $A \in \mathbb{R}^{r \times d}$ e $B \in \mathbb{R}^{d \times r}$ são matr
 
 Essa técnica é útil quando o backbone é grande e o conjunto de treinamento específico é limitado. Em vez de reescrever todos os pesos do modelo, a adaptação aprende correções de baixa dimensão sobre representações já existentes. No DINOv2-LoRA deste trabalho, LoRA é usado nas projeções qkv e proj dos blocos Transformer, com $r=8$ e $\alpha=16$ na configuração padrão, e funciona como uma forma de adaptar o DINOv2 à tarefa de parentesco facial mantendo o custo de memória mais baixo do que no descongelamento total.
 
-\section{Fusão de representações multibackbone}
-
-Modelos com mais de um backbone precisam combinar as representações produzidas por cada ramo antes da decisão final. No ConvNeXt-ViT, por exemplo, um ramo convolucional captura características locais e outro ramo baseado em Transformer captura relações mais globais. A fusão define como essas duas fontes de informação serão transformadas em um único embedding ou em um único escore.
-
-A forma mais simples de fusão é concatenar os vetores e aplicar uma projeção linear. Outra possibilidade é usar gating multiplicativo, em que o modelo aprende pesos para controlar quanto cada dimensão de cada ramo contribui. A fusão bilinear calcula interações entre todas as dimensões dos dois vetores, aumentando a expressividade, mas também o número de parâmetros. A fusão por atenção trata cada representação como um token e aprende uma mistura entre os ramos.
-
-Essas alternativas expressam um compromisso entre capacidade e risco de sobreajuste. Fusões mais expressivas conseguem modelar interações mais finas entre os backbones, mas exigem mais dados para serem treinadas com estabilidade. Em bancos de parentesco facial, nos quais a quantidade de pares anotados é limitada, essa tensão é relevante e ajuda a explicar por que modelos maiores nem sempre trazem ganho proporcional.
-
 \section{Modelos aumentados por recuperação}
 
 Modelos aumentados por recuperação combinam uma rede treinável com uma memória externa de exemplos. A ideia é que parte da informação útil para uma decisão pode estar em exemplos parecidos já observados, e não apenas nos pesos do modelo. Em vez de decidir somente a partir do par de consulta, o sistema recupera vizinhos em uma galeria e usa esses vizinhos como contexto.
@@ -110,7 +102,7 @@ O interesse desse tipo de modelo está em tornar explícita a comparação com e
 
 \section{Funções de perda}
 
-A função de perda define o sinal usado para ajustar os parâmetros durante o treinamento. Em verificação binária, a escolha mais direta é a entropia cruzada binária, ou BCE, aplicada ao logit produzido pela cabeça final. A BCE ensina o modelo a separar pares positivos e negativos como classes, mas não impõe sozinha uma geometria específica ao espaço de embeddings. Por isso, ela costuma ser combinada ou comparada com perdas de aprendizado métrico.
+A função de perda define o sinal usado para ajustar os parâmetros durante o treinamento. Em verificação binária, a escolha mais direta é a entropia cruzada binária, ou BCE, aplicada ao logit produzido pela cabeça final. Durante a otimização, a minimização da BCE penaliza erros de classificação e fornece gradientes para ajustar os pesos de modo a separar pares positivos e negativos, mas não impõe sozinha uma geometria específica ao espaço de embeddings. Por isso, ela costuma ser combinada ou comparada com perdas de aprendizado métrico.
 
 A Contrastive Loss clássica, proposta por \citeonline{hadsell2006contrastive}, trabalha diretamente sobre pares. A perda aproxima embeddings de pares positivos e afasta pares negativos até uma margem $m$. Em uma versão com similaridade de cosseno, pode ser escrita como
 
@@ -141,7 +133,7 @@ A avaliação multiclasse anterior, em que o VLM escolhia uma entre onze relaç�
 
 A avaliação dos modelos supervisionados parte da matriz de confusão da tarefa binária. Um verdadeiro positivo ocorre quando um par de parentes é aceito como parente. Um falso positivo ocorre quando um par sem parentesco é aceito por engano. Um verdadeiro negativo é um par sem parentesco corretamente rejeitado, e um falso negativo é um par de parentes rejeitado pelo modelo. A partir desses quatro casos são calculadas as métricas usadas no Capítulo~\ref{cap:Metodologia}.
 
-A acurácia mede a fração total de decisões corretas. Ela é intuitiva, mas pode esconder problemas quando uma classe é mais difícil que outra. A precisão mede, entre os pares classificados como parentes, quantos realmente eram positivos. A revocação mede, entre os pares que eram parentes, quantos foram recuperados pelo modelo. O F1 combina precisão e revocação por média harmônica, sendo útil quando se quer observar os dois efeitos em uma única medida. Neste trabalho, essas métricas dependem do limiar $\tau^*$ escolhido na validação.
+A acurácia mede a fração total de decisões corretas. Embora seja uma métrica de fácil interpretação, ela pode mascarar vieses de desempenho ou erros concentrados em classes mais difíceis. A precisão mede, entre os pares classificados como parentes, quantos realmente eram positivos. A revocação mede, entre os pares que eram parentes, quantos foram recuperados pelo modelo. O F1 combina precisão e revocação por média harmônica, sendo útil quando se quer observar os dois efeitos em uma única medida. Neste trabalho, essas métricas dependem do limiar $\tau^*$ escolhido na validação.
 
 A métrica principal é o ROC AUC. A curva ROC mostra como a taxa de verdadeiros positivos muda em relação à taxa de falsos positivos quando o limiar varia. O AUC resume essa curva em um único número e pode ser lido como a capacidade do modelo de dar escore maior a um par positivo do que a um par negativo. Por não depender de um limiar específico, ele é adequado para comparar modelos que produzem escores em escalas diferentes.
 

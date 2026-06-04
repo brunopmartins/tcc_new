@@ -8,7 +8,7 @@ A literatura de verificação de parentesco facial cresceu de forma consistente 
 O primeiro modelo computacional de verificação visual de parentesco foi o de \citeonline{fang2010towards}, que tratou o problema como classificação binária a partir de atributos faciais extraídos com estrutura pictórica \cite{felzenszwalb2005pictorial}. Os atributos cobriam cores de olhos, pele e cabelo, partes da face, distâncias entre essas partes e histogramas de gradiente, agrupados em um vetor de atributos manual. Os autores montaram um conjunto próprio de 150 pares de pais e filhos, treinaram k-NN e SVM com função de base radial, com 68,6\% de acurácia em validação cruzada.
 
 Em paralelo, surgiram bancos públicos que tornaram a tarefa comparável entre laboratórios. \citeonline{lu2014kinface}
-liberaram KinFaceW-I e KinFaceW-II, com cerca de mil pares por dataset distribuídos em quatro tipos de relação. Ambos seguem em uso até hoje para prototipagem rápida ou validação cruzada de cinco dobras. Pouco depois, \citeonline{robinson2016fiw}
+disponibilizaram KinFaceW-I e KinFaceW-II, com cerca de mil pares por dataset distribuídos em quatro tipos de relação. Ambos seguem em uso até hoje para prototipagem rápida ou validação cruzada de cinco dobras. Pouco depois, \citeonline{robinson2016fiw}
 introduziram a primeira versão do Families in the Wild, que se tornaria, dois anos depois, o principal benchmark da área.
 
 \section{Aprendizado profundo e redes siamesas}
@@ -34,12 +34,12 @@ A introdução do Vision Transformer \cite{dosovitskiy2020image}
 reabriu a questão de qual é o melhor backbone para parentesco facial. Os resultados mais recentes do FIW vêm de modelos que substituem o backbone convolucional pelo ViT pré-treinado. \citeonline{su2023facornet}
 propuseram o FaCoR, que adiciona um módulo de atenção cruzada bidirecional entre os tokens de patch de duas faces, permitindo que o modelo aprenda quais regiões comparar em vez de só comparar embeddings globais. O ganho relatado foi de 4,6\% sobre o melhor resultado anterior. O FaCoR é a inspiração direta do ViT-FaCoR deste trabalho.
 
-\section{Fusões híbridas e modelos periféricos}
+\section{Fusões híbridas e síntese de idade}
 
-Outra linha tenta combinar os indutivos convolucionais do ConvNeXt \cite{liu2022convnet}
+Outra linha tenta combinar os vieses indutivos convolucionais do ConvNeXt \cite{liu2022convnet}
 com a atenção global do ViT, em modelos de duplo backbone que produzem atributos locais e globais e os fundem por concatenação, gating ou atenção. Essa estratégia motivou o ConvNeXt-ViT deste trabalho, e a literatura recente aponta que aumentar capacidade total de backbone não traz, em geral, ganho proporcional em verificação de parentesco quando os dados de treino são limitados.
 
-Uma terceira linha, mantida aqui apenas como contexto dos modelos periféricos, aborda a assimetria etária entre pais e filhos. Métodos baseados em síntese de idade, como o SAM (Style-based Age Manipulation) \cite{alaluf2022sam}, geram variantes do mesmo rosto em diferentes idades antes da comparação. Neste trabalho, essa linha não compõe a comparação principal; o Modelo com Síntese de Idade fica descrito no Apêndice~\ref{ap:modelos-perifericos} como registro histórico do projeto.
+Métodos baseados em síntese de idade, como o SAM \cite{alaluf2022sam}, também abordam a assimetria etária entre pais e filhos, mas essa linha aparece aqui apenas como referência histórica do pré-projeto e não compõe a comparação principal.
 
 \section{Generalização cross-dataset e equidade}
 
@@ -78,6 +78,6 @@ A Tabela~\ref{tab:trabalhos_relacionados_resumo} resume os trabalhos que delimit
 
 \section{Posicionamento deste trabalho}
 
-A combinação de famílias presente neste trabalho cobre cinco eixos da literatura citada. A linha de base mínima usa AdaFace pré-treinado em reconhecimento facial com cosseno e limiar em validação, sem qualquer adaptação ao domínio de parentesco, e mede o desempenho de referência da tarefa. O caminho do ViT com atenção cruzada bidirecional no estilo FaCoR liga-se à linha de \citeonline{su2023facornet} e segue como ponto de referência forte entre os métodos treinados. Como direção exploratória, um DINOv2 ajustado por LoRA com atenção cruzada diferencial explora adaptação eficiente em parâmetros sobre backbone auto-supervisionado, e um modelo aumentado por recuperação usa uma galeria de pares positivos do treino para recuperar vizinhos similares em inferência. A proposta principal combina backbone facial especializado AdaFace, descongelamento parcial do último estágio e cinco tokens regionais anatômicos com atenção cruzada entre regiões e gate sigmoide, na linha recente de modelos que substituem patches densos por regiões para reduzir o tamanho da matriz de atenção e introduzir prior anatômico. O Modelo com Síntese de Idade, herdado do pré-projeto, e o ConvNeXt-ViT, baseado em fusão híbrida ConvNeXt e ViT, ficam registrados como referência histórica e estudo de capacidade, respectivamente.
+A combinação de famílias presente neste trabalho cobre cinco eixos da literatura citada. A linha de base mínima usa AdaFace pré-treinado em reconhecimento facial com cosseno e limiar em validação. O caminho do ViT com atenção cruzada bidirecional no estilo FaCoR liga-se à linha de \citeonline{su2023facornet}. Como direções exploratórias, o DINOv2-LoRA adapta um backbone auto-supervisionado por LoRA e atenção cruzada diferencial, enquanto o Modelo com Recuperação usa uma galeria de pares positivos do treino para recuperar vizinhos similares em inferência. A proposta principal combina AdaFace parcialmente descongelado, cinco tokens regionais anatômicos, atenção cruzada entre regiões e gate sigmoide.
 
 A diferença em relação à maioria dos trabalhos citados é metodológica. Em vez de propor um único modelo novo e compará-lo a resultados isolados da literatura, este trabalho aplica o mesmo protocolo de avaliação às cinco abordagens de verificação binária, com limiar selecionado em validação e aplicado sem reajuste no teste. A avaliação complementar dos modelos multimodais é apresentada em separado: a versão binária serve como linha de base externa zero-shot, enquanto a versão multiclasse anterior fica restrita à análise diagnóstica de relações positivas.
