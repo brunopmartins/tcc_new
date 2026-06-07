@@ -1,7 +1,7 @@
 \chapter[Metodologia]{Metodologia}
 \label{cap:Metodologia}
 
-Este capítulo descreve o desenho experimental do trabalho: quais modelos são comparados, em quais bancos e sob qual protocolo de treino e avaliação. A comparação principal reúne cinco modelos que resolvem a mesma tarefa, a verificação binária de parentesco no banco Families in the Wild (FIW). Todos seguem a divisão do Track-I oficial do RFIW e são avaliados por validação cruzada de cinco dobras separadas por família, com o conjunto de teste oficial preservado.
+Este capítulo descreve o desenho experimental do trabalho: quais modelos são comparados, em quais bancos e sob qual protocolo de treino e avaliação. A comparação principal reúne cinco modelos que resolvem a mesma tarefa, a verificação binária de parentesco no banco Families in the Wild (FIW). Todos seguem a divisão do Track-I oficial do RFIW e são avaliados por validação cruzada de cinco dobras separadas por família para treino e validação, com o conjunto de teste oficial preservado.
 
 Os cinco modelos são o AdaFace-Cosseno, uma linha de base sem treinamento que usa um extrator facial pronto (AdaFace IR-101) e similaridade de cosseno; o ViT-FaCoR, um Vision Transformer com atenção cruzada entre as duas faces, no estilo do FaCoR; o DINOv2-LoRA, um DINOv2 adaptado com LoRA e atenção cruzada diferencial; o Modelo com Recuperação, que recupera pares positivos parecidos de uma galeria; e o AdaFace-Regional, a proposta deste trabalho, com AdaFace parcialmente descongelado, tokens por região do rosto, cabeça auxiliar de relação e leitura simétrica do par.
 
@@ -9,11 +9,13 @@ Duas linhas de base com modelos multimodais generalistas (VLMs) aparecem em seç
 
 \section{Desenho da pesquisa}
 
-O trabalho é de natureza experimental e comparativa. Cinco abordagens de verificação binária são avaliadas sob o mesmo protocolo, e dois VLMs são executados como linhas de base zero-shot sobre amostras balanceadas do conjunto de teste. A métrica principal de comparação é o ROC AUC, por não depender da escolha de limiar. Ela é complementada por Average Precision, TAR@FAR=0,1, 0,01 e 0,001, e por acurácia por tipo de relação. A análise por relação acompanha as métricas globais porque a literatura mostra que relações de segundo grau, entre avós e netos, se comportam de forma bem diferente das relações de primeiro grau, entre pais e filhos ou entre irmãos.
+O trabalho é de natureza experimental e comparativa. Cinco abordagens de verificação binária são avaliadas sob o mesmo protocolo, e dois VLMs são executados como linhas de base zero-shot sobre amostras balanceadas do conjunto de teste. A métrica principal de comparação é o ROC AUC, por não depender da escolha de limiar. Ela é complementada por Average Precision, TAR@FAR=0,1, TAR@FAR=0,01 e TAR@FAR=0,001, e por acurácia por tipo de relação. A análise por relação acompanha as métricas globais porque a literatura mostra que relações de segundo grau, entre avós e netos, se comportam de forma diferente das relações de primeiro grau, entre pais e filhos ou entre irmãos.
 
 Das cinco abordagens, três servem de referência e cobrem famílias de método já consolidadas. As outras duas são mais exploratórias e combinam técnicas recentes ainda pouco testadas em parentesco facial. Os VLMs entram como linhas de base externas para medir o que um modelo multimodal genérico consegue inferir sem treino no domínio.
 
 \section{Datasets}
+
+Esta seção apresenta os datasets utilizados neste trabalho.
 
 \subsection{KinFaceW-I}
 
@@ -21,65 +23,88 @@ KinFaceW-I é um dos bancos clássicos de verificação de parentesco facial. Te
 
 \subsection{Families in the Wild}
 
-Families in the Wild, ou FIW, é hoje o maior banco público de parentesco facial. A versão usada aqui é a do RFIW Track-I, com 761 famílias e onze relações. As relações incluem pai-filho e pai-filha (fs, fd), mãe-filho e mãe-filha (ms, md), irmão-irmão e irmã-irmã (bb, ss), irmãos de gêneros diferentes (sibs) e quatro relações entre avós e netos (gfgs, gfgd, gmgs, gmgd). As imagens variam muito mais do que as de KinFaceW-I, com diferenças de iluminação, pose, idade e qualidade. O FIW é o benchmark principal do trabalho, e a avaliação usa validação cruzada de cinco dobras separadas por família para treino e validação, mantendo o conjunto de teste oficial do RFIW Track-I fixo. Isso preserva a regra de que membros de uma mesma família não devem aparecer simultaneamente nos subconjuntos usados para ajustar e selecionar o modelo. Em cada dobra, as famílias do conjunto de desenvolvimento são divididas entre treino e validação, e os pares positivos e negativos mudam conforme a composição de cada partição.
+Families in the Wild, ou FIW, é hoje o maior banco público de parentesco facial. A versão usada aqui é a do RFIW Track-I, com 761 famílias e onze relações. As relações incluem pai-filho e pai-filha (fs, fd), mãe-filho e mãe-filha (ms, md), irmão-irmão e irmã-irmã (bb, ss), irmãos de gêneros diferentes (sibs) e quatro relações entre avós e netos (gfgs, gfgd, gmgs, gmgd). As imagens variam mais do que as de KinFaceW-I, com diferenças de iluminação, pose, idade e qualidade. O FIW é o benchmark principal do trabalho, e a avaliação usa validação cruzada de cinco dobras separadas por família para treino e validação, mantendo o conjunto de teste oficial do RFIW Track-I fixo. Isso preserva a regra de que membros de uma mesma família não devem aparecer simultaneamente nos subconjuntos usados para ajustar e selecionar o modelo. Em cada dobra, as famílias do conjunto de desenvolvimento são divididas entre treino e validação, e os pares positivos e negativos mudam conforme a composição de cada partição.
 
 \subsection{Amostragem de pares e negativos}
 
 O número de pares positivos é finito e pequeno perto do número possível de pares negativos. O carregador de dados sorteia negativos apenas entre indivíduos de famílias diferentes, o que é uma consequência direta da divisão por família do Track-I. Essa restrição reduz a chance de um par negativo conter parentes não anotados, já que a composição das partições preserva a separação familiar entre os subconjuntos usados para treino, validação e teste.
 
-Na estratégia \texttt{random}, dois indivíduos de famílias diferentes são sorteados ao acaso, sem considerar o tipo de relação. Essa é a amostragem usada nas execuções principais. Na análise de robustez do AdaFace-Regional, também foi avaliada uma configuração com 30\% de negativos difíceis reais, formados por pessoas de famílias diferentes, mas com os mesmos papéis do par positivo de referência. Essa configuração aumenta a proximidade semântica entre pares positivos e negativos sem violar a separação por família.
+Na estratégia \texttt{random}, dois indivíduos de famílias diferentes são sorteados ao acaso, sem considerar o tipo de relação. Essa é a amostragem usada nas execuções principais. Na análise de robustez do AdaFace-Regional, também foi avaliada uma configuração com 30\% de negativos difíceis reais. Neste trabalho, denomina-se negativo difícil um par negativo formado por indivíduos pertencentes a famílias distintas, mas que preservam os mesmos papéis familiares do par positivo de referência. Por exemplo, para um par positivo do tipo pai-filho, um negativo difícil é composto por um pai e um filho provenientes de famílias diferentes. Essa configuração aumenta a proximidade semântica entre pares positivos e negativos sem violar a separação por família.
 
-A razão entre negativos e positivos é de 2:1 no treino, com novo sorteio a cada época segundo a semente fixada, e de 1:1 na validação e no teste. As listas de validação são fixas dentro de cada dobra, e o teste oficial é mantido fixo para todas as dobras. A semente principal é 42, para facilitar a reconstrução das configurações comparáveis dentro de cada família de modelo a partir do log. Quando uma execução muda o amostrador ou o deslocamento da semente, essa diferença é apontada explicitamente na hora de interpretar os resultados.
+Durante o treinamento dos modelos, a proporção entre pares negativos e positivos é de 2:1. Os pares negativos são reamostrados a cada época por meio de um procedimento pseudoaleatório controlado por semente fixa, permitindo reproduzir a sequência de amostras utilizada em cada execução. Na validação e no teste, a proporção é de 1:1, e as listas de pares negativos permanecem fixas dentro de cada dobra para garantir comparabilidade entre os modelos avaliados. A semente principal adotada nos experimentos é 42. Quando uma configuração utiliza uma estratégia de amostragem diferente ou altera a semente, essa modificação é explicitamente indicada na análise dos resultados para evitar interpretações indevidas decorrentes do processo de amostragem.
 
 \subsection{Pré-processamento e alinhamento facial}
 
-Todas as imagens usadas pelos modelos supervisionados passam por alinhamento facial antes do treino. A versão principal do FIW alinhado detecta as faces com o InsightFace \texttt{buffalo\_l} (RetinaFace) e estima uma transformação afim com \texttt{cv2.estimateAffinePartial2D} e LMEDS, projetando cinco pontos faciais no template do ArcFace ampliado para 224x224 pixels. Essa resolução é a mesma da entrada nativa dos backbones ViT-B/16 e DINOv2 usados pelo ViT-FaCoR, pelo DINOv2-LoRA e pelo Modelo com Recuperação, o que evita redimensionar de novo no carregador.
+Todas as imagens usadas pelos modelos supervisionados passam por alinhamento facial antes do treino. A versão principal do FIW alinhado detecta as faces com o InsightFace \texttt{buffalo\_l} (RetinaFace) e estima uma transformação afim com a função \texttt{estimateAffinePartial2D} da biblioteca OpenCV, usando LMEDS. Em seguida, cinco pontos faciais são projetados no template do ArcFace ampliado para 224x224 pixels. Essa resolução é a mesma da entrada nativa dos backbones ViT-B/16 e DINOv2 usados pelo ViT-FaCoR, pelo DINOv2-LoRA e pelo Modelo com Recuperação, o que evita redimensionar de novo no carregador.
 
 Há uma segunda versão alinhada, usada quando necessário nos modelos da linhagem ArcFace/AdaFace. Ela detecta as faces com o MTCNN da biblioteca \texttt{facenet-pytorch} e aplica a transformação de similaridade de Umeyama para o mesmo template do ArcFace em 224x224. Quando o detector falha, o procedimento faz um recorte central quadrado e redimensiona, preservando as listas de pares válidas e evitando descartar amostras em silêncio. O AdaFace-Regional recebe a imagem alinhada em 224x224 e, a partir dela, recorta cinco regiões fixas do rosto, que são redimensionadas para 112x112 antes de extrair os embeddings de cada região com o AdaFace.
 
-Para os VLMs, cada entrada visual é uma única imagem com as duas faces já alinhadas, lado a lado. A ordem do par registrada no FIW é mantida para que a relação (por exemplo, pai-filho ou mãe-filha) continue bem definida.
+Para os VLMs, cada entrada visual é uma única imagem com as duas faces já alinhadas, lado a lado. A ordem do par registrada no FIW é mantida para que a relação, por exemplo pai-filho ou mãe-filha, continue bem definida.
 
 \begin{table}[h]
 \centering
 \caption{Resumo dos datasets utilizados.}
 \label{tab:datasets}
-\begin{tabular}{lrrrl}
+\begin{tabularx}{\textwidth}{l c c c X}
 \hline
 \textbf{Banco} & \textbf{Famílias} & \textbf{Pares} & \textbf{Relações} & \textbf{Papel no trabalho} \\
 \hline
-KinFaceW-I & --- & {\raise.17ex\hbox{$\scriptstyle\sim$}}1.066 & 4 & Prototipagem e referência histórica \\
+KinFaceW-I & --- & $\sim$1.066 & 4 & Prototipagem e referência histórica \\
 Families in the Wild & 761 & variável por dobra\footnotemark & 11 & Benchmark principal em validação cruzada por família \\
 \hline
-\end{tabular}
+\end{tabularx}
 \footnotetext{Os pares positivos e negativos de treino e validação variam entre dobras porque a partição é feita por família e preserva a disjunção familiar do Track-I do RFIW. No treino, a proporção é 2:1 entre negativos e positivos; em validação e no teste oficial, a proporção é aproximadamente 1:1.}
 \end{table}
 
 \section{Modelos avaliados}
 
-Os modelos a seguir formam a comparação principal do Capítulo~\ref{cap:resultados}. O AdaFace-Cosseno entra como referência sem treinamento e como linha de base mínima recomendada pelo documento de referências do projeto. O ViT-FaCoR, o DINOv2-LoRA e o Modelo com Recuperação são as três famílias supervisionadas comparadas, e o AdaFace-Regional é a proposta principal deste TCC. A Tabela~\ref{tab:modelos_metodologia} resume os cinco modelos por backbone, parâmetros treináveis e ideia central. O Modelo com Síntese de Idade e o ConvNeXt-ViT foram tratados apenas como experimentos complementares.
+Os modelos a seguir formam a comparação principal do Capítulo~\ref{cap:resultados}. O AdaFace-Cosseno entra como referência sem treinamento e como linha de base mínima para medir o desempenho de um extrator facial especializado sem adaptação ao FIW. O ViT-FaCoR, o DINOv2-LoRA e o Modelo com Recuperação são as três famílias supervisionadas comparadas, e o AdaFace-Regional é a proposta principal deste TCC. A Figura~\ref{fig:modelos_metodologia} ilustra o papel de cada família de modelo, e a Tabela~\ref{tab:modelos_metodologia} resume os cinco modelos por backbone, parâmetros treináveis e ideia central. O Modelo com Síntese de Idade e o ConvNeXt-ViT foram tratados apenas como experimentos complementares.
 
 A nomenclatura usada no texto privilegia os modelos consolidados. Protótipos intermediários com backbones ArcFace ou AdaFace foram úteis para diagnóstico interno, mas não entram como competidores finais porque suas ideias foram absorvidas pelo AdaFace-Regional ou descartadas durante o ciclo experimental. Manter essa separação evita misturar protótipos descartados com as arquiteturas escolhidas para a comparação.
+
+\begin{figure}[h]
+\centering
+\fbox{%
+\begin{minipage}{0.92\textwidth}
+\centering
+\small
+\textbf{Entrada comum: par de faces alinhadas}\\[0.4em]
+$\downarrow$\\[0.4em]
+\begin{tabularx}{0.86\textwidth}{X X}
+AdaFace-Cosseno: embedding facial global e cosseno &
+ViT-FaCoR: patches ViT com atenção cruzada \\
+DINOv2-LoRA: DINOv2 adaptado por LoRA e atenção diferencial &
+Modelo com Recuperação: consulta a galeria de pares positivos \\
+\multicolumn{2}{c}{AdaFace-Regional: tokens regionais, gate e passagem simétrica}
+\end{tabularx}\\[0.4em]
+$\downarrow$\\[0.4em]
+\textbf{Saída comum: escore kin/non-kin em $[0,1]$}
+\end{minipage}%
+}
+\caption{Visão geral dos modelos avaliados sob o mesmo protocolo de verificação binária.}
+\label{fig:modelos_metodologia}
+\end{figure}
 
 \begin{table}[h]
 \centering
 \caption{Visão geral dos cinco modelos comparados, com backbone, total de parâmetros treináveis e ideia central de cada um.}
 \label{tab:modelos_metodologia}
-\begin{tabular}{llrl}
+\begin{tabularx}{\textwidth}{l l c X}
 \hline
-\textbf{Modelo} & \textbf{Backbone} & \textbf{Params treináveis} & \textbf{Ideia central} \\
+\textbf{Modelo} & \textbf{Backbone} & \textbf{Params} & \textbf{Ideia central} \\
 \hline
-AdaFace-Cosseno  & AdaFace IR-101 (congelado)          & 0 & Extrator facial pronto com cosseno e limiar em validação \\
-ViT-FaCoR & vit\_base\_patch16\_224              & {\raise.17ex\hbox{$\scriptstyle\sim$}}86M & Atenção cruzada bidirecional entre faces \\
-DINOv2-LoRA & DINOv2 ViT-B/14 + LoRA / descongelamento & 8,5M a 95M & Backbone auto-supervisionado com atenção cruzada diferencial \\
-Modelo com Recuperação & ViT-B/16 ou DINOv2 (congelado)      & {\raise.17ex\hbox{$\scriptstyle\sim$}}8-12M & Memória não-paramétrica de pares positivos \\
-AdaFace-Regional & AdaFace IR-101 (estágio 4 + output\_layer) & 31,0M a 31,6M & Tokens por região do rosto com atenção cruzada entre regiões, gate e passagem simétrica \\
+AdaFace-Cosseno & AdaFace IR-101 congelado & 0 & Extrator facial pronto com cosseno e limiar em validação \\
+ViT-FaCoR & ViT-B/16 & $\sim$86M & Atenção cruzada bidirecional entre faces \\
+DINOv2-LoRA & DINOv2 ViT-B/14 & 8,5M a 95M & Backbone auto-supervisionado com LoRA e atenção cruzada diferencial \\
+Modelo com Recuperação & ViT-B/16 ou DINOv2 congelado & $\sim$8--12M & Memória não-paramétrica de pares positivos \\
+AdaFace-Regional & AdaFace IR-101 parcial & 31,0M a 31,6M & Tokens por região do rosto com atenção cruzada, gate e passagem simétrica \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \subsection{Linha de base AdaFace-Cosseno, AdaFace cosseno congelado}
 
-O AdaFace-Cosseno é a linha de base mínima recomendada pelo documento de referências do projeto. O backbone é o AdaFace IR-101 \cite{kim2022adaface} pré-treinado em WebFace4M, com todos os pesos congelados. Para cada par $(x_a, x_b)$, o modelo extrai embeddings de 512 dimensões normalizados em $L^2$ e calcula a similaridade de cosseno. O escore é levado para o intervalo $[0, 1]$ pela transformação $\tilde{s} = (\cos(f(x_a), f(x_b)) + 1)/2$, e o limiar de decisão é o ponto que maximiza F1 na validação. Não há treino nem parâmetros treináveis. O AdaFace-Cosseno mostra o desempenho de um extrator facial pronto, sem nenhuma adaptação, e serve para isolar o quanto os modelos treinados ganham por conta da arquitetura.
+O AdaFace-Cosseno é a linha de base sem treinamento usada para medir o quanto um extrator facial especializado já resolve a tarefa sem adaptação ao FIW. O backbone é o AdaFace IR-101 \cite{kim2022adaface}, pré-treinado em WebFace4M para reconhecimento facial. A escolha também se apoia no uso consolidado de embeddings de reconhecimento facial e similaridade angular em verificação de faces, como em ArcFace \cite{deng2019arcface}. Para cada par $(x_a, x_b)$, o modelo extrai embeddings de 512 dimensões normalizados em $L^2$ e calcula a similaridade de cosseno. O escore é levado para o intervalo $[0, 1]$ pela transformação $\tilde{s} = (\cos(f(x_a), f(x_b)) + 1)/2$, e o limiar de decisão é o ponto que maximiza F1 na validação. Não há treino nem parâmetros treináveis. O AdaFace-Cosseno mostra o desempenho de um extrator facial pronto, sem nenhuma adaptação, e serve para isolar o quanto os modelos treinados ganham por conta da arquitetura.
 
 \subsection{ViT-FaCoR, ViT com atenção cruzada bidirecional}
 
@@ -87,29 +112,29 @@ O ViT-FaCoR troca o backbone convolucional por um Vision Transformer, o vit\_bas
 
 \subsection{DINOv2-LoRA, DINOv2 com LoRA e atenção cruzada diferencial}
 
-O DINOv2-LoRA junta três técnicas recentes ainda pouco testadas em parentesco facial. O backbone é o DINOv2 \cite{oquab2024dinov2}, na variante vit\_base\_patch14\_dinov2, treinado de forma auto-supervisionada em 142 milhões de imagens sem rótulo. A adaptação ao domínio é feita com adaptadores LoRA \cite{hu2021lora} inseridos nas projeções qkv e proj de cada bloco do Transformer, com rank 8 e alpha 16 na configuração padrão. O módulo de atenção cruzada é uma variante diferencial, proposta originalmente para modelos de linguagem em 2024, que calcula a atenção como a diferença entre duas projeções softmax e tende a suprimir correspondências espúrias entre regiões irrelevantes das faces. Uma cabeça auxiliar prevê o tipo de relação a partir de um token aprendível, em paralelo com a cabeça binária de verificação.
+O DINOv2-LoRA integra três técnicas recentes ainda pouco testadas em parentesco facial. O backbone é o DINOv2 \cite{oquab2024dinov2}, na variante vit\_base\_patch14\_dinov2, treinado de forma auto-supervisionada em 142 milhões de imagens sem rótulo. A adaptação ao domínio é feita com adaptadores LoRA \cite{hu2021lora} inseridos nas projeções qkv e proj de cada bloco do Transformer, com rank 8 e alpha 16 na configuração padrão. O módulo de atenção cruzada é uma variante diferencial, proposta originalmente para modelos de linguagem em 2024, que calcula a atenção como a diferença entre duas projeções softmax e tende a suprimir correspondências espúrias entre regiões irrelevantes das faces. Uma cabeça auxiliar prevê o tipo de relação a partir de um token aprendível, em paralelo com a cabeça binária de verificação.
 
 O DINOv2-LoRA é testado em quatro regimes de descongelamento do backbone, comparados no Capítulo~\ref{cap:resultados}. No regime de referência, o DINOv2 fica congelado e o treino atinge apenas LoRA, atenção cruzada e cabeças, com cerca de 8,5 milhões de parâmetros treináveis, quase dez vezes menos que o ViT-FaCoR. As outras três variantes liberam o backbone em graus diferentes. Quando os quatro blocos finais do DINOv2 recebem gradiente, com taxa de aprendizado cem vezes menor que a da cabeça, o descongelamento parcial chega a cerca de 30 milhões de parâmetros ativos. Liberando o backbone inteiro e usando pico de taxa de aprendizado no estilo do ViT-FaCoR, o descongelamento completo ativa cerca de 95 milhões de parâmetros. Já a variante híbrida abandona o ramo único do DINOv2 e usa dois encoders congelados em paralelo, o DINOv2 e o vit\_base\_patch16\_224 do ViT-FaCoR, deixando cerca de 11,6 milhões de parâmetros treináveis apenas nos módulos de fusão e atenção. Rank do LoRA, dropout, escala da taxa de aprendizado e razão entre BCE e Contrastive Loss mudam de uma execução para outra e ficam detalhados no log experimental, com resumo no Capítulo~\ref{cap:resultados}.
 
 \subsection{Modelo com Recuperação, aumentado por recuperação sobre galeria}
 
-No Modelo com Recuperação, a inferência não é calculada apenas a partir dos pesos da rede. A arquitetura incorpora uma galeria de pares positivos do conjunto de treino e, na inferência, recupera os K pares mais parecidos com o par de consulta. Os pares recuperados, junto com seus tipos de relação, são convertidos em tokens de contexto para um módulo de atenção cruzada que compara a consulta com os suportes. O encoder fica congelado, e a galeria é refeita a cada dobra a partir da partição de treino correspondente, sem exemplos de validação ou teste. A configuração padrão usa K igual a 32 e duas camadas de atenção cruzada, com total treinável entre 8 e 12 milhões de parâmetros, dependendo da configuração de recuperação. O objetivo é incorporar explicitamente exemplos conhecidos de parentesco parecidos com o par de consulta, em vez de representar toda essa informação apenas nos pesos da rede.
+No Modelo com Recuperação, a inferência não é calculada apenas a partir dos pesos da rede. A arquitetura incorpora uma galeria de pares positivos do conjunto de treino e, na inferência, recupera os K pares mais parecidos com o par de consulta. Os pares recuperados, junto com seus tipos de relação, são convertidos em tokens de contexto para um módulo de atenção cruzada que compara a consulta com os suportes. O \textit{encoder} fica congelado, e a galeria é refeita a cada dobra a partir da partição de treino correspondente, sem exemplos de validação ou teste. A configuração padrão usa K igual a 32 e duas camadas de atenção cruzada, com total treinável entre 8 e 12 milhões de parâmetros, dependendo da configuração de recuperação. O objetivo é incorporar explicitamente exemplos conhecidos de parentesco parecidos com o par de consulta, em vez de representar toda essa informação apenas nos pesos da rede.
 
 \subsection{AdaFace-Regional, proposta autoral com tokens por região e descongelamento parcial}
 
-O AdaFace-Regional é a proposta principal e autoral deste trabalho. O backbone é o AdaFace IR-101 \cite{kim2022adaface} pré-treinado em WebFace4M, especializado em reconhecimento facial em larga escala. No AdaFace-Regional, os três primeiros estágios permanecem congelados, e apenas o estágio 4 (os três blocos BasicBlockIR finais) e o output\_layer, que produz o embedding de 512 dimensões, recebem gradiente. Esse descongelamento parcial soma cerca de 26 milhões de parâmetros treináveis aos módulos de regiões e ao adaptador, num total de 31,55 milhões de parâmetros treináveis de um total de 70,74 milhões (44,6\%) nas variantes completas.
+O AdaFace-Regional é a proposta principal e autoral deste trabalho. O backbone é o AdaFace IR-101 \cite{kim2022adaface} pré-treinado em WebFace4M, especializado em reconhecimento facial em larga escala. No AdaFace-Regional, os três primeiros estágios permanecem congelados, e apenas o estágio 4, formado pelos três blocos BasicBlockIR finais, e o \texttt{output\_layer}, que produz o embedding de 512 dimensões, recebem gradiente. Esse descongelamento parcial soma cerca de 26 milhões de parâmetros treináveis aos módulos de regiões e ao adaptador, num total de 31,55 milhões de parâmetros treináveis de um total de 70,74 milhões, ou 44,6\% nas variantes completas.
 
-Em cima do backbone facial, o AdaFace-Regional monta uma representação por região do rosto. Cinco regiões são definidas em coordenadas fixas na imagem alinhada de 224x224 pixels: a face inteira (global), a faixa superior (olhos), a região central (nariz), a faixa inferior média (boca) e a faixa de baixo (mandíbula). Cada região é recortada e redimensionada para 112x112, e o AdaFace gera um embedding para ela. Os cinco tokens passam por uma camada bidirecional de atenção cruzada entre regiões, com 4 cabeças, que monta um mapa de atenção 5x5 entre as regiões das duas faces. Esse mapa calcula pesos entre regiões correspondentes ou complementares das duas faces, numa escala bem menor do que os mapas de patch 196x196 dos modelos baseados em ViT.
+Sobre o backbone facial, o AdaFace-Regional constrói uma representação por região do rosto. Cinco regiões são definidas em coordenadas fixas na imagem alinhada de 224x224 pixels: a face inteira, a faixa superior dos olhos, a região central do nariz, a faixa inferior média da boca e a faixa inferior da mandíbula. Cada região é recortada e redimensionada para 112x112, e o AdaFace gera um embedding para ela. Os cinco tokens passam por uma camada bidirecional de atenção cruzada entre regiões, com quatro cabeças, que produz um mapa de atenção 5x5 entre as regiões das duas faces. Esse mapa calcula pesos entre regiões correspondentes ou complementares das duas faces, numa escala menor do que os mapas de patch 196x196 dos modelos baseados em ViT.
 
-A decisão final junta três componentes. Para cada região $k \in \{1, \ldots, K\}$, com $K = 5$, o modelo calcula a similaridade entre os tokens correspondentes das duas faces, $s_k \in \mathbb{R}$. Um módulo de gating sigmoide estima um peso $w_k \in [0, 1]$ por região, que pode ser lido como o quanto aquela região importa para o par em questão. Como é sigmoide e não softmax, mais de uma região pode pesar ao mesmo tempo. O classificador final da variante de referência recebe um vetor de dimensão $4 d + 2 K + 1 = 2059$, com $d = 512$ a dimensão do embedding do AdaFace. Esse vetor concatena $g_A$ e $g_B$ (os tokens globais das duas faces), $|g_A - g_B|$ (diferença absoluta), $g_A \odot g_B$ (produto elemento a elemento), o vetor de similaridades por região $s \in \mathbb{R}^K$, o vetor de pesos do gate $w \in \mathbb{R}^K$ e o produto escalar $w^\top s$ entre os dois. A saída é um único logit, otimizado por entropia cruzada binária; na implementação, a ativação sigmoide é aplicada internamente no cálculo da perda. O pico da taxa de aprendizado é 1e-5, dez vezes menor do que a usada com o backbone totalmente congelado, valor escolhido para mitigar esquecimento catastrófico e preservar as representações latentes de identidade já consolidadas no pré-treinamento do AdaFace.
+A decisão final combina três componentes. Para cada região $k \in \{1, \ldots, K\}$, com $K = 5$, o modelo calcula a similaridade entre os tokens correspondentes das duas faces, $s_k \in \mathbb{R}$. Um módulo de gating sigmoide estima um peso $w_k \in [0, 1]$ por região, que pode ser lido como o quanto aquela região importa para o par em questão. Como é sigmoide e não softmax, mais de uma região pode pesar ao mesmo tempo. O classificador final da variante de referência recebe um vetor de dimensão $4d + 2K + 1 = 2059$, com $d = 512$ a dimensão do embedding do AdaFace. Esse vetor concatena $g_A$ e $g_B$, a diferença absoluta $|g_A - g_B|$, o produto elemento a elemento $g_A \odot g_B$, o vetor de similaridades por região $s$, o vetor de pesos do gate $w$ e o produto escalar $w^\top s$ entre os dois. A saída é um único logit, otimizado por entropia cruzada binária; na implementação, a ativação sigmoide é aplicada internamente no cálculo da perda. O pico da taxa de aprendizado é 1e-5, dez vezes menor do que a usada com o backbone totalmente congelado, valor escolhido para mitigar esquecimento catastrófico e preservar as representações latentes de identidade já consolidadas no pré-treinamento do AdaFace.
 
 Uma variante posterior, denominada fusão apenas comparativa, remove os vetores globais crus $g_A$ e $g_B$ e deixa o classificador receber só as comparações entre as faces, o que reduz a entrada para 1035 dimensões. A intenção é verificar se os vetores globais ajudam ou se atrapalham a decisão.
 
-A avaliação do AdaFace-Regional segue uma sequência de fases. Na primeira, o AdaFace fica totalmente congelado e só os 5,6 milhões de parâmetros das regiões, do adaptador, do gate e da cabeça são treinados, com taxa de aprendizado 1e-4. Na segunda, entra o descongelamento parcial do estágio 4 e do output\_layer, com taxa de aprendizado 1e-5. Depois, é adicionada uma cabeça auxiliar que classifica as onze relações do FIW, aplicada só aos pares positivos, com peso 0,05 na perda total. A variante simétrica processa cada par como $(A,B)$ e $(B,A)$; no treinamento, a perda binária é a média das duas direções, e, na avaliação, o logit final é a média dos logits das duas permutações antes da aplicação do sigmoide. Isso regulariza $f(A,B)$ e $f(B,A)$ para valores próximos e reduz atalhos que dependem da ordem do par. As variantes comparativas testam, respectivamente, a remoção dos vetores globais crus da fusão final e a combinação dessa fusão apenas comparativa com taxas de aprendizado diferentes para backbone e cabeça. Os resultados estão no Capítulo~\ref{cap:resultados}.
+A avaliação do AdaFace-Regional segue uma sequência de fases. Na primeira, o AdaFace fica totalmente congelado e só os 5,6 milhões de parâmetros das regiões, do adaptador, do gate e da cabeça são treinados, com taxa de aprendizado 1e-4. Na segunda, entra o descongelamento parcial do estágio 4 e do \texttt{output\_layer}, com taxa de aprendizado 1e-5. Depois, é adicionada uma cabeça auxiliar que classifica as onze relações do FIW, aplicada só aos pares positivos, com peso 0,05 na perda total. A variante simétrica processa cada par como $(A,B)$ e $(B,A)$; no treinamento, a perda binária é a média das duas direções, e, na avaliação, o logit final é a média dos logits das duas permutações antes da aplicação do sigmoide. Isso regulariza $f(A,B)$ e $f(B,A)$ para valores próximos e reduz atalhos que dependem da ordem do par. As variantes comparativas testam, respectivamente, a remoção dos vetores globais crus da fusão final e a combinação dessa fusão apenas comparativa com taxas de aprendizado diferentes para backbone e cabeça. Os resultados estão no Capítulo~\ref{cap:resultados}.
 
 \section{Treinamento}
 
-Todos os modelos supervisionados seguem o mesmo protocolo de treinamento, com pequenas variações por modelo onde a literatura aponta valores diferentes. A perda de aprendizado métrico usada nas execuções correspondentes é a Contrastive Loss com distância de cosseno e margem 0,3, escolhida por ter sido a configuração de maior desempenho no estudo preliminar do ViT-FaCoR. O otimizador é o AdamW, com weight decay de 5e-5 e gradient clipping de norma máxima 1,0.
+Todos os modelos supervisionados seguem o mesmo protocolo de treinamento, com pequenas variações por modelo quando a literatura ou o ciclo experimental apontam valores diferentes. A perda de aprendizado métrico usada nas execuções correspondentes é a Contrastive Loss com distância de cosseno e margem 0,3, escolhida por ter sido a configuração de maior desempenho no estudo preliminar do ViT-FaCoR. O otimizador é o AdamW, com weight decay de 5e-5 e gradient clipping de norma máxima 1,0.
 
 A taxa de aprendizado tem aquecimento linear de três a oito épocas e decai por cosseno até 1e-7. O tamanho de lote é 16, limite imposto pela memória da GPU, e o treino usa precisão mista com FP16 quando a plataforma suporta. O dropout é 0,25, e a parada antecipada interrompe o treino depois de 25 épocas sem melhora na métrica de validação. A semente principal é fixada em 42 para a amostragem de pares e as partições, com o objetivo de permitir a reconstrução das configurações experimentais registradas nos logs; isso não garante reprodutibilidade bit-a-bit em operações de GPU. A Tabela~\ref{tab:hyperparams} resume os valores padrão.
 
@@ -117,15 +142,15 @@ A taxa de aprendizado tem aquecimento linear de três a oito épocas e decai por
 \centering
 \caption{Protocolo padrão de hiperparâmetros de treinamento. Valores entre parênteses indicam ajustes finos usados em execuções específicas.}
 \label{tab:hyperparams}
-\begin{tabular}{ll}
+\begin{tabularx}{\textwidth}{l X}
 \hline
 \textbf{Parâmetro} & \textbf{Valor padrão} \\
 \hline
 Otimizador & AdamW, weight\_decay = 5e-5 \\
-Taxa de aprendizado (pico) & 2e-6 a 5e-6 (ViT-FaCoR principal em 5e-6, DINOv2-LoRA em 3e-4 por LoRA, AdaFace-Regional em 1e-5) \\
+Taxa de aprendizado (pico) & 2e-6 a 5e-6; ViT-FaCoR principal em 5e-6, DINOv2-LoRA em 3e-4 para LoRA e AdaFace-Regional em 1e-5 \\
 Agendador da taxa de aprendizado & Decaimento por cosseno até 1e-7 \\
 Aquecimento & 3 a 8 épocas, linear \\
-Tamanho de lote & 16 (com acumulação de gradiente onde aplicável) \\
+Tamanho de lote & 16, com acumulação de gradiente onde aplicável \\
 Dropout & 0,25 \\
 Recorte de gradiente & max\_norm = 1,0 \\
 Precisão mista & AMP FP16 \\
@@ -134,7 +159,7 @@ Razão negativos:positivos (avaliação) & 1:1, amostragem aleatória fixa \\
 Early stopping & paciência 25 épocas \\
 Semente & 42 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 A função de perda muda de um modelo para outro, conforme a arquitetura e a literatura associada. A Tabela~\ref{tab:perdas_por_modelo} resume a perda principal e as perdas auxiliares de cada modelo da comparação.
@@ -143,28 +168,32 @@ A função de perda muda de um modelo para outro, conforme a arquitetura e a lit
 \centering
 \caption{Função de perda principal e perdas auxiliares por modelo na comparação principal. Os pesos auxiliares variam entre execuções e ficam registrados no log experimental.}
 \label{tab:perdas_por_modelo}
-\begin{tabular}{lll}
+\begin{tabularx}{\textwidth}{l l X}
 \hline
 \textbf{Modelo} & \textbf{Perda principal} & \textbf{Perdas auxiliares} \\
 \hline
-AdaFace-Cosseno  & nenhuma (sem treinamento)                                & --- \\
-ViT-FaCoR & Contrastive Loss (cosseno, margem 0{,}3)            & --- \\
-DINOv2-LoRA & Contrastive Loss (cosseno, margem 0{,}3)            & BCE binária; classificação de relação \\
-Modelo com Recuperação & BCE binária                                               & Contrastive Loss; classificação de relação \\
-AdaFace-Regional & BCE binária; BCE simétrica nas variantes simétricas             & classificação de relação nos pares positivos (peso 0,05) \\
+AdaFace-Cosseno & nenhuma & sem treinamento \\
+ViT-FaCoR & Contrastive Loss & cosseno, margem 0{,}3 \\
+DINOv2-LoRA & Contrastive Loss & BCE binária; classificação de relação \\
+Modelo com Recuperação & BCE binária & Contrastive Loss; classificação de relação \\
+AdaFace-Regional & BCE binária & BCE simétrica nas variantes simétricas; classificação de relação nos pares positivos com peso 0,05 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \section{Quanto do backbone é descongelado}
 
-Quanto liberar do backbone pré-treinado é uma escolha importante de modelagem, e cada modelo da comparação adota um regime próprio. O ViT-FaCoR é treinado sem congelar o ViT pré-treinado em ImageNet. O DINOv2-LoRA cobre quatro regimes, que vão de LoRA com o backbone todo congelado até o descongelamento completo do encoder, descritos na sua subseção. No Modelo com Recuperação, o encoder ViT-B/16 permanece congelado em todas as execuções, e o ganho vem do módulo de recuperação e da atenção cruzada sobre os suportes. O AdaFace-Regional congela os três primeiros estágios do AdaFace IR-101 e libera o último estágio mais a camada de saída, com taxa de aprendizado reduzida para preservar as representações de identidade já consolidadas. O AdaFace-Cosseno não é treinado e preserva o backbone congelado por construção.
+O grau de descongelamento do modelo pré-treinado constitui uma decisão importante de projeto, pois estabelece um compromisso entre adaptação à tarefa de parentesco facial e preservação das representações aprendidas durante o pré-treinamento. Estratégias mais agressivas permitem maior especialização para a tarefa alvo, enquanto estratégias mais conservadoras tendem a reduzir o risco de perda das representações previamente adquiridas.
 
-O estudo de descongelamento do ConvNeXt-ViT é usado apenas como apoio à interpretação, não como parte da tabela principal.
+Os modelos avaliados neste trabalho adotam regimes distintos. O ViT-FaCoR é treinado com todo o Vision Transformer ajustável. O DINOv2-LoRA explora quatro configurações, que variam desde a utilização de LoRA com o backbone completamente congelado até o descongelamento integral do \textit{encoder}. No Modelo com Recuperação, o \textit{encoder} ViT-B/16 permanece congelado em todas as execuções, de modo que os ganhos de desempenho decorrem do módulo de recuperação e do mecanismo de atenção cruzada aplicado aos exemplos de suporte.
+
+No AdaFace-Regional, os três primeiros estágios do AdaFace IR-101 permanecem congelados, enquanto o último estágio e a camada de saída são ajustados durante o treinamento com taxa de aprendizado reduzida. Essa escolha busca adaptar o modelo à tarefa de parentesco facial sem descaracterizar as representações de identidade aprendidas previamente. Já o AdaFace-Cosseno não realiza treinamento adicional e, por construção, mantém todos os parâmetros do backbone congelados.
+
+Por fim, o estudo de descongelamento realizado com o ConvNeXt-ViT é utilizado apenas como apoio à interpretação dos resultados e não integra a comparação principal entre os modelos.
 
 \section{Protocolo de avaliação}
 
-O protocolo principal usa validação cruzada de cinco dobras no FIW para treino e validação, com o conjunto de teste oficial do RFIW Track-I preservado. As famílias do conjunto de desenvolvimento são distribuídas em cinco dobras disjuntas por família. Em cada iteração, uma dobra é usada como validação e as demais como treino; o modelo treinado nessa iteração é avaliado uma única vez no teste oficial. O limiar é escolhido só na validação e aplicado sem reotimização ao teste. Quando um modelo tem várias execuções, como nos estudos de congelamento, de perda ou de amostragem, cada execução aparece com seu identificador no log, e o Capítulo~\ref{cap:resultados} reporta tanto a configuração escolhida para a comparação quanto os testes extras que justificam essa escolha.
+O protocolo principal usa validação cruzada de cinco dobras no FIW para treino e validação, com o conjunto de teste oficial do RFIW Track-I preservado. As famílias do conjunto de desenvolvimento são distribuídas em cinco dobras disjuntas por família. Em cada iteração, uma dobra é usada como validação e as demais como treino; o modelo treinado nessa iteração é avaliado uma única vez no teste oficial. O limiar é escolhido só na validação e aplicado sem reotimização ao teste. Essa formulação mantém o teste oficial fixo e usa as dobras para estimar a variação de desempenho associada à escolha das famílias de treino e validação.
 
 A escolha do limiar segue o mesmo procedimento em todas as dobras do FIW. Depois do treino, o modelo gera escores na validação, e uma busca em grade no intervalo de 0,10 a 0,95 encontra o limiar $\tau^*$ que maximiza F1 na validação. Esse mesmo $\tau^*$ é aplicado, sem reotimizar, na partição de teste. Essa separação evita o vazamento que aconteceria se o limiar fosse escolhido sobre o próprio teste.
 
@@ -172,7 +201,9 @@ Como a escala do escore muda de um modelo para outro, cada um é levado para o i
 
 Junto ao limiar escolhido em validação, são reportadas também métricas que não dependem dele. ROC AUC e Average Precision resumem o desempenho ao longo de toda a curva. Já TAR@FAR=0,1, TAR@FAR=0,01 e TAR@FAR=0,001 são medidas em pontos de operação fixados pela taxa de falso positivo: elas dão a fração de pares positivos aceitos corretamente quando o limiar é ajustado para produzir 10\%, 1\% e 0,1\% de falsa aceitação, respectivamente. Acurácia, F1, precisão e revocação, quando aparecem, dependem do limiar $\tau^*$ escolhido em validação e por isso são lidas junto com o ponto de operação declarado.
 
-O AdaFace-Cosseno segue a mesma regra de escolha de limiar em validação. Como ele é congelado e o teste oficial é fixo, as métricas independentes de limiar são determinísticas entre dobras; no experimento final, até o limiar escolhido coincidiu nas cinco dobras. O DINOv2-LoRA e o Modelo com Recuperação usam o regime declarado em suas subseções: o DINOv2-LoRA cobre os quatro regimes de descongelamento já descritos (LoRA, descongelamento parcial, completo e híbrido), e, no Modelo com Recuperação, o encoder ViT-B/16 permanece congelado na execução principal. A galeria do Modelo com Recuperação é refeita a cada dobra a partir da partição de treino correspondente, sem nenhuma informação da validação ou do teste.
+O AdaFace-Cosseno segue a mesma regra de escolha de limiar em validação. Como ele é congelado e o teste oficial é fixo, as métricas independentes de limiar são determinísticas entre dobras; no experimento final, até o limiar escolhido coincidiu nas cinco dobras. O DINOv2-LoRA e o Modelo com Recuperação usam o regime declarado em suas subseções: o DINOv2-LoRA cobre os quatro regimes de descongelamento já descritos, e, no Modelo com Recuperação, o \textit{encoder} ViT-B/16 permanece congelado na execução principal. A galeria do Modelo com Recuperação é refeita a cada dobra a partir da partição de treino correspondente, sem nenhuma informação da validação ou do teste.
+
+Para os modelos avaliados por validação cruzada, também são calculados testes estatísticos pareados sobre os vetores de métricas por dobra. O teste t pareado é usado como análise paramétrica principal, e o teste de Wilcoxon signed-rank aparece como verificação não paramétrica. Como há apenas cinco dobras, o Wilcoxon bilateral tem resolução limitada: mesmo quando as cinco diferenças têm o mesmo sinal, o menor p-valor exato possível é 0,0625. Por isso, os testes são lidos como evidência complementar à média e ao desvio por dobra, e não como substituto da análise operacional por métrica.
 
 \section{Métricas}
 
@@ -180,13 +211,13 @@ O protocolo usa três grupos de métricas. As métricas binárias avaliam a veri
 
 O ROC AUC é a métrica principal por não depender da escolha de limiar. As métricas TAR@FAR importam porque medem o desempenho em regime de alta precisão, mais próximo do uso prático em aplicações forenses, onde um falso positivo custa caro.
 
-Por relação, são reportadas acurácia e F1 condicionadas ao tipo de parentesco do par. Esse recorte é importante porque a literatura mostra desempenho bem desigual entre relações: pais e filhos chegam a valores altos, e avós e netos são historicamente mais difíceis.
+Por relação, são reportadas acurácia e F1 condicionadas ao tipo de parentesco do par. Esse recorte é importante porque a literatura mostra desempenho desigual entre relações: pais e filhos chegam a valores altos, e avós e netos são historicamente mais difíceis.
 
 Para as linhas de base binárias com VLMs, descritas mais adiante, são usadas as mesmas métricas de verificação, mas com a ressalva de que o limiar é fixado em 0,5 por não haver validação própria. A avaliação multiclasse anterior dos VLMs, quando mencionada, usa métricas próprias de onze classes: acurácia, macro-precision, macro-recall, macro-F1 e matriz de confusão.
 
 \section{Linhas de base com modelos multimodais}
 
-As linhas de base com VLMs medem o que um modelo multimodal generalista consegue inferir sobre parentesco facial sem treino específico no domínio. A versão consolidada do experimento usa a mesma formulação binária dos modelos supervisionados: decidir se o par é kin ou non-kin. A tarefa multiclasse anterior, na qual o VLM escolhia uma entre onze relações positivas, fica registrada apenas como diagnóstico histórico, porque não inclui pares non-kin.
+As linhas de base com VLMs medem o que um modelo multimodal generalista consegue inferir sobre parentesco facial sem treino específico no domínio. A versão consolidada do experimento usa a mesma formulação binária dos modelos supervisionados: decidir se o par é parente (\textit{kin}) ou não-parentes (\textit{non-kin}). A tarefa multiclasse anterior, na qual o VLM escolhia uma entre onze relações positivas, fica registrada apenas como diagnóstico histórico, porque não inclui pares non-kin.
 
 \subsection{Configuração comum}
 
@@ -221,21 +252,21 @@ Antes da reformulação binária, os VLMs foram avaliados como classificadores f
 \centering
 \caption{Especificação das linhas de base com modelos multimodais no protocolo consolidado.}
 \label{tab:vlms_metodologia}
-\begin{tabular}{llll}
+\begin{tabularx}{\textwidth}{l l l X}
 \hline
 \textbf{Modelo} & \textbf{Regime} & \textbf{Tarefa} & \textbf{Amostra} \\
 \hline
 Codex (gpt-5.4-mini) & Zero-shot & kin/non-kin & 6.000 pares balanceados \\
 Claude Sonnet 4.6 & Zero-shot & kin/non-kin & 6.000 pares balanceados \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \section{Hardware e software}
 
 Todos os experimentos rodaram em uma única máquina com GPU AMD Radeon RX 6750 XT, arquitetura RDNA2 com identificador gfx1031 e 12 GB de memória GDDR6. A plataforma de software é o ROCm 5.7 com PyTorch 2.3.1 compilado para essa versão do ROCm. As variáveis de ambiente \texttt{HSA\_OVERRIDE\_GFX\_VERSION=10.3.0}, \texttt{MIOPEN\_FIND\_MODE=FAST} e \texttt{HSA\_FORCE\_FINE\_GRAIN\_PCIE=1} são definidas antes de iniciar o framework, para garantir compatibilidade e um desempenho razoável. O treino usa precisão mista, com FP16 nas operações suportadas e FP32 nas demais.
 
-Esse hardware impôs restrições reais nas escolhas de método. O maior lote possível com backbones descongelados é pequeno, e qualquer treinamento que exija mais de cerca de 10 GB de memória excede a capacidade disponível. O ConvNeXt-ViT, com cerca de 176 milhões de parâmetros, não cabe em descongelamento completo com lote maior nessa GPU. No DINOv2-LoRA, os regimes com backbone congelado usam LoRA para manter a memória dentro do limite, enquanto o descongelamento completo exige lote menor e acumulação de gradiente. O Modelo com Recuperação armazena a galeria de pares positivos principalmente na RAM da máquina, fora da GPU, para liberar VRAM para o encoder e a atenção cruzada de recuperação.
+Esse hardware impôs restrições reais nas escolhas de método. O maior lote possível com backbones descongelados é 16, e qualquer treinamento que exija mais de cerca de 10 GB de memória excede a capacidade disponível. O ConvNeXt-ViT, com cerca de 176 milhões de parâmetros, não cabe em descongelamento completo com lote maior nessa GPU. No DINOv2-LoRA, os regimes com backbone congelado usam LoRA para manter a memória dentro do limite, enquanto o descongelamento completo exige lote menor e acumulação de gradiente. O Modelo com Recuperação armazena a galeria de pares positivos principalmente na RAM da máquina, fora da GPU, para liberar VRAM para o \textit{encoder} e a atenção cruzada de recuperação.
 
 \section{Reprodutibilidade}
 

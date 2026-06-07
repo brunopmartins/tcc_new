@@ -7,38 +7,38 @@ A métrica principal é o ROC AUC, por ser independente do limiar de decisão. A
 
 \section{Resultados gerais em FIW}
 
-A Tabela~\ref{tab:fiw_main} resume os resultados dos modelos avaliados sob validação cruzada em FIW. Para o AdaFace-Regional, são mantidas três configurações finalistas porque elas representam escolhas operacionais próximas, mas não idênticas. A configuração Simétrica consolida o ganho principal do modelo, a Comparativa desloca o ponto de operação para baixa falsa aceitação e a configuração com Negativos Difíceis combina essa estratégia com pares negativos mais próximos dos positivos. AdaFace-Cosseno, DINOv2-LoRA e Modelo com Recuperação aparecem na mesma tabela para situar, respectivamente, a linha de base sem treinamento, a adaptação com DINOv2 e a alternativa baseada em recuperação de pares positivos. Os VLMs não entram nessa tabela, porque foram avaliados em outro cenário experimental.
+A Tabela~\ref{tab:fiw_main} resume os resultados dos modelos avaliados sob validação cruzada em FIW. Todos os modelos supervisionados da comparação principal, incluindo DINOv2-LoRA e Modelo com Recuperação, foram avaliados no regime de cinco dobras. Para o AdaFace-Regional, são mantidas três configurações finalistas porque elas representam escolhas operacionais próximas, mas não idênticas. A configuração Simétrica consolida o ganho principal do modelo, a Comparativa desloca o ponto de operação para baixa falsa aceitação e a configuração com Negativos Difíceis combina essa estratégia com pares negativos mais próximos dos positivos. AdaFace-Cosseno, DINOv2-LoRA e Modelo com Recuperação aparecem na mesma tabela para situar, respectivamente, a linha de base sem treinamento, a adaptação com DINOv2 e a alternativa baseada em recuperação de pares positivos. Os VLMs não entram nessa tabela, porque foram avaliados em outro cenário experimental.
 
 \begin{table}[h]
 \centering
 \scriptsize
-\setlength{\tabcolsep}{2pt}
+\setlength{\tabcolsep}{3pt}
 \caption{Resultados gerais em FIW sob validação cruzada de cinco dobras. Os valores reportam média $\pm$ desvio padrão; no AdaFace-Cosseno, o desvio é zero porque o extrator é congelado e o conjunto de teste é fixo.}
 \label{tab:fiw_main}
-\begin{tabular}{lrrrrr}
+\begin{tabularx}{\textwidth}{Xccccc}
 \hline
-\textbf{Modelo} & \textbf{AUC} & \textbf{Avg Prec.} & \textbf{TAR@FAR=0,001} & \textbf{TAR@FAR=0,01} & \textbf{TAR@FAR=0,1} \\
+\textbf{Modelo} & \textbf{AUC} & \textbf{AP} & \textbf{TAR@0{,}001} & \textbf{TAR@0{,}01} & \textbf{TAR@0{,}1} \\
 \hline
-AdaFace-Regional com Negativos Difíceis (CV)       & \textbf{0{,}876 $\pm$ 0{,}003} & \textbf{0{,}856 $\pm$ 0{,}003} & 0{,}068 $\pm$ 0{,}015 & 0{,}207 $\pm$ 0{,}011 & \textbf{0{,}595 $\pm$ 0{,}008} \\
-AdaFace-Regional Comparativo (CV)                  & 0{,}874 $\pm$ 0{,}004 & 0{,}853 $\pm$ 0{,}005 & 0{,}059 $\pm$ 0{,}012 & 0{,}192 $\pm$ 0{,}014 & 0{,}589 $\pm$ 0{,}015 \\
-AdaFace-Regional Simétrico (CV)                     & 0{,}873 $\pm$ 0{,}004 & 0{,}848 $\pm$ 0{,}004 & 0{,}042 $\pm$ 0{,}013 & 0{,}174 $\pm$ 0{,}012 & 0{,}577 $\pm$ 0{,}009 \\
-ViT-FaCoR (CV)                                      & 0{,}846 $\pm$ 0{,}004 & 0{,}813 $\pm$ 0{,}005 & 0{,}022 $\pm$ 0{,}006 & 0{,}135 $\pm$ 0{,}012 & 0{,}496 $\pm$ 0{,}026 \\
-DINOv2-LoRA com Descongelamento Completo (CV)         & 0{,}814 $\pm$ 0{,}007 & 0{,}784 $\pm$ 0{,}009 & 0{,}013 $\pm$ 0{,}002 & 0{,}102 $\pm$ 0{,}009 & 0{,}469 $\pm$ 0{,}018 \\
-AdaFace-Cosseno (CV; sem treino)                      & 0{,}799 $\pm$ 0{,}000 & 0{,}809 $\pm$ 0{,}000 & \textbf{0{,}071 $\pm$ 0{,}000} & \textbf{0{,}218 $\pm$ 0{,}000} & 0{,}524 $\pm$ 0{,}000 \\
-Modelo com Recuperação (CV)                           & 0{,}778 $\pm$ 0{,}008 & 0{,}741 $\pm$ 0{,}015 & 0{,}014 $\pm$ 0{,}002 & 0{,}078 $\pm$ 0{,}019 & 0{,}384 $\pm$ 0{,}030 \\
+AdaFace-Regional com Negativos Difíceis & \textbf{0{,}876 $\pm$ 0{,}003} & \textbf{0{,}856 $\pm$ 0{,}003} & 0{,}068 $\pm$ 0{,}015 & 0{,}207 $\pm$ 0{,}011 & \textbf{0{,}595 $\pm$ 0{,}008} \\
+AdaFace-Regional Comparativo & 0{,}874 $\pm$ 0{,}004 & 0{,}853 $\pm$ 0{,}005 & 0{,}059 $\pm$ 0{,}012 & 0{,}192 $\pm$ 0{,}014 & 0{,}589 $\pm$ 0{,}015 \\
+AdaFace-Regional Simétrico & 0{,}873 $\pm$ 0{,}004 & 0{,}848 $\pm$ 0{,}004 & 0{,}042 $\pm$ 0{,}013 & 0{,}174 $\pm$ 0{,}012 & 0{,}577 $\pm$ 0{,}009 \\
+ViT-FaCoR & 0{,}846 $\pm$ 0{,}004 & 0{,}813 $\pm$ 0{,}005 & 0{,}022 $\pm$ 0{,}006 & 0{,}135 $\pm$ 0{,}012 & 0{,}496 $\pm$ 0{,}026 \\
+DINOv2-LoRA com Descongelamento Completo & 0{,}814 $\pm$ 0{,}007 & 0{,}784 $\pm$ 0{,}009 & 0{,}013 $\pm$ 0{,}002 & 0{,}102 $\pm$ 0{,}009 & 0{,}469 $\pm$ 0{,}018 \\
+AdaFace-Cosseno, sem treino & 0{,}799 $\pm$ 0{,}000 & 0{,}809 $\pm$ 0{,}000 & \textbf{0{,}071 $\pm$ 0{,}000} & \textbf{0{,}218 $\pm$ 0{,}000} & 0{,}524 $\pm$ 0{,}000 \\
+Modelo com Recuperação & 0{,}778 $\pm$ 0{,}008 & 0{,}741 $\pm$ 0{,}015 & 0{,}014 $\pm$ 0{,}002 & 0{,}078 $\pm$ 0{,}019 & 0{,}384 $\pm$ 0{,}030 \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 O maior AUC validado do capítulo é obtido pelo AdaFace-Regional com Negativos Difíceis, com 0,876 $\pm$ 0,003. Esse valor corresponde à média e ao desvio padrão das cinco dobras, sem agrupar predições de modelos treinados em partições distintas. Assim, ele é o resultado oficial usado para representar a capacidade de generalização da configuração final.
 
-A comparação mais importante é entre o AdaFace-Regional e o ViT-FaCoR, porque o ViT-FaCoR representa a principal arquitetura supervisionada anterior do estudo. A configuração com Negativos Difíceis alcança AUC médio de 0,876, contra 0,846 do ViT-FaCoR, diferença de 0,030 AUC. As outras configurações finalistas do AdaFace-Regional apresentam leitura semelhante: a Simétrica e a Comparativa também ficam cerca de 0,027 AUC acima do ViT-FaCoR. Como o desvio por dobra está em torno de 0,004 nesses modelos, a diferença observada é maior do que a variação média entre dobras. Esse é o principal resultado experimental do trabalho: a combinação de backbone facial especializado, tokens regionais anatômicos, cabeça auxiliar de relação e passagem simétrica apresenta ganho empírico sobre o ViT-FaCoR no FIW sob o protocolo adotado. Os testes pareados sobre cinco dobras reforçam essa diferença em AUC, mas a leitura continua limitada pelo tamanho pequeno da amostra de dobras e pela ausência de repetição por múltiplas sementes.
+A comparação mais importante é entre o AdaFace-Regional e o ViT-FaCoR, porque o ViT-FaCoR representa a principal arquitetura supervisionada anterior do estudo. A configuração com Negativos Difíceis alcança AUC médio de 0,876, contra 0,846 do ViT-FaCoR, diferença de 0,030 AUC. As outras configurações finalistas do AdaFace-Regional apresentam leitura semelhante: a Simétrica e a Comparativa também ficam cerca de 0,027 AUC acima do ViT-FaCoR. Como o desvio por dobra está em torno de 0,004 nesses modelos, a diferença observada é maior do que a variação média entre dobras. Esse é o principal resultado experimental do trabalho: a combinação de backbone facial especializado, tokens regionais anatômicos, cabeça auxiliar de relação e passagem simétrica apresenta ganho empírico sobre o ViT-FaCoR no FIW sob o protocolo adotado.
+
+A análise pareada das cinco dobras reforça essa interpretação para a métrica principal. Comparando AdaFace-Regional com Negativos Difíceis e ViT-FaCoR, a diferença média é de +0,0299 em ROC AUC, com teste t pareado resultando em $t(4)=10{,}264$ e $p=0{,}0005$. As configurações Simétrica e Comparativa também apresentam AUC superior à do ViT-FaCoR no teste t pareado, com $p=0{,}0014$ e $p=0{,}0013$, respectivamente. No teste de Wilcoxon signed-rank bilateral, entretanto, as três comparações resultam em $p=0{,}0625$, valor influenciado pelo número reduzido de observações ($n=5$ dobras). Por isso, os testes são lidos como evidência complementar à média e ao desvio por dobra, e não como substituto da análise operacional por métrica.
 
 A escolha entre as três configurações finalistas exige mais cuidado. Em AUC, elas ficam muito próximas: 0,873, 0,874 e 0,876, todas dentro de uma faixa menor que o próprio desvio entre dobras. Essa sobreposição não sustenta uma afirmação forte de superioridade entre as três variantes; ela indica, antes, que as configurações ocupam uma região de desempenho semelhante. A diferença entre elas aparece mais claramente no ponto de operação. Em TAR@FAR=0,001, a configuração com Negativos Difíceis chega a 0,068 $\pm$ 0,015, enquanto a Simétrica fica em 0,042 $\pm$ 0,013. Assim, as três configurações são próximas em ranking global, mas a configuração com Negativos Difíceis é a escolha mais adequada quando falsos positivos têm custo elevado.
 
 O comportamento do AdaFace-Cosseno reforça a importância de separar AUC global e regime operacional. Mesmo sem treinamento específico para parentesco, essa linha de base permanece forte nas faixas de baixa falsa aceitação. Em TAR@FAR=0,01, o valor do AdaFace-Cosseno (0,218 $\pm$ 0,000) fica no mesmo patamar da configuração com Negativos Difíceis (0,207 $\pm$ 0,011). Em TAR@FAR=0,001, AdaFace-Cosseno (0,071 $\pm$ 0,000) fica ligeiramente acima dos 0,068 $\pm$ 0,015 da configuração com Negativos Difíceis. Isso indica que embeddings de reconhecimento facial já carregam um sinal útil para parentesco, principalmente quando a comparação exige baixa taxa de falso positivo. A contribuição do AdaFace-Regional, portanto, não é substituir esse sinal em todos os pontos de operação, mas melhorar a ordenação global e oferecer um modelo adaptado à tarefa.
-
-A validação cruzada também mostra que algumas execuções únicas do ciclo de desenvolvimento caíram em regiões favoráveis da distribuição. No DINOv2-LoRA, a execução única com AUC 0,822 ficou acima da média por dobra da configuração correspondente (0,814 $\pm$ 0,007). A execução única da configuração Simétrica do AdaFace-Regional, com AUC 0,879, ficou cerca de 1,5 desvio acima da média por dobra dessa mesma configuração (0,873). A execução única da configuração com Negativos Difíceis, com AUC 0,882, também ficou acima da média por dobra (0,876). Já o Modelo com Recuperação teve execução única praticamente coincidente com a validação cruzada, com AUC 0,776 contra média 0,778 $\pm$ 0,008. Esse resultado confirma a necessidade de reportar médias por dobra, especialmente quando as diferenças entre configurações são pequenas.
 
 Sob validação cruzada, o DINOv2-LoRA alcança AUC 0,814 $\pm$ 0,007, ficando acima da linha de base AdaFace-Cosseno em AUC, mas abaixo do ViT-FaCoR. O resultado indica que a adaptação do DINOv2 por LoRA e descongelamento completo melhora a linha de base sem treinamento na ordenação global, porém não alcança a arquitetura com ViT e atenção cruzada bidirecional. O Modelo com Recuperação apresenta AUC 0,778 $\pm$ 0,008, abaixo do AdaFace-Cosseno, mas ainda é relevante na análise por relação porque o mecanismo de recuperação tende a reduzir a diferença entre classes frequentes e classes raras. Dessa forma, DINOv2-LoRA e Modelo com Recuperação ajudam a delimitar duas hipóteses negativas: a representação auto-supervisionada adaptada não resolve sozinha o problema, e a recuperação de exemplos melhora a uniformidade em algumas relações sem necessariamente melhorar o ranking global.
 
@@ -46,7 +46,7 @@ Os VLMs binários, avaliados em protocolo separado, mostram um limite claro da i
 
 \section{Execuções do DINOv2-LoRA e do AdaFace-Regional}
 
-Esta seção registra as execuções de desenvolvimento do DINOv2-LoRA e do AdaFace-Regional. O objetivo não é substituir a comparação principal da Tabela~\ref{tab:fiw_main}, mas mostrar como as configurações finais foram escolhidas. No DINOv2-LoRA, as execuções únicas serviram para selecionar a configuração com descongelamento completo; a validação cruzada posterior dessa configuração é o resultado reportado na tabela principal. No AdaFace-Regional, o ciclo foi mais longo, porque nele está a proposta autoral do trabalho.
+Esta seção registra as execuções de desenvolvimento do DINOv2-LoRA e do AdaFace-Regional. O objetivo não é substituir a comparação principal da Tabela~\ref{tab:fiw_main}, mas mostrar como as configurações finais foram escolhidas. No DINOv2-LoRA, as execuções de desenvolvimento serviram para selecionar a configuração com descongelamento completo. No AdaFace-Regional, o ciclo foi mais longo, porque nele está a proposta autoral do trabalho.
 
 O DINOv2-LoRA foi avaliado em sete execuções, cobrindo regimes de adaptação e descongelamento do DINOv2. A Tabela~\ref{tab:dinov2_lora_execucoes} mostra que o melhor AUC da família aparece no descongelamento completo, enquanto o melhor TAR@FAR=0,01 ocorre na configuração inicial com LoRA. Isso impede uma leitura simples de que liberar mais parâmetros sempre melhora todos os regimes de avaliação.
 
@@ -54,7 +54,7 @@ O DINOv2-LoRA foi avaliado em sete execuções, cobrindo regimes de adaptação 
 \centering
 \scriptsize
 \setlength{\tabcolsep}{3pt}
-\caption{Execuções do DINOv2-LoRA em FIW (execução única).}
+\caption{Execuções de desenvolvimento do DINOv2-LoRA em FIW.}
 \label{tab:dinov2_lora_execucoes}
 \begin{tabular}{lrrrrr}
 \hline
@@ -71,7 +71,7 @@ DINOv2 + ViT-FaCoR            & 11{,}6M & 0{,}810 & 71{,}9\% & 0{,}136          
 \end{tabular}
 \end{table}
 
-A leitura do DINOv2-LoRA é negativa para a hipótese de que DINOv2 congelado com LoRA e atenção diferencial seria suficiente para alcançar o ViT-FaCoR. Mesmo na configuração com maior AUC global em execução única, a validação cruzada posterior fica em 0,814 $\pm$ 0,007 AUC, abaixo do ViT-FaCoR. Esse ganho em AUC ocorre, porém, em detrimento do regime de baixa falsa aceitação, que apresenta degradação em relação à configuração inicial com LoRA. A variante híbrida com pesos do ViT-FaCoR também não transfere o desempenho do sistema original, o que sugere que o resultado do ViT-FaCoR depende do conjunto formado por backbone, atenção cruzada, função de perda e calibração, e não apenas do encoder isolado.
+A leitura do DINOv2-LoRA é negativa para a hipótese de que DINOv2 congelado com LoRA e atenção diferencial seria suficiente para alcançar o ViT-FaCoR. Entre as execuções de desenvolvimento, o melhor AUC global aparece no descongelamento completo, enquanto a configuração inicial com LoRA preserva o melhor TAR@FAR=0,01. Esse comportamento mostra que o ganho em AUC ocorre em detrimento do regime de baixa falsa aceitação. A variante híbrida com pesos do ViT-FaCoR também não transfere o desempenho do sistema original, o que sugere que o resultado do ViT-FaCoR depende do conjunto formado por backbone, atenção cruzada, função de perda e calibração, e não apenas do encoder isolado.
 
 O AdaFace-Regional teve o ciclo de desenvolvimento mais extenso. A Tabela~\ref{tab:adaface_regional_execucoes} resume as principais execuções em FIW. O descongelamento parcial é o primeiro salto relevante, porque libera parte do AdaFace. A configuração Simétrica introduz a passagem nas duas ordens e consolida o ganho central da arquitetura. As configurações seguintes ajustam o ponto de operação, com destaque para a configuração com Negativos Difíceis, que acrescenta pares negativos mais difíceis ao treino.
 
@@ -79,7 +79,7 @@ O AdaFace-Regional teve o ciclo de desenvolvimento mais extenso. A Tabela~\ref{t
 \centering
 \scriptsize
 \setlength{\tabcolsep}{3pt}
-\caption{Execuções do AdaFace-Regional em FIW (execução única). As configurações finalistas Simétrica, Comparativa e com Negativos Difíceis foram depois validadas por cinco dobras (Tabela~\ref{tab:fiw_main}); as execuções únicas das configurações Simétrica e com Negativos Difíceis ficaram acima de suas respectivas médias por dobra.}
+\caption{Execuções de desenvolvimento do AdaFace-Regional em FIW.}
 \label{tab:adaface_regional_execucoes}
 \begin{tabular}{lrrrrr}
 \hline
@@ -100,7 +100,7 @@ negativos difíceis reais (30\%)  & \textbf{0{,}882} & \textbf{0{,}865} & \textb
 \end{tabular}
 \end{table}
 
-A sequência mostra que o AdaFace-Regional depende principalmente de duas mudanças. A primeira é o descongelamento parcial: com AdaFace congelado, o modelo fica em AUC 0,746, enquanto o descongelamento parcial sobe para 0,856 ao liberar o último estágio e a camada de saída. A segunda é a passagem simétrica, que processa cada par nas duas ordens, $(A,B)$ e $(B,A)$, e reduz atalhos dependentes da posição das imagens. Essa mudança aumenta o AUC de execução única em 0,022 sobre o descongelamento parcial e reduz o gap validação-teste de -0,076 para -0,026.
+A sequência mostra que o AdaFace-Regional depende principalmente de duas mudanças. A primeira é o descongelamento parcial: com AdaFace congelado, o modelo fica em AUC 0,746, enquanto o descongelamento parcial sobe para 0,856 ao liberar o último estágio e a camada de saída. A segunda é a passagem simétrica, que processa cada par nas duas ordens, $(A,B)$ e $(B,A)$, e reduz atalhos dependentes da posição das imagens. Essa mudança aumenta o AUC no ciclo de desenvolvimento em 0,022 sobre o descongelamento parcial e reduz o gap validação-teste de -0,076 para -0,026.
 
 A configuração com Negativos Difíceis fecha o ciclo ao avaliar pares negativos semanticamente mais próximos dos positivos. Nessa configuração, 30\% dos negativos de treino são formados por pessoas de famílias diferentes, mas com os mesmos papéis do par positivo de referência. Esses pares aumentam a exigência discriminativa da cabeça de decisão porque aproximam a estrutura visual e relacional dos exemplos positivos sem violar a separação por família. O efeito aparece principalmente na especificidade de não-parentes e nas métricas de baixa falsa aceitação, ainda que com custo em algumas classes positivas.
 
@@ -108,7 +108,7 @@ Também é importante registrar as tentativas que não produziram ganho claro. A
 
 \section{Análise por tipo de relação}
 
-A análise por tipo de relação permite verificar se o ganho do AdaFace-Regional é distribuído entre os vínculos ou concentrado em alguns grupos. A Tabela~\ref{tab:per_rel_compare} apresenta a acurácia por relação para as três configurações finalistas do AdaFace-Regional, como média e desvio padrão sobre cinco dobras. Como referência, a execução única com descongelamento parcial ficava em torno de 68\% nas relações entre pais e filhos, entre 75\% e 79\% nas relações entre irmãos e entre 37\% e 52\% nas relações entre avós e netos.
+A análise por tipo de relação permite verificar se o ganho do AdaFace-Regional é distribuído entre os vínculos ou concentrado em alguns grupos. A Tabela~\ref{tab:per_rel_compare} apresenta a acurácia por relação para as três configurações finalistas do AdaFace-Regional, como média e desvio padrão sobre cinco dobras.
 
 \begin{table}[h]
 \centering
