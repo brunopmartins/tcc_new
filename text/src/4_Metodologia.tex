@@ -89,7 +89,9 @@ $\downarrow$\\[0.4em]
 \centering
 \caption{Visão geral dos cinco modelos comparados, com backbone, total de parâmetros treináveis e ideia central de cada um.}
 \label{tab:modelos_metodologia}
-\begin{tabularx}{\textwidth}{l l c X}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.45cm} >{\raggedright\arraybackslash}p{2.9cm} >{\centering\arraybackslash}p{1.55cm} X}
 \hline
 \textbf{Modelo} & \textbf{Backbone} & \textbf{Params} & \textbf{Ideia central} \\
 \hline
@@ -235,6 +237,10 @@ A primeira linha de base é o gpt-5.4-mini, executado pelo Codex CLI em \texttt{
 \subsection{Claude Sonnet binário zero-shot}
 
 A segunda linha de base é o claude-sonnet-4-6, avaliado por visão direta pela API da Anthropic, também em regime zero-shot. O experimento usa 6.000 pares balanceados, com 3.000 positivos e 3.000 negativos, amostrados do pool de teste do FIW usado pelos modelos supervisionados. A execução foi realizada entre 1 e 2 de junho de 2026 com o script \texttt{tools/run\_claude\_vlm\_fiw\_binary.py}, e os artefatos ficaram em \texttt{data/claude\_vlm\_fiw\_binary\_6000/}. A saída esperada é um JSON com \texttt{is\_related} booleano e \texttt{confidence}.
+
+\subsection{Referência supervisionada no manifesto usado pelo Claude}
+
+Para controlar a comparação entre um VLM e um modelo supervisionado no mesmo conjunto de pares, o checkpoint R012 do AdaFace-Regional também foi avaliado diretamente sobre o manifesto de 6.000 pares usado pelo Claude Sonnet, com o script \texttt{tools/eval\_m12\_on\_manifest.py}. Essa execução usa o mesmo checkpoint e o mesmo pré-processamento do AdaFace-Regional, mas não substitui o teste oficial completo nem a validação cruzada da comparação principal. Sua função é apenas servir como referência supervisionada no mesmo subconjunto balanceado de 3.000 pares kin e 3.000 pares non-kin usado na execução do Claude.
 
 \subsection{Avaliação multiclasse histórica}
 

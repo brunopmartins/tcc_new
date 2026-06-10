@@ -193,7 +193,35 @@ Codex gpt-5.4-mini & 2.396 & 604 & 1.857 & 1.143 \\
 \end{tabular}
 \end{table}
 
-A comparação com os modelos supervisionados deve ser feita com cautela. Os VLMs respondem à mesma tarefa binária, mas não têm treinamento no FIW, não usam validação cruzada e não ajustam limiar por validação. Ainda assim, as métricas independentes de limiar são informativas: o Claude fica próximo da linha de base facial sem treinamento, mas abaixo dela; o Codex fica substancialmente abaixo; e ambos ficam distantes do AdaFace-Regional e do ViT-FaCoR. Isso indica que conhecimento visual geral não substitui adaptação supervisionada para verificação de parentesco facial.
+Para comparar o VLM mais forte com uma referência supervisionada no mesmo conjunto de pares, o checkpoint R012 do AdaFace-Regional foi executado no manifesto de 6.000 pares usado pelo Claude Sonnet. Essa avaliação usa exatamente os pares da execução do Claude, mas não usa o teste completo de 13.425 pares do protocolo RFIW Track-I. Portanto, os resultados da Tabela~\ref{tab:m12_claude_manifest} servem apenas para a comparação controlada com esse VLM, não para substituir o resultado principal em validação cruzada.
+
+\begin{table}[htbp]
+\centering
+\caption{Comparação entre AdaFace-Regional R012 e Claude Sonnet no mesmo manifesto de 6.000 pares.}
+\label{tab:m12_claude_manifest}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{0.92\textwidth}{Xccc}
+\hline
+\textbf{Métrica} & \textbf{M12 R012} & \textbf{Claude} & \textbf{$\Delta$} \\
+\hline
+AUC & \textbf{0{,}888} & 0{,}789 & +0{,}100 \\
+Average Precision & \textbf{0{,}882} & 0{,}742 & +0{,}140 \\
+TAR@0{,}001 & \textbf{0{,}066} & 0{,}042 & +0{,}024 \\
+TAR@0{,}01 & \textbf{0{,}259} & 0{,}042 & +0{,}217 \\
+TAR@0{,}1 & \textbf{0{,}634} & 0{,}297 & +0{,}336 \\
+Acurácia & \textbf{0{,}800} & 0{,}723 & +0{,}077 \\
+Precisão & \textbf{0{,}755} & 0{,}691 & +0{,}064 \\
+Revocação & \textbf{0{,}888} & 0{,}806 & +0{,}082 \\
+Especificidade & \textbf{0{,}712} & 0{,}639 & +0{,}072 \\
+F1 & \textbf{0{,}816} & 0{,}744 & +0{,}072 \\
+\hline
+\end{tabularx}
+\end{table}
+
+No manifesto usado pelo Claude, o AdaFace-Regional R012 supera o Claude Sonnet em todas as métricas reportadas. A diferença é especialmente grande em AUC, Average Precision e TAR@FAR=0{,}01, indicando que a principal limitação do VLM zero-shot está na ordenação dos pares e na operação em baixa falsa aceitação. Como esse manifesto é balanceado e tem negativos construídos de forma diferente do teste oficial completo, o AUC de 0,888 dessa avaliação deve ser lido como resultado específico desse subconjunto, não como novo resultado principal do AdaFace-Regional.
+
+A comparação com os modelos supervisionados deve ser feita com cautela. Os VLMs respondem à mesma tarefa binária, mas não têm treinamento no FIW, não usam validação cruzada e não ajustam limiar por validação. Ainda assim, as métricas independentes de limiar são informativas: o Claude fica próximo da linha de base facial sem treinamento, mas abaixo dela; o Codex fica substancialmente abaixo; e a comparação pareada no manifesto usado pelo Claude mostra uma vantagem clara do AdaFace-Regional R012 sobre o VLM mais forte. Isso indica que, neste protocolo, conhecimento visual geral não substitui adaptação supervisionada para verificação de parentesco facial.
 
 A avaliação multiclasse anterior permanece como diagnóstico histórico. Nela, o Codex zero-shot alcançou 33,1\% de acurácia e macro-F1 de 0,257 em 750 pares positivos; a adaptação por prompt caiu para 26,7\% de acurácia e macro-F1 de 0,223; e o piloto do Claude Sonnet em 75 pares ficou em torno de 37\% de acurácia. Como esse protocolo não inclui non-kin, ele não é usado na comparação principal. O recorte de 12 pares de avós e netos com prompts direcionados mostrou que orientar explicitamente o modelo para relações de duas gerações ajuda a escolher o grupo correto, mas quase não resolve a identificação da relação exata.
 
@@ -201,6 +229,6 @@ A avaliação multiclasse anterior permanece como diagnóstico histórico. Nela,
 
 Sob validação cruzada, o AdaFace-Regional obteve o maior AUC entre as arquiteturas avaliadas em FIW. O resultado da configuração com Negativos Difíceis é de 0,876 $\pm$ 0,003 em AUC, acima do ViT-FaCoR (0,846 $\pm$ 0,004), do DINOv2-LoRA (0,814 $\pm$ 0,007), da linha de base AdaFace-Cosseno (0,799 $\pm$ 0,000) e do Modelo com Recuperação (0,778 $\pm$ 0,008). A principal evidência do capítulo é, portanto, que o conjunto de componentes da proposta está associado a melhor desempenho no FIW em relação às alternativas avaliadas dentro do protocolo adotado.
 
-Fora da comparação principal em validação cruzada, os VLMs foram avaliados como linhas de base externas zero-shot. Nesse cenário, o Claude Sonnet binário alcança AUC de 0,789 e o Codex VLM binário alcança AUC de 0,624, ambos sem validação cruzada.
+Fora da comparação principal em validação cruzada, os VLMs foram avaliados como linhas de base externas zero-shot. Nesse cenário, o Claude Sonnet binário alcança AUC de 0,789 e o Codex VLM binário alcança AUC de 0,624, ambos sem validação cruzada. No mesmo manifesto de 6.000 pares usado pelo Claude, o AdaFace-Regional R012 alcança AUC de 0,888, reforçando que a diferença em relação ao VLM permanece quando o conjunto de pares é controlado.
 
 Essa conclusão deve ser acompanhada de quatro ressalvas. Primeiro, AdaFace-Cosseno continua competitivo nos regimes de baixa falsa aceitação, mostrando que reconhecimento facial pré-treinado já contém sinal útil para parentesco. Segundo, as diferenças entre as configurações Simétrica, Comparativa e com Negativos Difíceis são pequenas em AUC, e a escolha entre elas depende mais do ponto operacional do que de uma superioridade global clara. Terceiro, as relações de avós e netos continuam sendo as mais sensíveis à variação entre dobras, apesar do ganho expressivo obtido pelo AdaFace-Regional. Quarto, os VLMs binários zero-shot ficam abaixo dos modelos supervisionados e apresentam limitação clara em especificidade ou em operação com FAR baixo, indicando que inferência multimodal genérica não substitui modelos treinados e calibrados para esse domínio.
