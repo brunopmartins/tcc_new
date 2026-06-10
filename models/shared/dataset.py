@@ -92,6 +92,18 @@ def _get_family_images(family_dir: Path) -> List[str]:
     return images
 
 
+def fiw_family_token(path: str) -> str:
+    """Extract the FIW family id (e.g. 'F0009') from a face path.
+
+    Returns '' for non-FIW-structured paths (e.g. KinFaceW), so non-FIW
+    datasets are unaffected. Used by Model 16's family-adversarial objective
+    (treats each FIW family as a domain). Purely additive / read-only."""
+    for part in str(path).replace("\\", "/").split("/"):
+        if len(part) >= 2 and part[0] == "F" and part[1:].isdigit():
+            return part
+    return ""
+
+
 class KinshipPairDataset(Dataset):
     """
     Dataset for kinship verification that returns pairs of images.
@@ -685,6 +697,11 @@ class KinshipPairDataset(Dataset):
             "relation_idx": torch.tensor(
                 FIW_RELATION_TO_IDX.get(relation, -1), dtype=torch.long
             ),
+            # Additive (M16 family-adversarial): FIW family id per face, as a
+            # string (like "relation"). '' for non-FIW datasets. Ignored by all
+            # other models.
+            "family1": fiw_family_token(self.pairs[idx][0]),
+            "family2": fiw_family_token(self.pairs[idx][1]),
         }
 
 
