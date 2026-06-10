@@ -96,6 +96,7 @@ def build_from_checkpoint(ckpt_path: Path, device: torch.device):
         num_relation_classes=mc.get("num_relation_classes", 11),
         symmetric_forward=mc.get("symmetric_forward", False),
         comparison_only_fusion=mc.get("comparison_only_fusion", False),
+        roi_align_tokenizer=mc.get("roi_align_tokenizer", False),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device).eval()

@@ -75,6 +75,7 @@ def main():
         num_relation_classes=model_config.get("num_relation_classes", 11),
         symmetric_forward=model_config.get("symmetric_forward", False),
         comparison_only_fusion=model_config.get("comparison_only_fusion", False),
+        roi_align_tokenizer=model_config.get("roi_align_tokenizer", False),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)

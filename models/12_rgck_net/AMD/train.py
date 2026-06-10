@@ -167,6 +167,9 @@ def parse_args() -> argparse.Namespace:
     # features: |diff|, prod, sims, weights, regional_score.
     p.add_argument("--comparison_only_fusion", action="store_true", default=False,
                    help="Drop gA, gB from the classifier input. R009 default.")
+    p.add_argument("--roi_align_tokenizer", action="store_true", default=False,
+                   help="R013: ROI-Align region pooling on a single shared "
+                        "feature map instead of crop-and-rerun-AdaFace.")
 
     # Negative sampling
     p.add_argument("--negative_ratio", type=float, default=1.0)
@@ -724,6 +727,7 @@ def main() -> None:
         num_relation_classes=FIW_NUM_RELATIONS,
         symmetric_forward=args.symmetric_forward,
         comparison_only_fusion=args.comparison_only_fusion,
+        roi_align_tokenizer=args.roi_align_tokenizer,
     )
     model = optimize_for_rocm(model)
 
@@ -898,6 +902,7 @@ def main() -> None:
         "lr_head": args.lr_head if args.differential_lr else None,
         "l2sp_weight": args.l2sp_weight,
         "comparison_only_fusion": bool(args.comparison_only_fusion),
+        "roi_align_tokenizer": bool(args.roi_align_tokenizer),
         "regions": [name for name, _ in DEFAULT_REGIONS_224],
     }
     protocol_metadata = build_protocol_metadata(
