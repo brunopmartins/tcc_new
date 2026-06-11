@@ -1,0 +1,392 @@
+% Apresentacao da defesa do TCC.
+% Compilar a partir deste diretorio com: pdflatex tcc_apresentacao.tex
+\documentclass[10pt,aspectratio=169]{beamer}
+
+\usetheme{Madrid}
+\usecolortheme{default}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{xcolor}
+
+\definecolor{cefetblue}{RGB}{0,72,126}
+\definecolor{darkgray}{RGB}{55,55,55}
+\setbeamercolor{structure}{fg=cefetblue}
+\setbeamercolor{frametitle}{fg=white,bg=cefetblue}
+\setbeamercolor{title}{fg=white,bg=cefetblue}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\newcommand{\kin}{\textit{kin}}
+\newcommand{\nonkin}{\textit{non-kin}}
+\newcommand{\auc}{\textit{AUC}}
+\newcommand{\ap}{\textit{AP}}
+\newcommand{\tarfar}{\textit{TAR@FAR}}
+\newcommand{\slidenote}[2]{%
+  \vspace{0.55em}
+  {\small\textcolor{cefetblue}{\textbf{#1}}\quad #2\par}
+}
+\newcommand{\slidecaution}[2]{%
+  \vspace{0.55em}
+  {\small\textcolor{darkgray}{\textbf{#1}}\quad #2\par}
+}
+
+\title[Verificacao de parentesco facial]{Verificacao Visual de Parentesco Facial Automatica}
+\subtitle{Estudo comparativo de arquiteturas de Deep Learning e modelos multimodais}
+\author{Bruno Peixoto Martins}
+\institute{CEFET-MG - Engenharia de Computacao\\Orientador: Prof. Ismael Santana Silva}
+\date{2026}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Roteiro da defesa}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.48\textwidth}
+    \begin{enumerate}
+      \item Problema e motivacao
+      \item Objetivos e contribuicoes
+      \item Metodologia experimental
+      \item AdaFace-Regional
+    \end{enumerate}
+    \column{0.48\textwidth}
+    \begin{enumerate}
+      \setcounter{enumi}{4}
+      \item Resultados principais
+      \item VLMs como linha de base externa
+      \item Limitacoes, etica e conclusao
+    \end{enumerate}
+  \end{columns}
+  \vspace{0.8em}
+  \slidenote{Tempo previsto}{19 slides, aproximadamente 24 minutos, com foco nos resultados e nas ressalvas metodologicas.}
+\end{frame}
+
+\begin{frame}{Problema}
+  \slidenote{Tarefa}{Dado um par de imagens faciais, decidir se as pessoas possuem parentesco biologico: \kin{} ou \nonkin{}.}
+
+  \begin{columns}[T,onlytextwidth]
+    \column{0.48\textwidth}
+    \textbf{Por que e dificil?}
+    \begin{itemize}
+      \item parentes podem ter aparencia bastante diferente;
+      \item nao-parentes podem ter rostos visualmente parecidos;
+      \item ha variacao de idade, pose, iluminacao e qualidade.
+    \end{itemize}
+    \column{0.48\textwidth}
+    \textbf{Diferenca para reconhecimento facial}
+    \begin{itemize}
+      \item nao se busca identidade;
+      \item busca-se sinal de semelhanca familiar;
+      \item a decisao depende de uma ordenacao confiavel dos pares.
+    \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Motivacao e escopo}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.52\textwidth}
+    \textbf{Motivacao cientifica}
+    \begin{itemize}
+      \item protocolos heterogeneos na literatura;
+      \item limiares e metricas nem sempre comparaveis;
+      \item entrada recente de modelos multimodais generalistas.
+    \end{itemize}
+    \column{0.44\textwidth}
+    \textbf{Escopo aplicado}
+    \begin{itemize}
+      \item triagem e apoio investigativo;
+      \item reunificacao familiar;
+      \item apoio forense, sem substituir DNA ou avaliacao especializada.
+    \end{itemize}
+  \end{columns}
+
+  \slidecaution{Delimitacao}{O trabalho trata de parentesco consanguineo por face. Vinculos sociais, documentos e DNA ficam fora da decisao automatica.}
+\end{frame}
+
+\begin{frame}{Perguntas de pesquisa}
+  \slidenote{Pergunta principal}{Em que medida uma arquitetura supervisionada especializada, com backbone facial, descongelamento parcial e tokens regionais anatomicos, apresenta ganho sobre linhas de base e arquiteturas alternativas no FIW sob protocolo unico?}
+
+  \slidenote{Pergunta exploratoria}{Qual e o desempenho de VLMs generalistas em verificacao binaria zero-shot, quando usados como linhas de base externas?}
+
+  \textbf{Objetivo geral:} comparar cinco abordagens supervisionadas no mesmo protocolo e mapear dois VLMs como referencia externa.
+\end{frame}
+
+\begin{frame}{Contribuicoes}
+  \begin{enumerate}
+    \item Protocolo comparativo uniforme para cinco abordagens de verificacao binaria no FIW.
+    \item Proposta arquitetonica AdaFace-Regional.
+    \item Avaliacao binaria zero-shot de Codex VLM e Claude Sonnet.
+    \item Analise por tipo de relacao, com foco nas relacoes de avos e netos.
+  \end{enumerate}
+
+  \slidenote{Ponto central}{A contribuicao nao e apenas trocar o backbone: e reorganizar um extrator facial forte para comparar regioes anatomicas e reduzir dependencia da ordem do par.}
+\end{frame}
+
+\begin{frame}{Metodologia experimental}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.50\textwidth}
+    \textbf{Dataset principal}
+    \begin{itemize}
+      \item Families in the Wild (FIW), Track-I do RFIW;
+      \item 761 familias e 11 relacoes positivas;
+      \item teste oficial preservado;
+      \item dobras separadas por familia.
+    \end{itemize}
+    \column{0.46\textwidth}
+    \textbf{Protocolo}
+    \begin{itemize}
+      \item validacao cruzada de 5 dobras;
+      \item limiar escolhido apenas na validacao;
+      \item avaliacao no teste oficial sem reotimizar limiar;
+      \item comparacao principal por ROC AUC.
+    \end{itemize}
+  \end{columns}
+
+  \slidenote{Metricas}{ROC AUC, Average Precision, TAR@FAR=0{,}1, 0{,}01 e 0{,}001, alem de acuracia por relacao.}
+\end{frame}
+
+\begin{frame}{Modelos comparados}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{2.7cm} >{\raggedright\arraybackslash}p{3.0cm} >{\centering\arraybackslash}p{1.5cm} X}
+    \hline
+    \textbf{Modelo} & \textbf{Backbone} & \textbf{Params} & \textbf{Ideia central} \\
+    \hline
+    AdaFace-Cosseno & AdaFace IR-101 congelado & 0 & extrator facial pronto e cosseno \\
+    ViT-FaCoR & ViT-B/16 & $\sim$86M & atencao cruzada entre faces \\
+    DINOv2-LoRA & DINOv2 ViT-B/14 & 8{,}5M a 95M & LoRA e atencao cruzada diferencial \\
+    Modelo com Recuperacao & ViT-B/16 ou DINOv2 congelado & $\sim$8--12M & galeria de pares positivos como contexto \\
+    AdaFace-Regional & AdaFace IR-101 parcial & 31M & tokens regionais, gate e passagem simetrica \\
+    \hline
+  \end{tabularx}
+
+  \slidenote{Leitura}{A comparacao isola familias de metodo: extrator facial congelado, Transformer com atencao cruzada, representacao auto-supervisionada, recuperacao e proposta regional.}
+\end{frame}
+
+\begin{frame}{Hipotese do AdaFace-Regional}
+  \slidenote{Hipotese}{O AdaFace ja contem sinal facial util para parentesco, mas a tarefa exige adaptar e reorganizar esse sinal para comparar regioes e nao apenas embeddings globais.}
+
+  \begin{columns}[T,onlytextwidth]
+    \column{0.48\textwidth}
+    \textbf{Problemas dos modelos anteriores}
+    \begin{itemize}
+      \item cosseno global nao aprende a tarefa;
+      \item patches densos podem olhar para regioes pouco informativas;
+      \item VLMs nao calibram limiar nem aprendem FIW.
+    \end{itemize}
+    \column{0.48\textwidth}
+    \textbf{Resposta proposta}
+    \begin{itemize}
+      \item backbone facial especializado;
+      \item regioes anatomicas fixas;
+      \item atencao cruzada regional;
+      \item simetria explicita do par.
+    \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{AdaFace-Regional: fluxo}
+  \centering
+  \fbox{%
+  \begin{minipage}{0.88\linewidth}
+    \centering
+    \small
+    \textbf{Entrada: faces alinhadas $A$ e $B$}\\[0.4em]
+    $\downarrow$\\[0.4em]
+    \begin{tabularx}{0.92\linewidth}{X c X}
+      AdaFace IR-101 em $A$ & & AdaFace IR-101 em $B$ \\
+      embedding global $g_A$ & & embedding global $g_B$ \\
+      5 tokens regionais & $\leftrightarrow$ & 5 tokens regionais \\
+    \end{tabularx}
+    \vspace{0.4em}
+
+    Atencao cruzada regional + similaridades por regiao + pesos do gate\\[0.4em]
+    $\downarrow$\\[0.4em]
+    Fusão comparativa: globais, diferencas, produtos, regioes e gate\\[0.4em]
+    $\downarrow$\\[0.4em]
+    \textbf{Logit kin/non-kin + cabeca auxiliar de relacao}
+  \end{minipage}}
+\end{frame}
+
+\begin{frame}{Componentes da proposta}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.50\textwidth}
+    \textbf{Arquitetura}
+    \begin{itemize}
+      \item AdaFace IR-101 parcialmente descongelado;
+      \item 5 regioes: face, olhos, nariz, boca e mandibula;
+      \item atencao cruzada 5$\times$5 entre regioes;
+      \item gate sigmoide por regiao;
+      \item cabeca auxiliar para 11 relacoes positivas.
+    \end{itemize}
+    \column{0.46\textwidth}
+    \textbf{Simetria}
+    \[
+      z_{\text{sim}}(A,B) = \frac{z(A,B) + z(B,A)}{2}
+    \]
+    \begin{itemize}
+      \item reduz dependencia da ordem das imagens;
+      \item aproxima a funcao da propriedade esperada da tarefa.
+    \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Variantes avaliadas}
+  \small
+  \begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{3.1cm} X}
+    \hline
+    \textbf{Variante} & \textbf{Mudanca principal} \\
+    \hline
+    Base & descongelamento parcial, regioes, atencao cruzada e gate \\
+    Simetrica & avalia $(A,B)$ e $(B,A)$ e agrega logits \\
+    Comparativa & remove embeddings globais crus da fusao final \\
+    Negativos dificeis & inclui 30\% de negativos com mesmos papeis familiares, mas de familias diferentes \\
+    \hline
+  \end{tabularx}
+
+  \slidecaution{Cuidado metodologico}{As variantes formam uma sequencia de desenvolvimento; nao sao uma ablacao estrita de todos os componentes.}
+\end{frame}
+
+\begin{frame}{Resultado principal em FIW}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabularx}{\linewidth}{Xcccc}
+    \hline
+    \textbf{Modelo} & \textbf{AUC} & \textbf{AP} & \textbf{TAR@0{,}01} & \textbf{TAR@0{,}1} \\
+    \hline
+    AdaFace-Regional, negativos dificeis & \textbf{0{,}876 $\pm$ 0{,}003} & \textbf{0{,}856 $\pm$ 0{,}003} & 0{,}207 & \textbf{0{,}595} \\
+    AdaFace-Regional, comparativo & 0{,}874 $\pm$ 0{,}004 & 0{,}853 & 0{,}192 & 0{,}589 \\
+    AdaFace-Regional, simetrico & 0{,}873 $\pm$ 0{,}004 & 0{,}848 & 0{,}174 & 0{,}577 \\
+    ViT-FaCoR & 0{,}846 $\pm$ 0{,}004 & 0{,}813 & 0{,}135 & 0{,}496 \\
+    DINOv2-LoRA & 0{,}814 $\pm$ 0{,}007 & 0{,}784 & 0{,}102 & 0{,}469 \\
+    AdaFace-Cosseno & 0{,}799 $\pm$ 0{,}000 & 0{,}809 & \textbf{0{,}218} & 0{,}524 \\
+    Modelo com Recuperacao & 0{,}778 $\pm$ 0{,}008 & 0{,}741 & 0{,}078 & 0{,}384 \\
+    \hline
+  \end{tabularx}
+
+  \slidenote{Achado central}{O AdaFace-Regional tem maior AUC global; o AdaFace-Cosseno ainda e competitivo em baixa falsa aceitacao.}
+\end{frame}
+
+\begin{frame}{Leitura estatistica e operacional}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.50\textwidth}
+    \textbf{Contra ViT-FaCoR}
+    \begin{itemize}
+      \item AUC: 0{,}876 contra 0{,}846;
+      \item diferenca media: +0{,}0299;
+      \item teste t pareado: $t(4)=10{,}264$, $p=0{,}0005$;
+      \item Wilcoxon bilateral: $p=0{,}0625$ com apenas 5 dobras.
+    \end{itemize}
+    \column{0.46\textwidth}
+    \textbf{Ponto de operacao}
+    \begin{itemize}
+      \item AUC alto nao escolhe limiar sozinho;
+      \item em TAR@FAR=0{,}01, AdaFace-Cosseno fica em 0{,}218;
+      \item AdaFace-Regional com negativos dificeis fica em 0{,}207;
+      \item escolha depende do custo de falso positivo.
+    \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Ciclo experimental do AdaFace-Regional}
+  \small
+  \begin{tabularx}{\linewidth}{Xccc}
+    \hline
+    \textbf{Intervencao} & \textbf{AUC} & \textbf{TAR@0{,}01} & \textbf{Gap val-teste} \\
+    \hline
+    AdaFace congelado & 0{,}746 & 0{,}101 & -0{,}089 \\
+    descongelamento parcial & 0{,}856 & 0{,}176 & -0{,}076 \\
+    passagem simetrica & 0{,}879 & 0{,}186 & -0{,}026 \\
+    fusao comparativa + taxas diferenciadas & 0{,}875 & 0{,}212 & -0{,}030 \\
+    negativos dificeis reais & \textbf{0{,}882} & \textbf{0{,}213} & \textbf{-0{,}021} \\
+    \hline
+  \end{tabularx}
+
+  \slidenote{Interpretacao}{Os saltos mais claros vieram do descongelamento parcial e da passagem simetrica; negativos dificeis ajustaram melhor a rejeicao de nao-parentes.}
+\end{frame}
+
+\begin{frame}{Analise por tipo de relacao}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.48\textwidth}
+    \textbf{Classes positivas}
+    \begin{itemize}
+      \item pais e filhos: faixa de 85\% a 92\%;
+      \item irmaos: perto ou acima de 90\%;
+      \item avos e netos: Simetrica sobe para 80\% a 84\%.
+    \end{itemize}
+    \column{0.48\textwidth}
+    \textbf{Trade-off}
+    \begin{itemize}
+      \item Simetrica favorece classes positivas;
+      \item Comparativa e Negativos Dificeis melhoram non-kin;
+      \item non-kin: 67{,}5\% na Simetrica contra 69{,}7\% nas outras duas.
+    \end{itemize}
+  \end{columns}
+
+  \slidecaution{Cautela}{As relacoes de avos e netos tem menos pares no teste e maior variacao entre dobras.}
+\end{frame}
+
+\begin{frame}{VLMs como linha de base externa}
+  \small
+  \begin{tabularx}{\linewidth}{Xccc}
+    \hline
+    \textbf{Metrica} & \textbf{Claude} & \textbf{Codex VLM} & \textbf{M12 R012 no manifesto Claude} \\
+    \hline
+    AUC & 0{,}789 & 0{,}624 & \textbf{0{,}888} \\
+    AP & 0{,}742 & 0{,}592 & \textbf{0{,}882} \\
+    TAR@0{,}01 & 0{,}042 & 0{,}018 & \textbf{0{,}259} \\
+    Acuracia & 72{,}3\% & 59{,}0\% & \textbf{80{,}0\%} \\
+    Especificidade & 0{,}639 & 0{,}381 & \textbf{0{,}712} \\
+    \hline
+  \end{tabularx}
+
+  \slidenote{Leitura}{VLMs capturam parte do sinal visual, mas erram muito em \nonkin{} e nao produzem ordenacao suficiente para baixa falsa aceitacao.}
+  \slidecaution{Ressalva}{M12 R012 no manifesto Claude e comparacao controlada no mesmo subconjunto de 6.000 pares; nao substitui a validacao cruzada principal.}
+\end{frame}
+
+\begin{frame}{Limitacoes e implicacoes eticas}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.50\textwidth}
+    \textbf{Limitacoes metodologicas}
+    \begin{itemize}
+      \item cinco dobras e uma semente principal;
+      \item sem transferencia para outros bancos;
+      \item sem auditoria de sobreposicao WebFace4M-FIW;
+      \item sem ablacao estrita de cada componente;
+      \item VLMs avaliados em protocolo externo.
+    \end{itemize}
+    \column{0.46\textwidth}
+    \textbf{Uso responsavel}
+    \begin{itemize}
+      \item ferramenta de triagem, nao prova;
+      \item decisao final deve usar DNA, documentos e avaliacao humana;
+      \item falso positivo tem alto custo;
+      \item necessidade de auditoria demografica antes de uso real.
+    \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Conclusao}
+  \slidenote{Resposta principal}{Dentro do protocolo adotado, o AdaFace-Regional apresenta ganho em AUC global sobre a linha de base sem treinamento e sobre as arquiteturas supervisionadas avaliadas.}
+
+  \begin{itemize}
+    \item melhor resultado principal: 0{,}876 $\pm$ 0{,}003 de AUC;
+    \item ganho de aproximadamente 0{,}030 sobre ViT-FaCoR;
+    \item relacoes de avos e netos deixam de ser o principal colapso do modelo;
+    \item VLMs ainda nao substituem modelos supervisionados especializados.
+  \end{itemize}
+
+  \vspace{0.8em}
+  \centering
+  \Large Obrigado. Perguntas?
+\end{frame}
+
+\end{document}

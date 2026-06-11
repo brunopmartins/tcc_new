@@ -7,7 +7,7 @@ Verificação de parentesco tem sido objeto de estudo constante no campo da psic
 
 \citeonline{porter1984recognition} registraram que pessoas conseguiam parear fotos de mães com seus respectivos filhos sem conhecê-los, enquanto as próprias mães reconheciam seus bebês poucas horas após o nascimento. Isso reforça a tese de que há de fato um sinal facial explorável entre parentes próximos.
 
-A verificação automática desse vínculo a partir de fotos de rosto é um campo relativamente novo e difícil em visão computacional. O sistema classifica, diante de um par de imagens, se as duas pessoas têm ou não relação de parentesco, a partir apenas das estruturas faciais. O problema é particularmente difícil por duas razões opostas: parentes próximos podem apresentar traços bastante distintos, como em grupos de irmãos nos quais um herda mais da mãe e outro mais do pai; e, paralelamente, pessoas sem vínculo biológico podem apresentar alta similaridade facial. Em relação ao reconhecimento facial comum, a tarefa é mais fina, porque não basta separar identidades, é preciso capturar padrões de herança em imagens que variam em idade, expressão, iluminação e pose.
+A verificação automática desse vínculo a partir de fotos de rosto é um campo relativamente novo e difícil em visão computacional. O sistema classifica, diante de um par de imagens, se as duas pessoas têm ou não relação de parentesco, a partir apenas das estruturas faciais. O problema é particularmente difícil por duas razões opostas. Primeiro, parentes próximos podem apresentar traços bastante distintos, como em grupos de irmãos nos quais um herda mais da mãe e outro mais do pai. Segundo, pessoas sem vínculo biológico podem apresentar alta similaridade facial. Em relação ao reconhecimento facial comum, a tarefa é mais fina, porque não basta separar identidades, é preciso capturar padrões de herança em imagens que variam em idade, expressão, iluminação e pose.
 
 O reconhecimento de relações consanguíneas por imagem tem usos práticos concretos como auxiliar investigações de tráfico humano, identificação de pessoas com dificuldade de comunicação (crianças e idosos desaparecidos, por exemplo), montagem de árvores genealógicas e redução do espaço de busca em bancos de faces em larga escala. A verificação de parentesco por face também pode servir como apoio forense à identificação de crianças quando a documentação está ausente ou foi adulterada.
 
@@ -21,13 +21,13 @@ Apesar desse avanço, comparar os métodos da área com rigor continua trabalhos
 
 A literatura recente em verificação visual de parentesco facial reúne arquiteturas heterogêneas avaliadas sob protocolos não comparáveis, e os ganhos relatados frequentemente dependem de escolhas de limiar, amostragem e seleção de ponto salvo que variam entre trabalhos. Em paralelo, modelos multimodais generalistas em regime zero-shot têm sido apresentados como alternativa de baixo custo de implantação, mas faltam medições rigorosas que situem o desempenho desses modelos contra modelos supervisionados especializados quando ambos respondem à mesma pergunta binária de parentesco.
 
-Diante disso, o problema de pesquisa deste trabalho se desdobra em duas perguntas complementares. A primeira é a comparação principal:
+Diante disso, o problema de pesquisa deste trabalho se desdobra em duas perguntas complementares. A primeira corresponde à comparação principal.
 
 \begin{quote}
 \noindent Em que medida uma arquitetura supervisionada especializada para parentesco facial, combinando backbone de reconhecimento facial, descongelamento parcial e tokens regionais anatômicos, apresenta ganho em relação a uma linha de base sem treinamento e a arquiteturas supervisionadas alternativas no benchmark Families in the Wild, sob protocolo único de verificação binária?
 \end{quote}
 
-A segunda é uma pergunta secundária, de caráter exploratório:
+A segunda é uma pergunta secundária, de caráter exploratório.
 
 \begin{quote}
 \noindent Qual é o desempenho atual de modelos multimodais generalistas (VLMs) em verificação binária zero-shot no FIW, quando usados como linhas de base externas sem treinamento específico e comparados com modelos supervisionados especializados?

@@ -71,3 +71,6 @@ pivot/
 
 # Local prompt drafts (personal scratchpad — committed prompts go elsewhere)
 prompts/
+
+# LaTeX build output
+text-output/

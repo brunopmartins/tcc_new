@@ -1,4 +1,4 @@
-\chapter[AdaFace-Regional]{AdaFace-Regional: Proposta Arquitetônica}
+\chapter[AdaFace-Regional]{Proposta Arquitetônica AdaFace-Regional}
 \label{cap:adaface-regional}
 
 Este capítulo descreve a contribuição arquitetônica do trabalho. O AdaFace-Regional foi projetado para verificar parentesco facial a partir de um backbone especializado em reconhecimento de identidade, mas adaptado à tarefa por meio de descongelamento parcial, comparação regional e regularização da ordem do par. O objetivo não é apenas trocar o extrator de características, e sim reorganizar o sinal global do AdaFace em uma representação comparativa voltada à tarefa de parentesco.
@@ -7,7 +7,7 @@ Este capítulo descreve a contribuição arquitetônica do trabalho. O AdaFace-R
 
 A análise dos modelos avaliados no Capítulo~\ref{cap:Metodologia} indica que cada alternativa testa uma hipótese distinta, mas deixa uma limitação para o objetivo deste trabalho. O AdaFace-Cosseno usa um extrator facial forte, porém compara as faces apenas por similaridade global, sem adaptação supervisionada ao FIW e sem modelar quais partes do rosto participam da decisão. O ViT-FaCoR usa atenção cruzada entre patches, mas parte de um backbone visual geral e opera sobre muitos tokens locais, o que aumenta a liberdade do modelo para explorar regiões pouco informativas. O DINOv2-LoRA adapta uma representação auto-supervisionada ampla, mas não parte de um pré-treino facial especializado. O Modelo com Recuperação explicita exemplos positivos parecidos, mas depende da qualidade da galeria e da recuperação de suportes úteis.
 
-A proposta AdaFace-Regional parte de uma hipótese intermediária: o sinal de reconhecimento facial do AdaFace já contém informação útil para parentesco e pode se beneficiar de uma reorganização para a tarefa. Para isso, o modelo mantém parte do backbone preservada, libera apenas os estágios finais para adaptação e compara regiões anatômicas do rosto de forma explícita. Além disso, como a verificação de parentesco é simétrica, a arquitetura busca tornar a decisão menos dependente da ordem em que as imagens aparecem no par.
+A proposta AdaFace-Regional parte de uma hipótese intermediária. O sinal de reconhecimento facial do AdaFace já contém informação útil para parentesco e pode se beneficiar de uma reorganização para a tarefa. Para isso, o modelo mantém parte do backbone preservada, libera apenas os estágios finais para adaptação e compara regiões anatômicas do rosto de forma explícita. Além disso, como a verificação de parentesco é simétrica, a arquitetura busca tornar a decisão menos dependente da ordem em que as imagens aparecem no par.
 
 \section{Visão geral da arquitetura}
 
@@ -29,7 +29,7 @@ Tokens regionais $r_A^1,\ldots,r_A^5$ & $\leftrightarrow$ & Tokens regionais $r_
 \begin{minipage}{0.84\textwidth}
 \centering
 Atenção cruzada entre regiões + similaridades $s_k$ + pesos $w_k$\\[0.2em]
-Fusão comparativa: globais, diferenças, produtos, regiões e gate
+Fusão comparativa -- globais, diferenças, produtos, regiões e gate
 \end{minipage}\\[0.4em]
 $\downarrow$\\[0.4em]
 \textbf{Logit kin/non-kin e cabeça auxiliar de relação}
@@ -47,9 +47,9 @@ No AdaFace-Regional, os três primeiros estágios do AdaFace permanecem congelad
 
 \section{Tokens regionais}
 
-Sobre a imagem alinhada em 224$\times$224 pixels, o AdaFace-Regional define cinco regiões fixas: face inteira, faixa superior dos olhos, região central do nariz, faixa média inferior da boca e faixa inferior da mandíbula. Cada região é recortada e redimensionada para 112$\times$112 antes de ser processada pelo AdaFace. Além do embedding global usado na fusão final, cada face gera cinco embeddings regionais; o token de face inteira é extraído como região e não reutiliza o embedding global.
+Sobre a imagem alinhada em 224$\times$224 pixels, o AdaFace-Regional define cinco regiões fixas. Elas correspondem à face inteira, faixa superior dos olhos, região central do nariz, faixa média inferior da boca e faixa inferior da mandíbula. Cada região é recortada e redimensionada para 112$\times$112 antes de ser processada pelo AdaFace. Além do embedding global usado na fusão final, cada face gera cinco embeddings regionais; o token de face inteira é extraído como região e não reutiliza o embedding global.
 
-Essa escolha introduz um viés estrutural simples. Em vez de permitir que o modelo compare livremente todos os patches da imagem, a comparação é orientada por partes faciais interpretáveis. O custo dessa decisão é uma dependência maior do alinhamento facial: se a detecção ou o recorte desloca as regiões, os tokens deixam de corresponder às partes esperadas.
+Essa escolha introduz um viés estrutural simples. Em vez de permitir que o modelo compare livremente todos os patches da imagem, a comparação é orientada por partes faciais interpretáveis. O custo dessa decisão é uma dependência maior do alinhamento facial. Se a detecção ou o recorte desloca as regiões, os tokens deixam de corresponder às partes esperadas.
 
 \section{Atenção cruzada entre regiões}
 
@@ -73,9 +73,9 @@ A função dessa cabeça não é transformar o problema principal em classifica�
 
 \section{Passagem simétrica}
 
-A verificação de parentesco é simétrica: se $A$ é parente de $B$, então $B$ é parente de $A$. Uma cabeça neural que recebe embeddings concatenados em ordem fixa, porém, pode aprender atalhos dependentes da posição da primeira e da segunda face no par.
+A verificação de parentesco é simétrica. Se $A$ é parente de $B$, então $B$ é parente de $A$. Uma cabeça neural que recebe embeddings concatenados em ordem fixa, porém, pode aprender atalhos dependentes da posição da primeira e da segunda face no par.
 
-Para reduzir esse problema, a variante simétrica processa cada par nas duas ordens, $(A,B)$ e $(B,A)$. Durante o treinamento, a perda binária é a média das duas direções. Durante a avaliação, o logit final é a média dos logits das duas permutações antes da aplicação do sigmoide:
+Para reduzir esse problema, a variante simétrica processa cada par nas duas ordens, $(A,B)$ e $(B,A)$. Durante o treinamento, a perda binária é a média das duas direções. Durante a avaliação, o logit final é a média dos logits das duas permutações antes da aplicação do sigmoide.
 
 \begin{equation}
 z_{\text{sim}}(A,B) = \frac{z(A,B) + z(B,A)}{2}.
@@ -86,9 +86,9 @@ Essa passagem não impõe igualdade ponto a ponto entre $f(A,B)$ e $f(B,A)$. Ela
 
 \section{Complexidade computacional}
 
-O AdaFace-Regional adiciona custo principalmente em três pontos: extração dos embeddings regionais, atenção cruzada entre regiões e cabeça de fusão. O custo da atenção regional é pequeno, porque a matriz de interação tem apenas 5$\times$5 posições. O componente mais caro permanece sendo o próprio AdaFace IR-101, especialmente quando o estágio 4 e o \texttt{output\_layer} são descongelados.
+O AdaFace-Regional adiciona custo principalmente em três pontos. O primeiro é a extração dos embeddings regionais, o segundo é a atenção cruzada entre regiões, e o terceiro é a cabeça de fusão. O custo da atenção regional é pequeno, porque a matriz de interação tem apenas 5$\times$5 posições. O componente mais caro permanece sendo o próprio AdaFace IR-101, especialmente quando o estágio 4 e o \texttt{output\_layer} são descongelados.
 
-Nas variantes completas, o modelo treina cerca de 31,55 milhões de parâmetros, contra 70,74 milhões de parâmetros totais. O número é menor do que um descongelamento integral do backbone, mas maior do que linhas de base que treinam apenas cabeças leves. Essa escolha reflete o compromisso central da proposta: adaptar o sinal facial especializado sem perder completamente as representações de identidade aprendidas no pré-treinamento.
+Nas variantes completas, o modelo treina cerca de 31,55 milhões de parâmetros, contra 70,74 milhões de parâmetros totais. O número é menor do que um descongelamento integral do backbone, mas maior do que linhas de base que treinam apenas cabeças leves. Essa escolha reflete o compromisso central da proposta, que é adaptar o sinal facial especializado sem perder completamente as representações de identidade aprendidas no pré-treinamento.
 
 \section{Variantes avaliadas}
 
