@@ -53,6 +53,7 @@ def build_rgck_lora_net(
     symmetric_forward: bool = False,
     comparison_only_fusion: bool = False,
     roi_align_tokenizer: bool = False,
+    backbone_input_size: int = 112,
     # LoRA controls
     lora_rank: int = 16,
     lora_alpha: int = 16,
@@ -84,6 +85,7 @@ def build_rgck_lora_net(
         symmetric_forward=symmetric_forward,
         comparison_only_fusion=comparison_only_fusion,
         roi_align_tokenizer=roi_align_tokenizer,
+        backbone_input_size=backbone_input_size,
     )
 
     n = inject_lora_into_adaface(

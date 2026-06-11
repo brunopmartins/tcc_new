@@ -73,6 +73,7 @@ def main():
         symmetric_forward=model_config.get("symmetric_forward", False),
         comparison_only_fusion=model_config.get("comparison_only_fusion", False),
         roi_align_tokenizer=model_config.get("roi_align_tokenizer", False),
+        backbone_input_size=model_config.get("backbone_input_size", 112),
         lora_rank=model_config.get("lora_rank", 16),
         lora_alpha=model_config.get("lora_alpha", 16),
         lora_stage4=True,

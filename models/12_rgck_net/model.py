@@ -145,36 +145,41 @@ class ROIAlignRegionTokenizer(nn.Module):
     Cost: 1 conv-body forward per face instead of 5.
     """
 
+    HEAD_GRID = 7  # AdaFace output_layer expects a 7×7 spatial map (112 input)
+
     def __init__(
         self,
         backbone: nn.Module,
         regions: List[Tuple[str, Tuple[int, int, int, int]]] = None,
         src_coord_size: int = 224,
-        input_size: int = 112,
-        feat_size: int = 7,
+        backbone_input_size: int = 112,
     ):
         super().__init__()
         self.backbone = backbone
         self.regions = regions if regions is not None else DEFAULT_REGIONS_224
         self.region_names = [name for name, _ in self.regions]
-        self.input_size = input_size
-        self.feat_size = feat_size
-        self.spatial_scale = feat_size / input_size
+        # Size the face is fed to the conv body. 112 -> 7×7 feature map (the
+        # AdaFace-native grid; global token is then the exact embedding). 224 ->
+        # 14×14 feature map (a finer grid for region ROI-Align); the global is
+        # adaptive-pooled back to 7×7 for the fixed output_layer head. The source
+        # FIW faces are ~110px, so 224 is upsampled — the gain is the finer
+        # feature grid for region localisation, not new pixel detail.
+        self.backbone_input_size = backbone_input_size
 
-        # Index of the whole-face region (kept as the exact AdaFace embedding).
+        # Index of the whole-face region (kept as the AdaFace embedding).
         self.global_idx = (
             self.region_names.index("global") if "global" in self.region_names else 0
         )
 
         # Pre-build ROI boxes (xyxy) for the non-global regions, scaled from the
-        # 224-coord box list into the AdaFace input (112) coordinate frame.
-        s = input_size / float(src_coord_size)
+        # 224-coord box list into the backbone-input coordinate frame.
+        s = backbone_input_size / float(src_coord_size)
         anat_idx, boxes = [], []
         for i, (_, (y0, y1, x0, x1)) in enumerate(self.regions):
             if i == self.global_idx:
                 continue
             anat_idx.append(i)
-            boxes.append([x0 * s, y0 * s, x1 * s, y1 * s])  # xyxy in 112-frame
+            boxes.append([x0 * s, y0 * s, x1 * s, y1 * s])
         self.anat_idx = anat_idx
         self.register_buffer("_boxes_xyxy", torch.tensor(boxes, dtype=torch.float32))
 
@@ -182,32 +187,39 @@ class ROIAlignRegionTokenizer(nn.Module):
     def num_regions(self) -> int:
         return len(self.regions)
 
+    def _head(self, fmap: torch.Tensor) -> torch.Tensor:
+        """Run AdaFace's output_layer, adaptive-pooling the feature map to the
+        head's expected 7×7 first (identity when the map is already 7×7)."""
+        if fmap.shape[-1] != self.HEAD_GRID or fmap.shape[-2] != self.HEAD_GRID:
+            fmap = F.adaptive_avg_pool2d(fmap, self.HEAD_GRID)
+        return self.backbone.output_layer(fmap)
+
     def forward(self, img: torch.Tensor) -> torch.Tensor:
         """img: (B, 3, H, W) aligned face → (B, K, 512) region tokens."""
         B = img.shape[0]
         K = self.num_regions
+        S = self.backbone_input_size
 
-        if img.shape[-1] != self.input_size or img.shape[-2] != self.input_size:
-            face = F.interpolate(
-                img, size=(self.input_size, self.input_size),
-                mode="bilinear", align_corners=False,
-            )
+        if img.shape[-1] != S or img.shape[-2] != S:
+            face = F.interpolate(img, size=(S, S), mode="bilinear", align_corners=False)
         else:
             face = img
 
-        fmap = self.backbone.forward_spatial(face)  # (B, 512, 7, 7)
+        fmap = self.backbone.forward_spatial(face)  # (B, 512, S/16, S/16)
+        # spatial_scale maps box coords (in the S-input frame) to the feature map.
+        spatial_scale = fmap.shape[-1] / float(S)
 
         out = [None] * K
-        # Global token = exact AdaFace embedding of the whole face.
-        out[self.global_idx] = self.backbone.output_layer(fmap)  # (B, 512)
+        # Global token (adaptive-pooled to 7×7 head grid; exact embedding at S=112).
+        out[self.global_idx] = self._head(fmap)  # (B, 512)
 
-        # Anatomical regions via ROI-Align on the shared feature map.
+        # Anatomical regions via ROI-Align on the shared feature map -> 7×7 -> head.
         if self.anat_idx:
             boxes = self._boxes_xyxy.to(img.dtype)
             roi = roi_align(
                 fmap, [boxes for _ in range(B)],
-                output_size=self.feat_size,
-                spatial_scale=self.spatial_scale,
+                output_size=self.HEAD_GRID,
+                spatial_scale=spatial_scale,
                 aligned=True,
             )  # (B * n_anat, 512, 7, 7)
             emb = self.backbone.output_layer(roi)  # (B * n_anat, 512)
@@ -370,6 +382,7 @@ class RGCKNet(nn.Module):
         symmetric_forward: bool = False,
         comparison_only_fusion: bool = False,
         roi_align_tokenizer: bool = False,
+        backbone_input_size: int = 112,
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
@@ -381,14 +394,18 @@ class RGCKNet(nn.Module):
         self.symmetric_forward = symmetric_forward
         self.comparison_only_fusion = comparison_only_fusion
         self.roi_align_tokenizer = roi_align_tokenizer
+        self.backbone_input_size = backbone_input_size
 
         # Region tokenizer (shared backbone across regions). R013 swaps the
         # crop-and-rerun FixedPartition tokenizer for ROI-Align pooling on a
         # single shared feature map (undistorted, in-distribution regions).
+        # backbone_input_size controls the conv-body input resolution (112 ->
+        # 7×7 map / exact global; 224 -> 14×14 map / finer regions). ROI-Align only.
         if roi_align_tokenizer:
             self.tokenizer = ROIAlignRegionTokenizer(
                 backbone=adaface_backbone,
                 regions=regions,
+                backbone_input_size=backbone_input_size,
             )
         else:
             self.tokenizer = FixedPartitionRegionTokenizer(
@@ -601,6 +618,7 @@ def build_rgck_net(
     symmetric_forward: bool = False,
     comparison_only_fusion: bool = False,
     roi_align_tokenizer: bool = False,
+    backbone_input_size: int = 112,
 ) -> RGCKNet:
     """
     Build RGCK-Net with an AdaFace IR-101 backbone (shared by all regions).
@@ -629,6 +647,7 @@ def build_rgck_net(
         symmetric_forward=symmetric_forward,
         comparison_only_fusion=comparison_only_fusion,
         roi_align_tokenizer=roi_align_tokenizer,
+        backbone_input_size=backbone_input_size,
     )
 
 

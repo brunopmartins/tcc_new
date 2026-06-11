@@ -40,8 +40,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # backbone at batch 32 ≈ FixedPartition's effective 40 → speed recovers.
 SKIP_INSTALL=1 \
 ALIGNED_ROOT="${ALIGNED_ROOT:-/home/bruno/Desktop/tcc_new/datasets/FIW_aligned}" \
-BATCH_SIZE="${BATCH_SIZE:-32}" \
-GRAD_ACCUM="${GRAD_ACCUM:-1}" \
+BATCH_SIZE="${BATCH_SIZE:-16}" \
+GRAD_ACCUM="${GRAD_ACCUM:-2}" \
 UNFREEZE_LAST_STAGE=1 \
 UNFREEZE_EXTRA_STAGE3_TAIL=1 \
 LEARNING_RATE=1e-5 \

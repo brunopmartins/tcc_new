@@ -71,6 +71,7 @@ LR_HEAD="${LR_HEAD:-2e-5}"                         # R007: LR for cross_region +
 L2SP_WEIGHT="${L2SP_WEIGHT:-0.0}"                  # R008: λ for L2-SP penalty on unfrozen backbone (stage 4 + output_layer)
 COMPARISON_ONLY_FUSION="${COMPARISON_ONLY_FUSION:-0}"  # R009: 1 = drop gA, gB from classifier input
 ROI_ALIGN_TOKENIZER="${ROI_ALIGN_TOKENIZER:-0}"        # R013: 1 = ROI-Align region pooling (1 backbone pass)
+BACKBONE_INPUT_SIZE="${BACKBONE_INPUT_SIZE:-112}"      # M14 R002: conv-body input size (112=7x7 map, 224=14x14 finer regions)
 LORA_RANK="${LORA_RANK:-16}"                           # M14: LoRA rank for AdaFace backbone adapters
 LORA_ALPHA="${LORA_ALPHA:-16}"                         # M14: LoRA alpha (scaling = alpha/rank)
 LORA_STAGE3_TAIL="${LORA_STAGE3_TAIL:-0}"             # M14: 1 = also inject LoRA into body[43:46]
@@ -153,6 +154,7 @@ echo "AdaFace weights:     ${ADAFACE_WEIGHTS}"
 echo "Backbone frozen:     ${FREEZE_BACKBONE} (unfreeze_last_stage=${UNFREEZE_LAST_STAGE}, extra_stage3_tail=${UNFREEZE_EXTRA_STAGE3_TAIL})"
 echo "Consistency weight:  ${CONSISTENCY_WEIGHT}"
 echo "ROI-Align tokenizer: ${ROI_ALIGN_TOKENIZER}"
+echo "Backbone input size: ${BACKBONE_INPUT_SIZE}"
 echo "LoRA backbone:       rank=${LORA_RANK} alpha=${LORA_ALPHA} stage3_tail=${LORA_STAGE3_TAIL}"
 echo "Cross-attn:          ${CROSS_ATTN_LAYERS} layer × ${CROSS_ATTN_HEADS} heads"
 echo "Dropout:             ${DROPOUT}"
@@ -237,6 +239,7 @@ fi
 if [ "${ROI_ALIGN_TOKENIZER}" = "1" ]; then
     TRAIN_ARGS+=(--roi_align_tokenizer)
 fi
+TRAIN_ARGS+=(--backbone_input_size "${BACKBONE_INPUT_SIZE}")
 # M14: LoRA backbone adapters (always on for this model line).
 TRAIN_ARGS+=(--lora_rank "${LORA_RANK}" --lora_alpha "${LORA_ALPHA}")
 if [ "${LORA_STAGE3_TAIL}" = "1" ]; then

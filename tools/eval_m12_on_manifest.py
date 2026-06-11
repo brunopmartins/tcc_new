@@ -403,6 +403,7 @@ def main():
         symmetric_forward=mc.get("symmetric_forward", False),
         comparison_only_fusion=mc.get("comparison_only_fusion", False),
         roi_align_tokenizer=mc.get("roi_align_tokenizer", False),
+        backbone_input_size=mc.get("backbone_input_size", 112),
     )
     model.load_state_dict(ckpt["model_state_dict"])
     model.to(device).eval()

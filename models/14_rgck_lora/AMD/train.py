@@ -170,6 +170,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--roi_align_tokenizer", action="store_true", default=False,
                    help="R013: ROI-Align region pooling on a single shared "
                         "feature map instead of crop-and-rerun-AdaFace.")
+    p.add_argument("--backbone_input_size", type=int, default=112,
+                   help="Conv-body input size for the ROI-Align tokenizer. 112 "
+                        "= 7x7 map (exact global); 224 = 14x14 map (finer "
+                        "regions, global adaptive-pooled to 7x7). M14 R002=224.")
 
     # M14: LoRA backbone adaptation (replaces the stage-4 unfreeze).
     p.add_argument("--lora_rank", type=int, default=16,
@@ -737,6 +741,7 @@ def main() -> None:
         symmetric_forward=args.symmetric_forward,
         comparison_only_fusion=args.comparison_only_fusion,
         roi_align_tokenizer=args.roi_align_tokenizer,
+        backbone_input_size=args.backbone_input_size,
         lora_rank=args.lora_rank,
         lora_alpha=args.lora_alpha,
         lora_stage4=True,
@@ -917,6 +922,7 @@ def main() -> None:
         "l2sp_weight": args.l2sp_weight,
         "comparison_only_fusion": bool(args.comparison_only_fusion),
         "roi_align_tokenizer": bool(args.roi_align_tokenizer),
+        "backbone_input_size": int(args.backbone_input_size),
         # M14 LoRA backbone adaptation
         "lora_backbone": True,
         "lora_rank": int(args.lora_rank),
