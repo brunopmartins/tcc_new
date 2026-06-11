@@ -177,7 +177,14 @@ def parse_args() -> argparse.Namespace:
                         "term's gradient into the backbone.")
     p.add_argument("--dann_gamma", type=float, default=10.0,
                    help="DANN schedule steepness: λ = 2/(1+exp(-γ·p)) - 1, "
-                        "p = epoch/epochs. λ ramps 0→1 over training.")
+                        "p = epoch/dann_max_epochs. λ ramps 0→1 over the ramp.")
+    p.add_argument("--dann_max_epochs", type=int, default=0,
+                   help="Epochs over which the DANN λ ramps 0→1 (p = "
+                        "epoch/dann_max_epochs). 0 = use --epochs (R001 behaviour). "
+                        "R002 sets this short (e.g. 6) so λ reaches full strength "
+                        "within the real safeguard-stopped run length (~14 ep), "
+                        "fixing the R001 confound where λ stayed ≈0.15 at the "
+                        "selected best-val checkpoint (ep 3).")
     p.add_argument("--adv_hidden", type=int, default=256,
                    help="Hidden width of the family discriminator MLP.")
 
@@ -657,6 +664,12 @@ class FARGCKROCmTrainer(RGCKROCmTrainer):
 
         self.model.train()
         total_loss = 0.0
+        # R002: decompose the loss so the "did it memorise families?" question is
+        # answerable. base = BCE(+0.05·CE_rel) (kinship path); fam_raw = CE_family
+        # *before* the weight (comparable to ln(num_families) ≈ chance). The
+        # weighted fam term entering the loss is family_adv_weight·fam_raw.
+        total_base = 0.0
+        total_fam_raw = 0.0
         num_batches = 0
         clear_rocm_cache()
 
@@ -675,7 +688,8 @@ class FARGCKROCmTrainer(RGCKROCmTrainer):
                 from torch.cuda.amp import autocast
                 with autocast():
                     outputs = self.model(img1, img2)
-                    loss = self.loss_fn(outputs, labels, relation_idx)
+                    base_loss = self.loss_fn(outputs, labels, relation_idx)
+                    loss = base_loss
                     fam_term = self._family_term(outputs, batch)
                     if fam_term is not None:
                         loss = loss + fam_term
@@ -691,7 +705,8 @@ class FARGCKROCmTrainer(RGCKROCmTrainer):
                 self.scaler.update()
             else:
                 outputs = self.model(img1, img2)
-                loss = self.loss_fn(outputs, labels, relation_idx)
+                base_loss = self.loss_fn(outputs, labels, relation_idx)
+                loss = base_loss
                 fam_term = self._family_term(outputs, batch)
                 if fam_term is not None:
                     loss = loss + fam_term
@@ -705,10 +720,34 @@ class FARGCKROCmTrainer(RGCKROCmTrainer):
                 self.optimizer.step()
 
             total_loss += loss.item()
+            total_base += float(base_loss.item())
+            if fam_term is not None and self.family_adv_weight > 0:
+                total_fam_raw += float(fam_term.item()) / self.family_adv_weight
             num_batches += 1
-            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            pbar.set_postfix({
+                "loss": f"{loss.item():.4f}",
+                "base": f"{base_loss.item():.4f}",
+            })
 
-        return total_loss / max(num_batches, 1)
+        nb = max(num_batches, 1)
+        mean_base = total_base / nb
+        mean_fam_raw = total_fam_raw / nb
+        # Per-term decomposition (settles the memorisation question of R001):
+        #   base ≈ BCE+rel — if it collapses (~0.01) the kinship path memorised
+        #   regardless of the adversary; if it stays high (~0.27) the invariance
+        #   pressure is actually constraining the backbone.
+        print(
+            f"  [M16] λ={lambd:.3f} | base(BCE+rel)={mean_base:.4f} | "
+            f"CE_family(raw)={mean_fam_raw:.4f} | "
+            f"weighted_fam={self.family_adv_weight * mean_fam_raw:.4f}"
+        )
+        # Stash for downstream logging / RUN_LOG if the history dict is present.
+        if isinstance(getattr(self, "history", None), dict):
+            self.history.setdefault("train_base_loss", []).append(mean_base)
+            self.history.setdefault("train_ce_family_raw", []).append(mean_fam_raw)
+            self.history.setdefault("dann_lambda", []).append(float(lambd))
+
+        return total_loss / nb
 
 
 def main() -> None:
@@ -931,11 +970,12 @@ def main() -> None:
     trainer.family_vocab = family_vocab
     trainer.family_adv_weight = float(args.family_adv_weight)
     trainer.dann_gamma = float(args.dann_gamma)
-    trainer.dann_max_epochs = int(args.epochs)
+    # R002: λ ramp length decoupled from --epochs. 0 ⇒ fall back to --epochs.
+    trainer.dann_max_epochs = int(args.dann_max_epochs) or int(args.epochs)
     trainer.fa_model = fa_model_ref
     if args.family_adv_weight > 0:
         print(f"  Loss: + family_adv_weight {args.family_adv_weight} × CE_family "
-              f"(GRL, DANN λ 0→1, γ={args.dann_gamma})")
+              f"(GRL, DANN λ 0→1 over {trainer.dann_max_epochs} ep, γ={args.dann_gamma})")
     # Ensure loss-side buffers (e.g. Phase 5 relation_class_weights) live on the
     # same device as the model.
     loss_fn.to(device)

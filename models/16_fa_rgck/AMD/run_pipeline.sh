@@ -73,7 +73,8 @@ COMPARISON_ONLY_FUSION="${COMPARISON_ONLY_FUSION:-0}"  # R009: 1 = drop gA, gB f
 ROI_ALIGN_TOKENIZER="${ROI_ALIGN_TOKENIZER:-0}"        # R013: 1 = ROI-Align region pooling (1 backbone pass)
 HARD_NEGATIVE_RATIO="${HARD_NEGATIVE_RATIO:-0.0}"      # R011: fraction of role-matched (hard) train negatives (0 = pure random, 1 = pure hard)
 FAMILY_ADV_WEIGHT="${FAMILY_ADV_WEIGHT:-0.1}"          # M16: weight of the family-adversarial CE (0 = M12 R011)
-DANN_GAMMA="${DANN_GAMMA:-10.0}"                        # M16: DANN λ schedule steepness (λ ramps 0→1 over epochs)
+DANN_GAMMA="${DANN_GAMMA:-10.0}"                        # M16: DANN λ schedule steepness (λ ramps 0→1 over the ramp)
+DANN_MAX_EPOCHS="${DANN_MAX_EPOCHS:-0}"                 # M16 R002: epochs for the λ 0→1 ramp (0 = use EPOCHS; R002 sets ~6)
 ADV_HIDDEN="${ADV_HIDDEN:-256}"                         # M16: family discriminator hidden width
 
 NEGATIVE_RATIO="${NEGATIVE_RATIO:-1.0}"
@@ -163,6 +164,7 @@ echo "Negative ratio:      ${NEGATIVE_RATIO}"
 echo "Train neg strategy:  ${TRAIN_NEGATIVE_STRATEGY}"
 echo "Eval neg strategy:   ${EVAL_NEGATIVE_STRATEGY}"
 echo "Patience:            ${PATIENCE}"
+echo "Family adv weight:   ${FAMILY_ADV_WEIGHT} (DANN γ=${DANN_GAMMA}, λ ramp over ${DANN_MAX_EPOCHS} ep; 0=EPOCHS)"
 echo "Dataset:             ${TRAIN_DATASET}"
 echo "Data root:           ${DATA_ROOT}"
 echo "Seed:                ${SEED}"
@@ -208,6 +210,7 @@ TRAIN_ARGS=(
     --relation_aux_weight     "${RELATION_AUX_WEIGHT}"
     --family_adv_weight       "${FAMILY_ADV_WEIGHT}"
     --dann_gamma              "${DANN_GAMMA}"
+    --dann_max_epochs         "${DANN_MAX_EPOCHS}"
     --adv_hidden              "${ADV_HIDDEN}"
     --seed                    "${SEED}"
     --rocm_device             "${GPU_ID}"
