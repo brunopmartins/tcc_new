@@ -147,6 +147,18 @@ The structure:
 
 ---
 
+## Post-R012 sibling-model campaign (M14 / M15 / M16) — 2026-06-13
+
+After R012, three sibling models attacked the 0.876 CV-AUC ceiling from
+different angles. Summary: [`cycle_m14_m15_m16_ceiling.md`](cycle_m14_m15_m16_ceiling.md).
+- **M14** (LoRA backbone): 0.8700 — below, gap widened. Negative.
+- **M16** (family-adversarial DANN): R001 0.8774 (invalid — λ≈0.15 confound),
+  R002 0.8701 (tested at λ≈0.68 → unproductive; 486-way discriminator stuck at chance).
+- **M15** (hi-res ROI-Align @160): AUC 0.8803 (no AUC break) but **AP 0.8760 +
+  TAR@FAR=0.001 0.0992 — best in project, beats the R011 ensemble**. The one win;
+  CV pending. @224 GPU-blocked.
+Net: aggregate-AUC wall holds; the hi-res tokenizer gives a real AP/low-FAR gain.
+
 ## Conclusion (as of R011 CV ensemble — 2026-05-29)
 
 **Updated after the R011 CV ensemble (2026-05-29, ~30 min inference):**
