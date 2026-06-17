@@ -20,6 +20,16 @@ class DataConfig:
     normalize_mean: List[float] = field(default_factory=lambda: [0.485, 0.456, 0.406])
     normalize_std: List[float] = field(default_factory=lambda: [0.229, 0.224, 0.225])
 
+    # Additive (Model 17, parsing-guided regions). Default True/None preserve
+    # every other model's behaviour.
+    #   geometric_aug=False drops train-time RandomHorizontalFlip/RandomRotation
+    #     so cached per-image region boxes stay registered to the image.
+    #   region_box_cache: path to the .npz produced by tools/parse_faces_boxes.py
+    #     (rel-path → (n_anat,4) xyxy boxes); when set, __getitem__ returns
+    #     "boxes1"/"boxes2". Ignored unless the dataset is given it.
+    geometric_aug: bool = True
+    region_box_cache: Optional[str] = None
+
     # Shared evaluation protocol
     split_seed: int = 42
     negative_ratio: float = 1.0

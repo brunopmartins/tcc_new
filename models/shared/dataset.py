@@ -11,6 +11,7 @@ import random
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+import numpy as np
 import pandas as pd
 import torch
 import torchvision.transforms as T
@@ -21,6 +22,18 @@ from config import DataConfig
 
 
 SPLIT_OFFSETS = {"train": 0, "val": 1, "test": 2}
+
+# Additive (Model 17): fixed-box fallback for the 4 anatomical regions, as xyxy
+# in the 224 frame, in the SAME order as the non-global regions of the model's
+# DEFAULT_REGIONS_224 (eyes, nose, mouth, jaw). Used by __getitem__ only when a
+# region_box_cache is configured but a key is missing. MUST stay in sync with
+# models/12_rgck_net/model.py:DEFAULT_REGIONS_224.
+DEFAULT_ANAT_BOXES_XYXY: List[List[float]] = [
+    [20.0,  40.0, 204.0, 100.0],  # eyes  (y0,y1,x0,x1)=(40,100,20,204)
+    [70.0,  80.0, 154.0, 150.0],  # nose  (80,150,70,154)
+    [50.0, 140.0, 174.0, 185.0],  # mouth (140,185,50,174)
+    [20.0, 170.0, 204.0, 220.0],  # jaw   (170,220,20,204)
+]
 
 # FIW Track-I relation labels → contiguous ints for auxiliary-head training.
 # 11 kin classes; non-kin (and any unrecognised label) maps to -1 so callers
@@ -124,6 +137,7 @@ class KinshipPairDataset(Dataset):
         explicit_group_ids: Optional[set] = None,
         aligned_root: Optional[str] = None,
         hard_negative_ratio: float = 1.0,
+        region_box_cache: Optional[str] = None,
     ):
         self.root_dir = Path(root_dir)
         self.dataset_type = dataset_type
@@ -142,6 +156,12 @@ class KinshipPairDataset(Dataset):
         # original directory tree). This way, downstream code (KinshipPairDataset users)
         # can swap to pre-aligned face crops without changing any pair-construction logic.
         self.aligned_root = Path(aligned_root) if aligned_root else None
+
+        # Additive (Model 17): per-image region boxes from a face-parsing cache.
+        # Lazy-loaded .npz {rel_path: (n_anat,4) xyxy in the 224 frame}. When set,
+        # __getitem__ returns "boxes1"/"boxes2". Other models leave this None.
+        self.region_box_cache = region_box_cache
+        self._box_cache = None  # loaded on first access (per-worker safe)
 
         self.relation_types = relation_types or ["fd", "fs", "md", "ms"]
         self.pairs: List[Tuple[str, str, str]] = []
@@ -675,6 +695,39 @@ class KinshipPairDataset(Dataset):
         candidate = self.aligned_root / rel
         return str(candidate) if candidate.exists() else img_path
 
+    def _box_key(self, original_path: str) -> str:
+        """Cache key for an image: path relative to the dataset root (mirrors the
+        aligned_root layout the parser walked), with separators flattened to '__'
+        (so it is a valid npz member name). Tail-3 components as a fallback. MUST
+        match the key scheme in tools/parse_faces_boxes.py."""
+        try:
+            rel = Path(original_path).relative_to(self.root_dir).as_posix()
+        except ValueError:
+            rel = "/".join(Path(original_path).parts[-3:])
+        return rel.replace("/", "__")
+
+    def _load_boxes(self, original_path: str) -> torch.Tensor:
+        """Per-image (n_anat, 4) xyxy region boxes in the 224 frame from the
+        parsing cache; the fixed DEFAULT boxes when the key is missing.
+
+        Cache format (tools/parse_faces_boxes.py): an .npz with two arrays —
+        ``keys`` (object array of flattened rel-paths) and ``boxes`` (N, n_anat,
+        4) float32. Built into a dict lazily, once per worker (fork-safe)."""
+        if self._box_cache is None and self.region_box_cache is not None:
+            data = np.load(self.region_box_cache, allow_pickle=True)
+            keys = data["keys"]
+            boxes = data["boxes"]
+            self._box_cache = {
+                str(k): np.asarray(boxes[i], dtype=np.float32)
+                for i, k in enumerate(keys)
+            }
+        key = self._box_key(original_path)
+        if self._box_cache is not None and key in self._box_cache:
+            arr = self._box_cache[key]
+        else:
+            arr = np.asarray(DEFAULT_ANAT_BOXES_XYXY, dtype=np.float32)
+        return torch.from_numpy(np.ascontiguousarray(arr, dtype=np.float32))
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         img1_path, img2_path, relation = self.pairs[idx]
         label = self.labels[idx]
@@ -689,7 +742,7 @@ class KinshipPairDataset(Dataset):
             img1 = self.transform(img1)
             img2 = self.transform(img2)
 
-        return {
+        item = {
             "img1": img1,
             "img2": img2,
             "label": torch.tensor(label, dtype=torch.float32),
@@ -703,19 +756,34 @@ class KinshipPairDataset(Dataset):
             "family1": fiw_family_token(self.pairs[idx][0]),
             "family2": fiw_family_token(self.pairs[idx][1]),
         }
+        # Additive (M17 parsing-guided): per-image region boxes. Only present
+        # when a cache is configured; ignored by all other models. Keyed off the
+        # ORIGINAL pair paths (stable FIW ids), not the aligned-remapped ones.
+        if self.region_box_cache is not None:
+            item["boxes1"] = self._load_boxes(self.pairs[idx][0])
+            item["boxes2"] = self._load_boxes(self.pairs[idx][1])
+        return item
 
 
 def get_transforms(config: DataConfig, train: bool = True) -> T.Compose:
-    """Get image transforms for training or evaluation."""
+    """Get image transforms for training or evaluation.
+
+    When ``config.geometric_aug`` is False (Model 17 with cached per-image region
+    boxes), the train transform drops RandomHorizontalFlip and RandomRotation so
+    the image stays registered to its cached boxes; the photometric ColorJitter
+    (which does not move pixels) is kept.
+    """
     if train:
-        return T.Compose([
-            T.Resize((config.image_size, config.image_size)),
-            T.RandomHorizontalFlip(p=0.5),
-            T.RandomRotation(10),
+        geometric = getattr(config, "geometric_aug", True)
+        ops = [T.Resize((config.image_size, config.image_size))]
+        if geometric:
+            ops += [T.RandomHorizontalFlip(p=0.5), T.RandomRotation(10)]
+        ops += [
             T.ToTensor(),
             T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             T.Normalize(mean=config.normalize_mean, std=config.normalize_std),
-        ])
+        ]
+        return T.Compose(ops)
     return T.Compose([
         T.Resize((config.image_size, config.image_size)),
         T.ToTensor(),
@@ -765,6 +833,7 @@ def create_dataloaders(
         split_seed=split_seed,
         aligned_root=aligned_root,
         hard_negative_ratio=train_hard_negative_ratio,
+        region_box_cache=getattr(config, "region_box_cache", None),
     )
     val_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -776,6 +845,7 @@ def create_dataloaders(
         split_seed=split_seed,
         aligned_root=aligned_root,
         hard_negative_ratio=eval_hard_negative_ratio,
+        region_box_cache=getattr(config, "region_box_cache", None),
     )
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -787,6 +857,7 @@ def create_dataloaders(
         split_seed=split_seed,
         aligned_root=aligned_root,
         hard_negative_ratio=eval_hard_negative_ratio,
+        region_box_cache=getattr(config, "region_box_cache", None),
     )
 
     train_loader = DataLoader(
@@ -893,6 +964,7 @@ def create_fiw_5fold_train_val_loaders(
         aligned_root=aligned_root,
         explicit_group_ids=train_fids,
         hard_negative_ratio=train_hard_negative_ratio,
+        region_box_cache=getattr(config, "region_box_cache", None),
     )
     val_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -905,6 +977,7 @@ def create_fiw_5fold_train_val_loaders(
         aligned_root=aligned_root,
         explicit_group_ids=val_fids,
         hard_negative_ratio=eval_hard_negative_ratio,
+        region_box_cache=getattr(config, "region_box_cache", None),
     )
     test_dataset = KinshipPairDataset(
         root_dir=root_dir,
@@ -916,6 +989,7 @@ def create_fiw_5fold_train_val_loaders(
         split_seed=split_seed,
         aligned_root=aligned_root,
         hard_negative_ratio=eval_hard_negative_ratio,
+        region_box_cache=getattr(config, "region_box_cache", None),
     )
 
     train_loader = DataLoader(
