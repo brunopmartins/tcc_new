@@ -104,7 +104,7 @@ Membros da mesma família não aparecem simultaneamente em subconjuntos usados p
 Para reduzir a dependência de uma única partição de treino e validação e estimar variação entre dobras.
 
 **Resposta expandida:**
-Cada dobra usa uma divisão diferente de famílias para treino e validação, mantendo o teste oficial fixo. Isso fornece cinco medidas por modelo, permitindo média, desvio padrão e testes pareados. A limitação é que cinco dobras ainda são poucas para alguns testes estatísticos, especialmente Wilcoxon.
+Cada dobra usa uma divisão diferente de famílias para treino e validação, mantendo o teste oficial fixo. Isso fornece cinco medidas por modelo, permitindo média, desvio padrão e uma comparação pareada. A limitação é que cinco observações ainda são poucas para uma inferência estatística forte.
 
 ---
 
@@ -170,13 +170,13 @@ Essa regra evita escolher o limiar olhando o teste. Como cada modelo pode produz
 
 ---
 
-### P16 — Por que o teste t deu significativo e o Wilcoxon não?
+### P16 — O teste t com cinco dobras é confiável?
 
 **Resposta curta:**
-Porque há apenas cinco dobras. Com cinco observações, o Wilcoxon bilateral tem resolução limitada.
+Ele oferece evidência complementar, mas não deve sustentar sozinho uma conclusão forte.
 
 **Resposta expandida:**
-No teste t pareado entre AdaFace-Regional com Negativos Difíceis e ViT-FaCoR, o p-valor foi 0,0005. No Wilcoxon bilateral, o p-valor foi 0,0625. Isso não contradiz totalmente o resultado. Com apenas cinco dobras, mesmo quando todas as diferenças têm o mesmo sinal, o menor p-valor exato bilateral do Wilcoxon é limitado. Por isso, os testes são lidos como evidência complementar, junto com média, desvio e análise operacional.
+No teste t pareado entre AdaFace-Regional com Negativos Difíceis e ViT-FaCoR, o p-valor foi 0,0005. Entretanto, há apenas cinco diferenças pareadas, e a normalidade dessas diferenças é difícil de verificar. Por isso, o resultado deve ser interpretado junto com a diferença média de AUC, o desvio padrão e a consistência da direção do ganho entre as dobras. A conclusão permanece restrita ao protocolo adotado.
 
 ---
 

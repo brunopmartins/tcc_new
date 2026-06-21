@@ -29,7 +29,7 @@
 \setbeamercolor{palette secondary}{bg=cefetgreen,fg=white}
 \setbeamercolor{palette tertiary}{bg=darkgray,fg=white}
 \setbeamercolor{frametitle}{bg=cefetblue,fg=white}
-\setbeamercolor{title}{fg=cefetblue}
+\setbeamercolor{title}{bg=cefetblue,fg=white}
 \setbeamercolor{block title}{bg=cefetblue,fg=white}
 \setbeamercolor{block body}{bg=softgray,fg=black}
 
@@ -52,7 +52,6 @@
 }
 
 \title[Verificação visual de parentesco]{Verificação Visual de Parentesco Facial Automática}
-\subtitle{Estudo comparativo de arquiteturas de deep learning e modelos multimodais}
 \author[Bruno Peixoto Martins]{Bruno Peixoto Martins}
 \institute[CEFET-MG]{Engenharia da Computação -- CEFET-MG\\Orientador: Prof. Ismael Santana Silva}
 \date{Belo Horizonte, 2026}
@@ -146,6 +145,32 @@
   \vspace{0.25cm}
   \centering
   {\small Consequência: avaliar ordenação e ponto operacional, não apenas acurácia.}
+\end{frame}
+
+\begin{frame}{Exemplos de pares no FIW}
+  \centering
+  \vspace{0.05cm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \centering
+      \textbf{Parente}\\
+      {\scriptsize mesma família}\\[0.15cm]
+      \includegraphics[height=3.0cm]{fiw_kin_a.jpg}\hspace{0.25cm}
+      \includegraphics[height=3.0cm]{fiw_kin_b.jpg}\\[0.15cm]
+      {\small Classe positiva: \kin{}}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \textbf{Não parente}\\
+      {\scriptsize famílias distintas}\\[0.15cm]
+      \includegraphics[height=3.0cm]{fiw_nonkin_a.jpg}\hspace{0.25cm}
+      \includegraphics[height=3.0cm]{fiw_nonkin_b.jpg}\\[0.15cm]
+      {\small Classe negativa: \nonkin{}}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.35cm}
+  {\tiny Imagens de exemplo retiradas do dataset FIW.}
 \end{frame}
 
 \begin{frame}{Perguntas de pesquisa e objetivo}
@@ -355,7 +380,7 @@
 
   \vspace{0.35cm}
   \begin{block}{Estatística}
-    Teste t pareado e Wilcoxon signed-rank são usados como evidência complementar sobre as cinco dobras.
+    O teste t pareado é usado como evidência complementar sobre as cinco dobras, junto com média, desvio padrão e consistência da direção do ganho.
   \end{block}
 \end{frame}
 
@@ -382,7 +407,7 @@
       \begin{itemize}
         \item A proposta final fica \highlight{+0,030 AUC} acima do ViT-FaCoR.
         \item Diferença pareada contra ViT-FaCoR: $t(4)=10{,}264$, $p=0{,}0005$.
-        \item No Wilcoxon bilateral, $p=0{,}0625$ porque há apenas cinco dobras.
+        \item Com apenas cinco dobras, o teste t é interpretado como evidência complementar.
         \item As três variantes finalistas do AdaFace-Regional são próximas em AUC.
         \item A escolha operacional depende do custo entre falso positivo e falso negativo.
       \end{itemize}

@@ -141,8 +141,8 @@
 
 > A comparação mais relevante é contra o ViT-FaCoR, porque ele é a referência supervisionada mais forte entre as arquiteturas alternativas avaliadas.
 >A diferença média é de aproximadamente 0,030 em AUC, e essa diferença é maior que a variação média observada entre dobras.
->O teste t pareado resulta em p igual a 0,0005, indicando evidência estatística forte nesse recorte.
->A leitura segura é que, dentro do protocolo adotado, há evidência forte de ganho em ordenação global. Ao mesmo tempo, a escolha operacional continua dependendo do custo relativo dos erros, porque AUC alto não decide sozinho qual falsa aceitação é aceitável.
+>O teste t pareado resulta em p igual a 0,0005, mas esse valor é interpretado apenas como evidência complementar, porque a análise contém somente cinco diferenças pareadas.
+>A leitura segura é que, dentro do protocolo adotado, o ganho em ordenação global foi consistente entre as dobras. Ao mesmo tempo, a escolha operacional continua dependendo do custo relativo dos erros, porque AUC alto não decide sozinho qual falsa aceitação é aceitável.
 
 ## Slide 16 — Ciclo de desenvolvimento — 1:05
 
