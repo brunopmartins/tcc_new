@@ -66,6 +66,32 @@
 \end{fichacatalografica}
 % ---
 
+% ---
+% Resumo
+% ---
+\begin{resumo}
+Este trabalho investiga a verificação visual binária de parentesco facial, tarefa em que um sistema recebe duas imagens de rosto e estima se existe vínculo biológico entre as pessoas. O objetivo principal é comparar, sob um protocolo experimental uniforme no Families in the Wild (FIW), uma linha de base sem treinamento, três arquiteturas supervisionadas de referência e o AdaFace-Regional, proposta autoral que combina o AdaFace IR-101 parcialmente descongelado, cinco representações regionais anatômicas, atenção cruzada entre regiões, mecanismo de ponderação, cabeça auxiliar de relação e passagem simétrica. A avaliação utiliza validação cruzada de cinco dobras separadas por família, com o conjunto de teste oficial do RFIW Track-I preservado e o limiar de decisão escolhido somente na validação. A métrica principal é a área sob a curva ROC, complementada por precisão média e taxa de aceitação verdadeira em taxas fixas de falsa aceitação. O AdaFace-Regional com Negativos Difíceis alcançou AUC de $0{,}876 \pm 0{,}003$, superando o ViT-FaCoR, com $0{,}846 \pm 0{,}004$, o DINOv2-LoRA, com $0{,}814 \pm 0{,}007$, o AdaFace-Cosseno, com $0{,}799$, e o Modelo com Recuperação, com $0{,}778 \pm 0{,}008$. Em avaliação exploratória externa, modelos multimodais em regime \textit{zero-shot} permaneceram abaixo das abordagens supervisionadas, sobretudo em baixa falsa aceitação. Os resultados sustentam, dentro do protocolo adotado, ganho em ordenação global para o AdaFace-Regional, sem eliminar a necessidade de selecionar o ponto de operação conforme o custo dos erros.
+
+\vspace{\onelineskip}
+
+\noindent
+\textbf{Palavras-chave}: parentesco facial; visão computacional; aprendizado profundo; verificação biométrica; atenção cruzada.
+\end{resumo}
+
+% ---
+% Abstract
+% ---
+\begin{resumo}[Abstract]
+\begin{otherlanguage*}{english}
+This work investigates binary visual kinship verification, a task in which a system receives two facial images and estimates whether the individuals are biologically related. The main objective is to compare, under a uniform experimental protocol on Families in the Wild (FIW), an untrained baseline, three supervised reference architectures, and AdaFace-Regional, an original proposal that combines a partially unfrozen AdaFace IR-101, five anatomical regional representations, cross-attention between regions, a gating mechanism, an auxiliary relationship head, and symmetric inference. The evaluation uses five-fold cross-validation separated by family, while preserving the official RFIW Track-I test set and selecting the decision threshold only on validation data. The primary metric is the area under the ROC curve, complemented by Average Precision and true acceptance rate at fixed false acceptance rates. AdaFace-Regional with Hard Negatives achieved an AUC of $0{,}876 \pm 0{,}003$, outperforming ViT-FaCoR at $0{,}846 \pm 0{,}004$, DINOv2-LoRA at $0{,}814 \pm 0{,}007$, AdaFace-Cosine at $0{,}799$, and the Retrieval Model at $0{,}778 \pm 0{,}008$. In an external exploratory evaluation, zero-shot vision-language models remained below the supervised approaches, especially at low false acceptance rates. Within the adopted protocol, the results support an improvement in global pair ranking for AdaFace-Regional, without removing the need to select an operating point according to the cost of errors.
+
+\vspace{\onelineskip}
+
+\noindent
+\textbf{Keywords}: facial kinship; computer vision; deep learning; biometric verification; cross-attention.
+\end{otherlanguage*}
+\end{resumo}
+
 % % ---
 % % Inserir errata
 % % ---

@@ -1,17 +1,17 @@
 \chapter[AdaFace-Regional]{Proposta Arquitetônica AdaFace-Regional}
 \label{cap:adaface-regional}
 
-Este capítulo descreve a contribuição arquitetônica do trabalho. O AdaFace-Regional foi projetado para verificar parentesco facial a partir de um backbone especializado em reconhecimento de identidade, mas adaptado à tarefa por meio de descongelamento parcial, comparação regional e regularização da ordem do par. O objetivo não é apenas trocar o extrator de características, e sim reorganizar o sinal global do AdaFace em uma representação comparativa voltada à tarefa de parentesco.
+Este capítulo descreve a contribuição arquitetônica do trabalho. O AdaFace-Regional foi projetado para verificar parentesco facial a partir de um \textit{backbone} especializado em reconhecimento de identidade, mas adaptado à tarefa por meio de descongelamento parcial, comparação regional e regularização da ordem do par. O objetivo não é apenas trocar o extrator de características, e sim reorganizar o sinal global do AdaFace em uma representação comparativa voltada à tarefa de parentesco.
 
 \section{Motivação}
 
-A análise dos modelos avaliados no Capítulo~\ref{cap:Metodologia} indica que cada alternativa testa uma hipótese distinta, mas deixa uma limitação para o objetivo deste trabalho. O AdaFace-Cosseno usa um extrator facial forte, porém compara as faces apenas por similaridade global, sem adaptação supervisionada ao FIW e sem modelar quais partes do rosto participam da decisão. O ViT-FaCoR usa atenção cruzada entre patches, mas parte de um backbone visual geral e opera sobre muitos tokens locais, o que aumenta a liberdade do modelo para explorar regiões pouco informativas. O DINOv2-LoRA adapta uma representação auto-supervisionada ampla, mas não parte de um pré-treino facial especializado. O Modelo com Recuperação explicita exemplos positivos parecidos, mas depende da qualidade da galeria e da recuperação de suportes úteis.
+A análise dos modelos avaliados no Capítulo~\ref{cap:Metodologia} indica que cada alternativa testa uma hipótese distinta, mas deixa uma limitação para o objetivo deste trabalho. O AdaFace-Cosseno usa um extrator facial forte, porém compara as faces apenas por similaridade global, sem adaptação supervisionada ao FIW e sem modelar quais partes do rosto participam da decisão. O ViT-FaCoR usa atenção cruzada entre \textit{patches}, mas parte de um \textit{backbone} visual geral e opera sobre muitos \textit{tokens} locais, o que aumenta a liberdade do modelo para explorar regiões pouco informativas. O DINOv2-LoRA adapta uma representação auto-supervisionada ampla, mas não parte de um pré-treino facial especializado. O Modelo com Recuperação explicita exemplos positivos parecidos, mas depende da qualidade da galeria e da recuperação de suportes úteis.
 
-A proposta AdaFace-Regional parte de uma hipótese intermediária. O sinal de reconhecimento facial do AdaFace já contém informação útil para parentesco e pode se beneficiar de uma reorganização para a tarefa. Para isso, o modelo mantém parte do backbone preservada, libera apenas os estágios finais para adaptação e compara regiões anatômicas do rosto de forma explícita. Além disso, como a verificação de parentesco é simétrica, a arquitetura busca tornar a decisão menos dependente da ordem em que as imagens aparecem no par.
+A proposta AdaFace-Regional parte de uma hipótese intermediária. O sinal de reconhecimento facial do AdaFace já contém informação útil para parentesco e pode se beneficiar de uma reorganização para a tarefa. Para isso, o modelo mantém parte do \textit{backbone} preservada, libera apenas os estágios finais para adaptação e compara regiões anatômicas do rosto de forma explícita. Além disso, como a verificação de parentesco é simétrica, a arquitetura busca tornar a decisão menos dependente da ordem em que as imagens aparecem no par.
 
 \section{Visão geral da arquitetura}
 
-A Figura~\ref{fig:adaface_regional_arquitetura} resume o fluxo do AdaFace-Regional. Cada face alinhada é processada pelo AdaFace IR-101 para produzir um embedding global e embeddings regionais. Os tokens regionais das duas faces passam por atenção cruzada bidirecional, gerando comparações por região. Um mecanismo de gating atribui pesos internos às regiões do par, e a cabeça binária final combina vetores globais, diferenças, produtos elemento a elemento, similaridades regionais e pesos do gate. Nas variantes simétricas, o mesmo par é avaliado nas ordens $(A,B)$ e $(B,A)$, e os logits são agregados antes da decisão.
+A Figura~\ref{fig:adaface_regional_arquitetura} resume o fluxo do AdaFace-Regional. Cada face alinhada é processada pelo AdaFace IR-101 para produzir um \textit{embedding} global e \textit{embeddings} regionais. Os \textit{tokens} regionais das duas faces passam por atenção cruzada bidirecional, gerando comparações por região. Um mecanismo de \textit{gating} atribui pesos internos às regiões do par, e a cabeça binária final combina vetores globais, diferenças, produtos elemento a elemento, similaridades regionais e pesos do \textit{gate}. Nas variantes simétricas, o mesmo par é avaliado nas ordens $(A,B)$ e $(B,A)$, e os \textit{logits} são agregados antes da decisão.
 
 \begin{figure}[htbp]
 \centering
@@ -23,59 +23,59 @@ A Figura~\ref{fig:adaface_regional_arquitetura} resume o fluxo do AdaFace-Region
 $\downarrow$\\[0.4em]
 \begin{tabularx}{0.88\textwidth}{X c X}
 AdaFace IR-101 em $A$ & & AdaFace IR-101 em $B$ \\
-Embedding global $g_A$ & & Embedding global $g_B$ \\
-Tokens regionais $r_A^1,\ldots,r_A^5$ & $\leftrightarrow$ & Tokens regionais $r_B^1,\ldots,r_B^5$ \\
+\textit{Embedding} global $g_A$ & & \textit{Embedding} global $g_B$ \\
+\textit{Tokens} regionais $r_A^1,\ldots,r_A^5$ & $\leftrightarrow$ & \textit{Tokens} regionais $r_B^1,\ldots,r_B^5$ \\
 \end{tabularx}\\[0.3em]
 \begin{minipage}{0.84\textwidth}
 \centering
 Atenção cruzada entre regiões + similaridades $s_k$ + pesos $w_k$\\[0.2em]
-Fusão comparativa -- globais, diferenças, produtos, regiões e gate
+Fusão comparativa -- globais, diferenças, produtos, regiões e \textit{gate}
 \end{minipage}\\[0.4em]
 $\downarrow$\\[0.4em]
-\textbf{Logit kin/non-kin e cabeça auxiliar de relação}
+\textbf{\textit{Logit} \textit{kin}/\textit{non-kin} e cabeça auxiliar de relação}
 \end{minipage}%
 }
 \caption{Fluxo arquitetônico do AdaFace-Regional.}
 \label{fig:adaface_regional_arquitetura}
 \end{figure}
 
-\section{Backbone AdaFace}
+\section{\textit{Backbone} AdaFace}
 
-O backbone do AdaFace-Regional é o AdaFace IR-101 \cite{kim2022adaface}, pré-treinado em WebFace4M para reconhecimento facial em larga escala. O modelo original produz embeddings de 512 dimensões, normalizados para comparação angular. Essa escolha é motivada pelo bom desempenho de embeddings faciais especializados em regimes de baixa falsa aceitação, observado na linha de base AdaFace-Cosseno.
+O \textit{backbone} do AdaFace-Regional é o AdaFace IR-101 \cite{kim2022adaface}, pré-treinado em WebFace4M para reconhecimento facial em larga escala. O modelo original produz \textit{embeddings} de 512 dimensões, normalizados para comparação angular. Essa escolha é motivada pelo bom desempenho de \textit{embeddings} faciais especializados em regimes de baixa falsa aceitação, observado na linha de base AdaFace-Cosseno.
 
 No AdaFace-Regional, os três primeiros estágios do AdaFace permanecem congelados. Recebem gradiente apenas o estágio 4, formado pelos três blocos BasicBlockIR finais, e o \texttt{output\_layer}. Esse bloco descongelado soma cerca de 26 milhões de parâmetros treináveis. Com os módulos de regiões e o adaptador, as variantes completas totalizam 31,55 milhões de parâmetros treináveis de um total de 70,74 milhões, ou 44,6\%. A taxa de aprendizado do backbone é menor do que a da cabeça para reduzir o risco de descaracterizar representações de identidade já aprendidas.
 
-\section{Tokens regionais}
+\section{\textit{Tokens} regionais}
 
-Sobre a imagem alinhada em 224$\times$224 pixels, o AdaFace-Regional define cinco regiões fixas. Elas correspondem à face inteira, faixa superior dos olhos, região central do nariz, faixa média inferior da boca e faixa inferior da mandíbula. Cada região é recortada e redimensionada para 112$\times$112 antes de ser processada pelo AdaFace. Além do embedding global usado na fusão final, cada face gera cinco embeddings regionais; o token de face inteira é extraído como região e não reutiliza o embedding global.
+Sobre a imagem alinhada em 224$\times$224 pixels, o AdaFace-Regional define cinco regiões fixas. Elas correspondem à face inteira, faixa superior dos olhos, região central do nariz, faixa média inferior da boca e faixa inferior da mandíbula. Cada região é recortada e redimensionada para 112$\times$112 antes de ser processada pelo AdaFace. Além do \textit{embedding} global usado na fusão final, cada face gera cinco \textit{embeddings} regionais; o \textit{token} de face inteira é extraído como região e não reutiliza o \textit{embedding} global.
 
-Essa escolha introduz um viés estrutural simples. Em vez de permitir que o modelo compare livremente todos os patches da imagem, a comparação é orientada por partes faciais interpretáveis. O custo dessa decisão é uma dependência maior do alinhamento facial. Se a detecção ou o recorte desloca as regiões, os tokens deixam de corresponder às partes esperadas.
+Essa escolha introduz um viés estrutural simples. Em vez de permitir que o modelo compare livremente todos os \textit{patches} da imagem, a comparação é orientada por partes faciais interpretáveis. O custo dessa decisão é uma dependência maior do alinhamento facial. Se a detecção ou o recorte desloca as regiões, os \textit{tokens} deixam de corresponder às partes esperadas.
 
 \section{Atenção cruzada entre regiões}
 
-Os cinco tokens de cada face passam por uma camada bidirecional de atenção cruzada entre regiões, com quatro cabeças. Para um par de faces, o módulo produz interações entre as regiões de $A$ e de $B$, formando uma matriz de atenção 5$\times$5. Essa matriz é muito menor do que os mapas de atenção entre patches dos modelos baseados em ViT, que operam tipicamente sobre centenas de posições.
+Os cinco \textit{tokens} de cada face passam por uma camada bidirecional de atenção cruzada entre regiões, com quatro cabeças. Para um par de faces, o módulo produz interações entre as regiões de $A$ e de $B$, formando uma matriz de atenção 5$\times$5. Essa matriz é muito menor do que os mapas de atenção entre \textit{patches} dos modelos baseados em ViT, que operam tipicamente sobre centenas de posições.
 
 A atenção regional permite que o modelo compare regiões correspondentes, como olhos com olhos, mas também teste interações entre regiões complementares. Assim, a arquitetura preserva a capacidade de interação entre faces sem abandonar a estrutura anatômica do problema.
 
-\section{Mecanismo de gating e fusão}
+\section{Mecanismo de \textit{gating} e fusão}
 
-Para cada região $k \in \{1, \ldots, K\}$, com $K = 5$, o modelo calcula uma similaridade regional $s_k \in \mathbb{R}$. Em paralelo, um módulo de gating sigmoide estima um peso $w_k \in [0,1]$ por região. Como o gate usa sigmoide e não softmax, mais de uma região pode receber peso alto ao mesmo tempo.
+Para cada região $k \in \{1, \ldots, K\}$, com $K = 5$, o modelo calcula uma similaridade regional $s_k \in \mathbb{R}$. Em paralelo, um módulo de \textit{gating} sigmoide estima um peso $w_k \in [0,1]$ por região. Como o \textit{gate} usa sigmoide e não \textit{softmax}, mais de uma região pode receber peso alto ao mesmo tempo.
 
-Na variante de referência, a cabeça final recebe um vetor de dimensão $4d + 2K + 1 = 2059$, com $d = 512$. Esse vetor concatena os embeddings globais $g_A$ e $g_B$, a diferença absoluta $|g_A - g_B|$, o produto elemento a elemento $g_A \odot g_B$, o vetor de similaridades regionais $s$, o vetor de pesos $w$ e o produto escalar $w^\top s$. A saída é um único logit, otimizado por entropia cruzada binária.
+Na variante de referência, a cabeça final recebe um vetor de dimensão $4d + 2K + 1 = 2059$, com $d = 512$. Esse vetor concatena os \textit{embeddings} globais $g_A$ e $g_B$, a diferença absoluta $|g_A - g_B|$, o produto elemento a elemento $g_A \odot g_B$, o vetor de similaridades regionais $s$, o vetor de pesos $w$ e o produto escalar $w^\top s$. A saída é um único \textit{logit}, otimizado por entropia cruzada binária.
 
-Uma variante posterior, chamada fusão apenas comparativa, remove os vetores globais crus $g_A$ e $g_B$ e mantém apenas termos que descrevem a comparação entre as faces. Com isso, a entrada da cabeça cai para 1035 dimensões. A intenção é verificar se a presença dos embeddings globais isolados ajuda a decisão ou se induz atalhos relacionados à aparência individual das faces.
+Uma variante posterior, chamada fusão apenas comparativa, remove os vetores globais crus $g_A$ e $g_B$ e mantém apenas termos que descrevem a comparação entre as faces. Com isso, a entrada da cabeça cai para 1035 dimensões. A intenção é verificar se a presença dos \textit{embeddings} globais isolados ajuda a decisão ou se induz atalhos relacionados à aparência individual das faces.
 
 \section{Cabeça auxiliar de relação}
 
-Além da cabeça binária kin/non-kin, o AdaFace-Regional inclui uma cabeça auxiliar que prediz uma das onze relações positivas do FIW. Essa perda é aplicada apenas aos pares positivos, porque pares non-kin não têm tipo de relação anotado. O peso da perda auxiliar é 0,05 na configuração usada nas variantes completas.
+Além da cabeça binária \textit{kin}/\textit{non-kin}, o AdaFace-Regional inclui uma cabeça auxiliar que prediz uma das onze relações positivas do FIW. Essa perda é aplicada apenas aos pares positivos, porque pares \textit{non-kin} não têm tipo de relação anotado. O peso da perda auxiliar é 0,05 na configuração usada nas variantes completas.
 
 A função dessa cabeça não é transformar o problema principal em classificação multiclasse. Ela atua como regularização supervisionada auxiliar, incentivando a representação interna a preservar diferenças anotadas no FIW entre relações como pai-filho, mãe-filha, irmãos e avós-netos. Essa informação é especialmente relevante porque as relações de segundo grau têm comportamento diferente das relações de primeiro grau.
 
 \section{Passagem simétrica}
 
-A verificação de parentesco é simétrica. Se $A$ é parente de $B$, então $B$ é parente de $A$. Uma cabeça neural que recebe embeddings concatenados em ordem fixa, porém, pode aprender atalhos dependentes da posição da primeira e da segunda face no par.
+A verificação de parentesco é simétrica. Se $A$ é parente de $B$, então $B$ é parente de $A$. Uma cabeça neural que recebe \textit{embeddings} concatenados em ordem fixa, porém, pode aprender atalhos dependentes da posição da primeira e da segunda face no par.
 
-Para reduzir esse problema, a variante simétrica processa cada par nas duas ordens, $(A,B)$ e $(B,A)$. Durante o treinamento, a perda binária é a média das duas direções. Durante a avaliação, o logit final é a média dos logits das duas permutações antes da aplicação do sigmoide.
+Para reduzir esse problema, a variante simétrica processa cada par nas duas ordens, $(A,B)$ e $(B,A)$. Durante o treinamento, a perda binária é a média das duas direções. Durante a avaliação, o \textit{logit} final é a média dos \textit{logits} das duas permutações antes da aplicação do sigmoide.
 
 \begin{equation}
 z_{\text{sim}}(A,B) = \frac{z(A,B) + z(B,A)}{2}.
@@ -86,9 +86,9 @@ Essa passagem não impõe igualdade ponto a ponto entre $f(A,B)$ e $f(B,A)$. Ela
 
 \section{Complexidade computacional}
 
-O AdaFace-Regional adiciona custo principalmente em três pontos. O primeiro é a extração dos embeddings regionais, o segundo é a atenção cruzada entre regiões, e o terceiro é a cabeça de fusão. O custo da atenção regional é pequeno, porque a matriz de interação tem apenas 5$\times$5 posições. O componente mais caro permanece sendo o próprio AdaFace IR-101, especialmente quando o estágio 4 e o \texttt{output\_layer} são descongelados.
+O AdaFace-Regional adiciona custo principalmente em três pontos. O primeiro é a extração dos \textit{embeddings} regionais, o segundo é a atenção cruzada entre regiões, e o terceiro é a cabeça de fusão. O custo da atenção regional é pequeno, porque a matriz de interação tem apenas 5$\times$5 posições. O componente mais caro permanece sendo o próprio AdaFace IR-101, especialmente quando o estágio 4 e o \texttt{output\_layer} são descongelados.
 
-Nas variantes completas, o modelo treina cerca de 31,55 milhões de parâmetros, contra 70,74 milhões de parâmetros totais. O número é menor do que um descongelamento integral do backbone, mas maior do que linhas de base que treinam apenas cabeças leves. Essa escolha reflete o compromisso central da proposta, que é adaptar o sinal facial especializado sem perder completamente as representações de identidade aprendidas no pré-treinamento.
+Nas variantes completas, o modelo treina cerca de 31,55 milhões de parâmetros, contra 70,74 milhões de parâmetros totais. O número é menor do que um descongelamento integral do \textit{backbone}, mas maior do que linhas de base que treinam apenas cabeças leves. Essa escolha reflete o compromisso central da proposta, que é adaptar o sinal facial especializado sem perder completamente as representações de identidade aprendidas no pré-treinamento.
 
 \section{Variantes avaliadas}
 
@@ -102,9 +102,9 @@ Quatro variantes principais aparecem no ciclo experimental. A variante Base não
 \hline
 \textbf{Variante} & \textbf{Descrição} \\
 \hline
-Base & AdaFace-Regional com descongelamento parcial, tokens regionais, atenção cruzada, gate e cabeça binária em uma única ordem do par. \\
-Simétrica & Mantém a cabeça auxiliar de relação, processa cada par nas duas ordens, $(A,B)$ e $(B,A)$, e agrega os logits para reduzir dependência da posição das imagens. \\
-Comparativa & Mantém a cabeça auxiliar e a passagem simétrica, mas remove os embeddings globais crus da fusão final, preservando apenas termos comparativos entre as duas faces. \\
+Base & AdaFace-Regional com descongelamento parcial, \textit{tokens} regionais, atenção cruzada, \textit{gate} e cabeça binária em uma única ordem do par. \\
+Simétrica & Mantém a cabeça auxiliar de relação, processa cada par nas duas ordens, $(A,B)$ e $(B,A)$, e agrega os \textit{logits} para reduzir dependência da posição das imagens. \\
+Comparativa & Mantém a cabeça auxiliar e a passagem simétrica, mas remove os \textit{embeddings} globais crus da fusão final, preservando apenas termos comparativos entre as duas faces. \\
 Negativos difíceis & Mantém a arquitetura comparativa e altera a amostragem de treino para incluir 30\% de negativos formados por famílias diferentes com os mesmos papéis familiares do par positivo de referência. \\
 \hline
 \end{tabularx}

@@ -1,57 +1,57 @@
 \chapter[Trabalhos Relacionados]{Trabalhos Relacionados}
 \label{cap:trabalhos-relacionados}
 
-A literatura de verificação de parentesco facial cresceu de forma consistente entre 2010 e 2025. O que era um problema marginal de visão computacional consolidou-se como área com benchmark de referência, competições anuais e contribuições regulares, evoluindo do primeiro classificador baseado em atributos manuais aos modelos com Vision Transformer e atenção cruzada entre faces. Os modelos multimodais aparecem ao final do capítulo como abordagem complementar de avaliação.
+A literatura de verificação de parentesco facial cresceu de forma consistente entre 2010 e 2025. O que era um problema marginal de visão computacional consolidou-se como área com \textit{benchmark} de referência, competições anuais e contribuições regulares, evoluindo do primeiro classificador baseado em atributos manuais aos modelos com Vision Transformer e atenção cruzada entre faces. Os modelos multimodais aparecem ao final do capítulo como abordagem complementar de avaliação.
 
-\section{Métodos clássicos e datasets fundadores}
+\section{Métodos clássicos e \textit{datasets} fundadores}
 
 O primeiro modelo computacional de verificação visual de parentesco foi o de \citeonline{fang2010towards}, que tratou o problema como classificação binária a partir de atributos faciais extraídos com estrutura pictórica \cite{felzenszwalb2005pictorial}. Os atributos cobriam cores de olhos, pele e cabelo, partes da face, distâncias entre essas partes e histogramas de gradiente, agrupados em um vetor de atributos manual. Os autores montaram um conjunto próprio de 150 pares de pais e filhos, treinaram k-NN e SVM com função de base radial, com 68,6\% de acurácia em validação cruzada.
 
 Em paralelo, surgiram bancos públicos que tornaram a tarefa comparável entre laboratórios. \citeonline{lu2014kinface}
-disponibilizaram KinFaceW-I e KinFaceW-II, com cerca de mil pares por dataset distribuídos em quatro tipos de relação. Ambos seguem em uso até hoje para prototipagem rápida ou validação cruzada de cinco dobras. Pouco depois, \citeonline{robinson2016fiw}
-introduziram a primeira versão do Families in the Wild, que se tornaria, dois anos depois, o principal benchmark da área.
+disponibilizaram KinFaceW-I e KinFaceW-II, com cerca de mil pares por \textit{dataset} distribuídos em quatro tipos de relação. Ambos seguem em uso até hoje para prototipagem rápida ou validação cruzada de cinco dobras. Pouco depois, \citeonline{robinson2016fiw}
+introduziram a primeira versão do Families in the Wild, que se tornaria, dois anos depois, o principal \textit{benchmark} da área.
 
 \section{Aprendizado profundo e redes siamesas}
 
-Apesar de o reconhecimento facial já operar em deep learning desde 2012, a verificação de parentesco usou pouco essas redes até 2018, sobretudo pela escassez de dados etiquetados. \citeonline{robinson2018visual} mudou esse panorama com a versão expandida do Families in the Wild, com mais de 13.000 imagens distribuídas em mais de mil famílias. Como solução, propôs o uso de redes siamesas com pesos compartilhados, alimentadas por backbones pré-treinados em reconhecimento facial. As escolhas iniciais foram VGG-Face \cite{parkhi2015deep} e ResNet \cite{wen2016discriminative}, removendo as últimas camadas e treinando uma cabeça de classificação sobre a representação resultante. A partir desse trabalho consolidou-se o RFIW Challenge,
-competição anual que padronizou splits, métricas e o protocolo Track-I, no qual famílias inteiras são separadas entre treino e teste para evitar vazamento. A maioria dos modelos publicados desde então segue esse protocolo, e foi também o adotado neste trabalho.
+Apesar de o reconhecimento facial já operar em \textit{deep learning} desde 2012, a verificação de parentesco usou pouco essas redes até 2018, sobretudo pela escassez de dados etiquetados. \citeonline{robinson2018visual} mudou esse panorama com a versão expandida do Families in the Wild, com mais de 13.000 imagens distribuídas em mais de mil famílias. Como solução, propôs o uso de redes siamesas com pesos compartilhados, alimentadas por \textit{backbones} pré-treinados em reconhecimento facial. As escolhas iniciais foram VGG-Face \cite{parkhi2015deep} e ResNet \cite{wen2016discriminative}, removendo as últimas camadas e treinando uma cabeça de classificação sobre a representação resultante. A partir desse trabalho consolidou-se o RFIW Challenge,
+competição anual que padronizou \textit{splits}, métricas e o protocolo Track-I, no qual famílias inteiras são separadas entre treino e teste para evitar vazamento. A maioria dos modelos publicados desde então segue esse protocolo, e foi também o adotado neste trabalho.
 
-\section{Metric learning e perdas contrastivas}
+\section{\textit{Metric learning} e perdas contrastivas}
 
-Backbones melhores não bastam, e parte significativa dos ganhos da década seguinte veio de funções de perda mais discriminativas. Em reconhecimento facial, a sequência SphereFace \cite{liu2017sphereface},
+\textit{Backbones} melhores não bastam, e parte significativa dos ganhos da década seguinte veio de funções de perda mais discriminativas. Em reconhecimento facial, a sequência SphereFace \cite{liu2017sphereface},
 CosFace \cite{wang2018cosface}
 e ArcFace \cite{deng2019arcface}
-reformulou o softmax para impor margens angulares no espaço de embeddings, e essas perdas migraram naturalmente para parentesco. Em paralelo, abordagens com triplet loss \cite{schroff2015facenet}
+reformulou o \textit{softmax} para impor margens angulares no espaço de \textit{embeddings}, e essas perdas migraram naturalmente para parentesco. Em paralelo, abordagens com \textit{triplet loss} \cite{schroff2015facenet}
 e perdas contrastivas supervisionadas, como a formulação de \citeonline{khosla2020supervised},
-passaram a ser usadas para aproximar pares de parentes próximos no espaço de embeddings, afastando pares sem vínculo biológico.
+passaram a ser usadas para aproximar pares de parentes próximos no espaço de \textit{embeddings}, afastando pares sem vínculo biológico.
 
 Trabalhos posteriores afinaram a perda para o domínio. \citeonline{lyu2023kfc}
-propuseram a Fair Contrastive Loss, que adiciona termos para mitigar viés demográfico durante o treino, e relatam cerca de 81\% de acurácia em FIW. Variantes posteriores usam o tipo da relação como sinal extra para estruturar o espaço, em vez de apenas o rótulo binário entre kin e non-kin.
+propuseram a \textit{Fair Contrastive Loss}, que adiciona termos para mitigar viés demográfico durante o treino, e relatam cerca de 81\% de acurácia em FIW. Variantes posteriores usam o tipo da relação como sinal extra para estruturar o espaço, em vez de apenas o rótulo binário entre \textit{kin} e \textit{non-kin}.
 
 \section{Mecanismos de atenção e Vision Transformers}
 
 A introdução do Vision Transformer \cite{dosovitskiy2020image}
-reabriu a questão de qual é o melhor backbone para parentesco facial. Os resultados mais recentes do FIW vêm de modelos que substituem o backbone convolucional pelo ViT pré-treinado. \citeonline{su2023facornet}
-propuseram o FaCoR, que adiciona um módulo de atenção cruzada bidirecional entre os tokens de patch de duas faces, permitindo que o modelo aprenda quais regiões comparar em vez de só comparar embeddings globais. O ganho relatado foi de 4,6\% sobre o melhor resultado anterior. O FaCoR é a inspiração direta do ViT-FaCoR deste trabalho.
+reabriu a questão de qual é o melhor \textit{backbone} para parentesco facial. Os resultados mais recentes do FIW vêm de modelos que substituem o \textit{backbone} convolucional pelo ViT pré-treinado. \citeonline{su2023facornet}
+propuseram o FaCoR, que adiciona um módulo de atenção cruzada bidirecional entre os \textit{tokens} de \textit{patch} de duas faces, permitindo que o modelo aprenda quais regiões comparar em vez de só comparar \textit{embeddings} globais. O ganho relatado foi de 4,6\% sobre o melhor resultado anterior. O FaCoR é a inspiração direta do ViT-FaCoR deste trabalho.
 
 \section{Fusões híbridas e síntese de idade}
 
 Outra linha tenta combinar os vieses indutivos convolucionais do ConvNeXt \cite{liu2022convnet}
-com a atenção global do ViT, em modelos de duplo backbone que produzem atributos locais e globais e os fundem por concatenação, gating ou atenção. Essa estratégia motivou o ConvNeXt-ViT deste trabalho, e a literatura recente aponta que aumentar capacidade total de backbone não traz, em geral, ganho proporcional em verificação de parentesco quando os dados de treino são limitados.
+com a atenção global do ViT, em modelos de duplo \textit{backbone} que produzem atributos locais e globais e os fundem por concatenação, \textit{gating} ou atenção. Essa estratégia motivou o ConvNeXt-ViT deste trabalho, e a literatura recente aponta que aumentar capacidade total de \textit{backbone} não traz, em geral, ganho proporcional em verificação de parentesco quando os dados de treino são limitados.
 
 Métodos baseados em síntese de idade, como o SAM \cite{alaluf2022sam}, também abordam a assimetria etária entre pais e filhos, mas essa linha aparece aqui apenas como referência histórica do pré-projeto e não compõe a comparação principal.
 
-\section{Generalização cross-dataset e equidade}
+\section{Generalização \textit{cross-dataset} e equidade}
 
-Apesar dos números altos relatados na literatura, generalização entre datasets continua um problema aberto. Modelos treinados em FIW e testados em KinFaceW costumam perder entre 15\% e 30\% de acurácia \cite{robinson2022survey}, e o problema é ainda mais grave em subgrupos demográficos sub-representados nos conjuntos de treino. Em reconhecimento facial em geral, estudos de equidade apontam diferenças de 5\% a 10\% na taxa de erro entre faces de subgrupos demográficos distintos \cite{buolamwini2018gender}, e por analogia direta espera-se efeito semelhante em verificação de parentesco facial, embora medições específicas no domínio sejam menos comuns.
+Apesar dos números altos relatados na literatura, generalização entre \textit{datasets} continua um problema aberto. Modelos treinados em FIW e testados em KinFaceW costumam perder entre 15\% e 30\% de acurácia \cite{robinson2022survey}, e o problema é ainda mais grave em subgrupos demográficos sub-representados nos conjuntos de treino. Em reconhecimento facial em geral, estudos de equidade apontam diferenças de 5\% a 10\% na taxa de erro entre faces de subgrupos demográficos distintos \cite{buolamwini2018gender}, e por analogia direta espera-se efeito semelhante em verificação de parentesco facial, embora medições específicas no domínio sejam menos comuns.
 Esses dois eixos não compõem o foco experimental deste trabalho, mas orientam a interpretação das limitações.
 
 \section{Modelos multimodais como linhas de base}
 
-Modelos multimodais generalistas, em particular VLMs treinados em grandes coleções de pares imagem-texto, ganharam tração no fim da década, abrindo a pergunta sobre se essa classe consegue resolver verificação de parentesco em zero-shot, sem treino específico no domínio. O CLIP \cite{radford2021learning}
+Modelos multimodais generalistas, em particular VLMs treinados em grandes coleções de pares imagem-texto, ganharam tração no fim da década, abrindo a pergunta sobre se essa classe consegue resolver verificação de parentesco em \textit{zero-shot}, sem treino específico no domínio. O CLIP \cite{radford2021learning}
 foi um dos primeiros nesse formato, e modelos posteriores, como GPT-4V e Claude Sonnet, ampliaram o escopo para tarefas mais variadas. Na revisão realizada para este trabalho, não foram identificadas avaliações sistemáticas de VLMs especificamente em verificação de parentesco facial; a maior parte das referências sobre desempenho de VLMs em tarefas faciais cobre identificação ou descrição genérica de atributos. Por isso, os VLMs são tratados aqui como linhas de base externas. Eles recebem uma imagem com duas faces e respondem diretamente se há ou não parentesco, sem ajuste de pesos no FIW.
 
-Uma etapa anterior deste projeto também avaliou VLMs como classificadores fechados de onze relações positivas do FIW. Esse recorte permanece útil para diagnosticar confusões entre relações, especialmente avós e netos, mas não mede a mesma tarefa dos modelos supervisionados. No desenho final, os resultados que entram na comparação metodológica são os experimentos binários zero-shot, descritos no Capítulo~\ref{cap:Metodologia}.
+Uma etapa anterior deste projeto também avaliou VLMs como classificadores fechados de onze relações positivas do FIW. Esse recorte permanece útil para diagnosticar confusões entre relações, especialmente avós e netos, mas não mede a mesma tarefa dos modelos supervisionados. No desenho final, os resultados que entram na comparação metodológica são os experimentos binários \textit{zero-shot}, descritos no Capítulo~\ref{cap:Metodologia}.
 
 \section{Síntese comparativa da literatura}
 
@@ -68,8 +68,8 @@ A Tabela~\ref{tab:trabalhos_relacionados_resumo} resume os trabalhos que delimit
 \textbf{Trabalho} & \textbf{Base} & \textbf{Ideia central} & \textbf{Limitação para comparação} \\
 \hline
 \citeonline{fang2010towards} & Base própria & Atributos manuais + SVM & Conjunto pequeno e protocolo próprio \\
-\citeonline{lu2014kinface} & KinFaceW & Metric learning & Banco menor e relações restritas \\
-\citeonline{robinson2018visual} & FIW & Redes siamesas com backbones faciais & Marco do benchmark, sem cobrir VLMs \\
+\citeonline{lu2014kinface} & KinFaceW & \textit{Metric learning} & Banco menor e relações restritas \\
+\citeonline{robinson2018visual} & FIW & Redes siamesas com \textit{backbones} faciais & Marco do \textit{benchmark}, sem cobrir VLMs \\
 \citeonline{lyu2023kfc} & FIW & Perda contrastiva com equidade & Foco específico em viés e multitarefa \\
 \citeonline{su2023facornet} & FIW & ViT com atenção cruzada entre faces & Resultado dependente do protocolo reportado \\
 \hline
@@ -78,6 +78,6 @@ A Tabela~\ref{tab:trabalhos_relacionados_resumo} resume os trabalhos que delimit
 
 \section{Posicionamento deste trabalho}
 
-A combinação de famílias presente neste trabalho cobre cinco eixos da literatura citada. A linha de base mínima usa AdaFace pré-treinado em reconhecimento facial com cosseno e limiar em validação. O caminho do ViT com atenção cruzada bidirecional no estilo FaCoR liga-se à linha de \citeonline{su2023facornet}. Como direções exploratórias, o DINOv2-LoRA adapta um backbone auto-supervisionado por LoRA e atenção cruzada diferencial, enquanto o Modelo com Recuperação usa uma galeria de pares positivos do treino para recuperar vizinhos similares em inferência. A proposta principal combina AdaFace parcialmente descongelado, cinco tokens regionais anatômicos, atenção cruzada entre regiões e gate sigmoide.
+A combinação de famílias presente neste trabalho cobre cinco eixos da literatura citada. A linha de base mínima usa AdaFace pré-treinado em reconhecimento facial com cosseno e limiar em validação. O caminho do ViT com atenção cruzada bidirecional no estilo FaCoR liga-se à linha de \citeonline{su2023facornet}. Como direções exploratórias, o DINOv2-LoRA adapta um \textit{backbone} auto-supervisionado por LoRA e atenção cruzada diferencial, enquanto o Modelo com Recuperação usa uma galeria de pares positivos do treino para recuperar vizinhos similares em inferência. A proposta principal combina AdaFace parcialmente descongelado, cinco \textit{tokens} regionais anatômicos, atenção cruzada entre regiões e \textit{gate} sigmoide.
 
-A diferença em relação à maioria dos trabalhos citados é metodológica. Em vez de propor um único modelo novo e compará-lo a resultados isolados da literatura, este trabalho aplica o mesmo protocolo de avaliação às cinco abordagens de verificação binária, com limiar selecionado em validação e aplicado sem reajuste no teste. A avaliação complementar dos modelos multimodais é apresentada em separado. A versão binária serve como linha de base externa zero-shot, enquanto a versão multiclasse anterior fica restrita à análise diagnóstica de relações positivas.
+A diferença em relação à maioria dos trabalhos citados é metodológica. Em vez de propor um único modelo novo e compará-lo a resultados isolados da literatura, este trabalho aplica o mesmo protocolo de avaliação às cinco abordagens de verificação binária, com limiar selecionado em validação e aplicado sem reajuste no teste. A avaliação complementar dos modelos multimodais é apresentada em separado. A versão binária serve como linha de base externa \textit{zero-shot}, enquanto a versão multiclasse anterior fica restrita à análise diagnóstica de relações positivas.
